@@ -2,10 +2,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\ApiKey;
 use App\Models\ApiLog;
-use App\Models\Customer;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class ApiAuthentication
@@ -17,52 +18,51 @@ class ApiAuthentication
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $apiKey = $request->header('X-API-Key') ?? $request->header('Authorization');
-        
-        // Remove 'Bearer ' prefix if present
-        if ($apiKey && str_starts_with($apiKey, 'Bearer ')) {
-            $apiKey = substr($apiKey, 7);
+        $token = $request->header('X-API-Key') ?? $request->header('Authorization');
+        Log::info('Token: ' . $token);
+        // Remove 'Bearer ' pr  efix if present
+        if ($token && str_starts_with($token, 'Bearer ')) {
+            $token = substr($token, 7);
         }
-        
-        if (!$apiKey) {
+
+        if (!$token) {
             return $this->unauthorized('API key is required');
         }
-        
-        $customer = Customer::where('api_key', $apiKey)
-            ->where('api_enabled', true)
-            ->first();
-        
-        if (!$customer) {
+
+        // Validate the API key using the ApiKey model
+        $apiKey = ApiKey::validateBearer($token);
+
+        if (!$apiKey) {
             return $this->unauthorized('Invalid API key');
         }
-        
+
         // Check if user is active
-        if (!$customer->user || !$customer->user->is_active) {
+        if (!$apiKey->user || !$apiKey->user->is_active) {
             return $this->unauthorized('Account is inactive');
         }
-        
+
         // Check IP whitelist
-        if (!$customer->isIpAllowed($request->ip())) {
+        if (!$apiKey->isIpAllowed($request->ip())) {
             return $this->unauthorized('IP address not allowed');
         }
-        
-        // Check rate limiting (simple implementation)
-        $recentRequests = ApiLog::where('user_id', $customer->user_id)
+
+        // Check rate limiting
+        $recentRequests = ApiLog::where('user_id', $apiKey->user_id)
             ->where('direction', 'inbound')
             ->where('created_at', '>=', now()->subMinute())
             ->count();
-            
-        if ($recentRequests >= $customer->rate_limit) {
+
+        if ($recentRequests >= ($apiKey->rate_limit ?? 100)) {
             return response()->json([
                 'success' => false,
                 'error' => 'Rate limit exceeded',
                 'error_code' => 'RATE_LIMIT_EXCEEDED',
             ], 429);
         }
-        
+
         // Log the API request
         ApiLog::create([
-            'user_id' => $customer->user_id,
+            'user_id' => $apiKey->user_id,
             'direction' => 'inbound',
             'endpoint' => $request->path(),
             'method' => $request->method(),
@@ -70,11 +70,14 @@ class ApiAuthentication
             'request_body' => $request->all(),
             'ip_address' => $request->ip(),
         ]);
-        
+
+        // Mark API key as used
+        $apiKey->markAsUsed();
+
         // Set the authenticated user
-        auth()->setUser($customer->user);
-        $request->merge(['api_customer' => $customer]);
-        
+        auth()->guard('web')->setUser($apiKey->user);
+        $request->merge(['api_key' => $apiKey]);
+
         return $next($request);
     }
     

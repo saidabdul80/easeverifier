@@ -1,17 +1,27 @@
 <script setup lang="ts">
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, useForm, usePage } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
-import { ref, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 
 defineProps<{
     user: { name: string; email: string };
     wallet?: any;
 }>();
 
+const page = usePage();
 const form = useForm({ amount: 0 });
 const selectedAmount = ref<number | null>(null);
+const successMessage = ref<string | null>(null);
+const errorMessage = ref<string | null>(null);
 
 const quickAmounts = [1000, 2000, 5000, 10000, 20000, 50000];
+
+onMounted(() => {
+    // Check for flash messages
+    const flash = page.props.flash as any;
+    if (flash?.success) successMessage.value = flash.success;
+    if (flash?.error) errorMessage.value = flash.error;
+});
 
 const selectAmount = (amount: number) => {
     selectedAmount.value = amount;
@@ -21,7 +31,7 @@ const selectAmount = (amount: number) => {
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 
 const submit = () => {
-    form.post('/customer/wallet/fund');
+    form.post('/customer/payment/initialize');
 };
 </script>
 

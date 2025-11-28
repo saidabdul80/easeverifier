@@ -25,6 +25,7 @@ class ServiceProvider extends Model
         'timeout',
         'priority',
         'is_active',
+        'environment',
     ];
 
     protected function casts(): array
@@ -38,6 +39,30 @@ class ServiceProvider extends Model
             'priority' => 'integer',
             'is_active' => 'boolean',
         ];
+    }
+
+    /**
+     * Scope for test environment providers.
+     */
+    public function scopeTest($query)
+    {
+        return $query->where('environment', 'test');
+    }
+
+    /**
+     * Scope for live environment providers.
+     */
+    public function scopeLive($query)
+    {
+        return $query->where('environment', 'live');
+    }
+
+    /**
+     * Scope for specific environment.
+     */
+    public function scopeEnvironment($query, string $environment)
+    {
+        return $query->where('environment', $environment);
     }
 
     /**
@@ -79,8 +104,11 @@ class ServiceProvider extends Model
 
             case 'api_key_header':
                 $headerName = $this->auth_config['header_name'] ?? 'X-API-Key';
-                $apiKey = $this->auth_config['api_key'] ?? '';
-                $headers[$headerName] = $apiKey;
+                // Support both 'header_value' (from form) and 'api_key' (legacy)
+                $apiKey = $this->auth_config['header_value'] ?? $this->auth_config['api_key'] ?? '';
+                if (!empty($apiKey)) {
+                    $headers[$headerName] = $apiKey;
+                }
                 break;
 
             case 'basic':
@@ -117,7 +145,8 @@ class ServiceProvider extends Model
         // Add API key to body if auth type requires it
         if ($this->auth_type === 'api_key_body') {
             $keyName = $this->auth_config['key_name'] ?? 'api_key';
-            $body[$keyName] = $this->auth_config['api_key'] ?? '';
+            // Support both 'key_value' (from form) and 'api_key' (legacy)
+            $body[$keyName] = $this->auth_config['key_value'] ?? $this->auth_config['api_key'] ?? '';
         }
 
         return $body;

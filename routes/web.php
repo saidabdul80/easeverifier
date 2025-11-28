@@ -17,6 +17,7 @@ use App\Http\Controllers\Customer\DashboardController as CustomerDashboardContro
 use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
 use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
 use App\Http\Controllers\Customer\ApiKeyController;
+use App\Http\Controllers\Customer\PaymentController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -105,8 +106,11 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     // Wallet
     Route::get('wallet', [CustomerWalletController::class, 'index'])->name('wallet.index');
     Route::get('wallet/fund', [CustomerWalletController::class, 'fund'])->name('wallet.fund');
-    Route::post('wallet/fund', [CustomerWalletController::class, 'processFunding'])->name('wallet.process-funding');
     Route::get('wallet/transactions/{transaction}', [CustomerWalletController::class, 'showTransaction'])->name('wallet.transaction');
+
+    // Payments (Paystack)
+    Route::post('payment/initialize', [PaymentController::class, 'initialize'])->name('payment.initialize');
+    Route::get('payment/callback', [PaymentController::class, 'callback'])->name('payment.callback');
 
     // API Keys
     Route::get('api', [ApiKeyController::class, 'index'])->name('api.index');
@@ -117,5 +121,8 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::post('api/webhook', [ApiKeyController::class, 'updateWebhook'])->name('api.webhook');
     Route::get('api/documentation', [ApiKeyController::class, 'documentation'])->name('api.documentation');
 });
+
+// Paystack Webhook (no auth required)
+Route::post('webhook/paystack', [PaymentController::class, 'webhook'])->name('webhook.paystack');
 
 require __DIR__.'/settings.php';

@@ -2,16 +2,33 @@
 
 namespace App\Services\Verification;
 
+use App\Models\ApiKey;
 use App\Models\ApiLog;
 use App\Models\ServiceProvider;
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Arr;
 
 class VerificationEngine
 {
+    protected ?string $apiKeyEnvironment = null;
+    protected bool $isTestMode = false;
+
+    /**
+     * Set the API key environment (test/live).
+     */
+    public function setEnvironment(?ApiKey $apiKey): self
+    {
+        if ($apiKey) {
+            $this->apiKeyEnvironment = $apiKey->environment;
+            $this->isTestMode = $apiKey->environment === 'test';
+        }
+        return $this;
+    }
+
     /**
      * Perform a verification request.
      */
@@ -22,11 +39,31 @@ class VerificationEngine
         string $source = 'web',
         ?string $ipAddress = null
     ): VerificationResult {
-        // Check if user has sufficient balance
-        $price = $user->getPriceForService($service);
+        // Determine if we should charge (test mode = free if test provider available)
+        $shouldCharge = true;
+        $usedTestProvider = false;
+
+        // Get providers based on environment
+        $providers = $this->getProviders($service);
+
+        if ($providers->isEmpty()) {
+            return VerificationResult::failure('Service temporarily unavailable', 'NO_PROVIDER');
+        }
+
+        // Check if test mode and test providers exist
+        if ($this->isTestMode) {
+            $testProviders = $providers->where('environment', 'test');
+            if ($testProviders->isNotEmpty()) {
+                $shouldCharge = false;
+                $usedTestProvider = true;
+            }
+        }
+
+        // Check balance only if charging
+        $price = $shouldCharge ? $user->getPriceForService($service) : 0;
         $wallet = $user->wallet;
 
-        if (!$wallet || !$wallet->hasSufficientFunds($price)) {
+        if ($shouldCharge && (!$wallet || !$wallet->hasSufficientFunds($price))) {
             return VerificationResult::failure('Insufficient wallet balance', 'INSUFFICIENT_FUNDS');
         }
 
@@ -42,43 +79,79 @@ class VerificationEngine
             'ip_address' => $ipAddress,
         ]);
 
-        // Debit the wallet
-        $transaction = $wallet->debit(
-            $price,
-            'verification',
-            "Verification: {$service->name} - {$searchParameter}",
-            ['verification_request_id' => $verificationRequest->id]
-        );
-
-        $verificationRequest->update(['transaction_id' => $transaction->id]);
-
-        // Get active providers ordered by priority
-        $providers = $service->activeProviders()->get();
-
-        if ($providers->isEmpty()) {
-            $this->refundAndFail($verificationRequest, $wallet, $price, 'No active service providers configured');
-            return VerificationResult::failure('Service temporarily unavailable', 'NO_PROVIDER');
+        // Debit wallet only if charging
+        $transaction = null;
+        if ($shouldCharge && $price > 0) {
+            $transaction = $wallet->debit(
+                $price,
+                'verification',
+                "Verification: {$service->name} - {$searchParameter}",
+                ['verification_request_id' => $verificationRequest->id]
+            );
+            $verificationRequest->update(['transaction_id' => $transaction->id]);
         }
 
-        // Try each provider until one succeeds
-        foreach ($providers as $provider) {
+        // Try providers in order
+        $result = $this->tryProviders($providers, $searchParameter, $user, $verificationRequest, $usedTestProvider);
+
+        if ($result->isSuccessful()) {
+            return $result;
+        }
+
+        // All providers failed - refund if charged
+        if ($shouldCharge && $price > 0) {
+            $this->refundAndFail($verificationRequest, $wallet, $price, 'All providers failed');
+        } else {
+            $verificationRequest->markAsFailed('All providers failed');
+        }
+
+        return VerificationResult::failure('Verification failed. Please try again later.', 'PROVIDER_ERROR');
+    }
+
+    /**
+     * Get providers based on environment with caching.
+     */
+    protected function getProviders(VerificationService $service)
+    {
+        $cacheKey = "service_providers:{$service->id}";
+
+        return Cache::remember($cacheKey, 60, function () use ($service) {
+            return $service->activeProviders()->orderBy('priority')->get();
+        });
+    }
+
+    /**
+     * Try providers in the correct order based on environment.
+     */
+    protected function tryProviders($providers, string $searchParameter, User $user, VerificationRequest $verificationRequest, bool $tryTestFirst): VerificationResult
+    {
+        // Sort providers: test first if in test mode, otherwise live first
+        $sortedProviders = $providers->sortBy(function ($provider) use ($tryTestFirst) {
+            $envPriority = ($tryTestFirst && $provider->environment === 'test') ? 0 :
+                          (!$tryTestFirst && $provider->environment === 'live' ? 0 : 1);
+            return [$envPriority, $provider->priority];
+        });
+
+        foreach ($sortedProviders as $provider) {
             $result = $this->callProvider($provider, $searchParameter, $user, $verificationRequest);
 
             if ($result->isSuccessful()) {
+                $isSandbox = $provider->environment === 'test';
+                $data = $result->getData();
+                $data['_sandbox'] = $isSandbox;
+
                 $verificationRequest->update([
                     'service_provider_id' => $provider->id,
-                    'response_data' => $result->getData(),
+                    'response_data' => $data,
                     'status' => 'completed',
                     'completed_at' => now(),
                 ]);
 
-                return $result;
+                return VerificationResult::success($data, $result->responseTime, $provider->id);
             }
         }
 
-        // All providers failed - refund the user
-        $this->refundAndFail($verificationRequest, $wallet, $price, 'All providers failed');
-        return VerificationResult::failure('Verification failed. Please try again later.', 'PROVIDER_ERROR');
+        return VerificationResult::failure('All providers failed', 'PROVIDER_ERROR');
     }
 
     /**
@@ -92,6 +165,11 @@ class VerificationEngine
     ): VerificationResult {
         $startTime = microtime(true);
 
+        // For test providers, return mock data immediately (faster response)
+        if ($provider->environment === 'test') {
+            return $this->getMockResponse($provider, $searchParameter, $verificationRequest);
+        }
+
         try {
             $headers = array_merge(
                 $provider->request_headers ?? [],
@@ -101,7 +179,7 @@ class VerificationEngine
             $body = $provider->buildRequestBody($searchParameter);
             $url = $provider->full_url;
 
-            // Log outbound request
+            // Log outbound request (async would be better for production)
             $apiLog = ApiLog::create([
                 'user_id' => $user->id,
                 'verification_request_id' => $verificationRequest->id,
@@ -113,8 +191,9 @@ class VerificationEngine
                 'ip_address' => request()->ip(),
             ]);
 
-            // Make the HTTP request
+            // Make the HTTP request with optimized settings
             $response = Http::timeout($provider->timeout)
+                ->connectTimeout(5) // Fast connection timeout
                 ->withHeaders($headers)
                 ->send($provider->http_method, $url, ['json' => $body]);
 
@@ -141,6 +220,51 @@ class VerificationEngine
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
             return VerificationResult::failure($e->getMessage(), 'EXCEPTION', $responseTime);
         }
+    }
+
+    /**
+     * Generate mock response for test providers (instant response).
+     */
+    protected function getMockResponse(ServiceProvider $provider, string $searchParameter, VerificationRequest $_verificationRequest): VerificationResult
+    {
+        $service = $provider->verificationService;
+
+        $mockData = match ($service->slug) {
+            'nin' => [
+                'first_name' => 'John',
+                'last_name' => 'Doe',
+                'middle_name' => 'Smith',
+                'date_of_birth' => '1990-05-15',
+                'gender' => 'Male',
+                'phone' => '08012345678',
+                'nin' => $searchParameter,
+                'photo' => 'https://ui-avatars.com/api/?name=John+Doe&size=200',
+            ],
+            'bvn' => [
+                'first_name' => 'John',
+                'last_name' => 'Doe',
+                'middle_name' => 'Smith',
+                'date_of_birth' => '1990-05-15',
+                'phone' => '08012345678',
+                'bvn' => $searchParameter,
+                'bank_name' => 'Test Bank',
+            ],
+            'cac' => [
+                'company_name' => 'Test Company Limited',
+                'rc_number' => $searchParameter,
+                'registration_date' => '2015-03-20',
+                'company_type' => 'Private Limited Company',
+                'address' => '123 Business Street, Lagos',
+                'status' => 'Active',
+            ],
+            default => [
+                'verified' => true,
+                'id' => $searchParameter,
+                'message' => 'Verification successful',
+            ],
+        };
+
+        return VerificationResult::success($mockData, 50, $provider->id); // 50ms mock response time
     }
 
     /**

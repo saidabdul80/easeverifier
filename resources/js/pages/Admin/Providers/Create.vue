@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, useForm, router } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { computed, watch } from 'vue';
 
@@ -27,7 +27,13 @@ const form = useForm({
     timeout: 30,
     priority: 1,
     is_active: true,
+    environment: 'live',
 });
+
+const environments = [
+    { value: 'live', label: 'Live (Production)', color: 'success' },
+    { value: 'test', label: 'Test (Sandbox)', color: 'warning' },
+];
 
 // Dynamic auth config fields based on auth_type
 const authConfigFields = computed(() => {
@@ -78,13 +84,12 @@ const transformArrayToObject = (arr: { key: string; value: string }[]) => {
 };
 
 const submit = () => {
-    const data = {
-        ...form.data(),
-        request_headers: transformArrayToObject(form.request_headers),
-        request_body_template: transformArrayToObject(form.request_body_template),
-        response_mapping: transformArrayToObject(form.response_mapping),
-    };
-    router.post(`/admin/services/${props.service.id}/providers`, data);
+    form.transform((data) => ({
+        ...data,
+        request_headers: transformArrayToObject(data.request_headers),
+        request_body_template: transformArrayToObject(data.request_body_template),
+        response_mapping: transformArrayToObject(data.response_mapping),
+    })).post(`/admin/services/${props.service.id}/providers`);
 };
 </script>
 
@@ -112,6 +117,18 @@ const submit = () => {
                                 <v-col cols="6"><v-text-field v-model.number="form.timeout" label="Timeout (seconds)" type="number" variant="outlined" /></v-col>
                                 <v-col cols="6"><v-text-field v-model.number="form.priority" label="Priority" type="number" variant="outlined" hint="Lower = higher priority" /></v-col>
                             </v-row>
+                            <v-select v-model="form.environment" :items="environments" item-title="label" item-value="value" label="Environment *" variant="outlined" class="mb-4">
+                                <template #item="{ item, props }">
+                                    <v-list-item v-bind="props">
+                                        <template #prepend>
+                                            <v-icon :color="item.raw.color">{{ item.raw.value === 'live' ? 'mdi-rocket-launch' : 'mdi-flask' }}</v-icon>
+                                        </template>
+                                    </v-list-item>
+                                </template>
+                            </v-select>
+                            <v-alert v-if="form.environment === 'test'" type="warning" variant="tonal" density="compact" class="mb-4">
+                                <strong>Test Mode:</strong> API calls to this provider will return mock data and won't charge customers using test API keys.
+                            </v-alert>
                             <v-switch v-model="form.is_active" label="Active" color="primary" />
                         </v-card-text>
                     </v-card>

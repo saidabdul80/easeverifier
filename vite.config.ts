@@ -24,4 +24,10 @@ export default defineConfig({
             },
         }),
     ],
+    server: {
+        fs: {
+            // Allow serving files from node_modules (for MDI fonts)
+            allow: ['..'],
+        },
+    },
 });

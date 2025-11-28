@@ -52,7 +52,20 @@ class VerificationController extends Controller
         ]);
 
         if (!$service->is_active) {
-            return back()->with('error', 'This service is not available.');
+            return back()->withErrors(['search_parameter' => 'This service is not available.']);
+        }
+
+        // Check if user has sufficient balance
+        $price = $request->user()->getPriceForService($service);
+        $walletBalance = $request->user()->wallet?->total_balance ?? 0;
+
+        if ($walletBalance < $price) {
+            return back()->withErrors(['search_parameter' => 'Insufficient wallet balance. Please fund your wallet.']);
+        }
+
+        // Check if providers exist
+        if ($service->activeProviders()->count() === 0) {
+            return back()->withErrors(['search_parameter' => 'No service providers configured. Please contact support.']);
         }
 
         $result = $this->verificationEngine->verify(
@@ -71,7 +84,7 @@ class VerificationController extends Controller
             ]);
         }
 
-        return back()->with('error', $result->getErrorMessage());
+        return back()->withErrors(['search_parameter' => $result->getErrorMessage() ?? 'Verification failed. Please try again.']);
     }
 
     public function history(Request $request)

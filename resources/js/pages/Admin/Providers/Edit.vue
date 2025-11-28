@@ -34,7 +34,13 @@ const form = useForm({
     timeout: props.provider.timeout,
     priority: props.provider.priority,
     is_active: props.provider.is_active,
+    environment: props.provider.environment || 'live',
 });
+
+const environments = [
+    { value: 'live', label: 'Live (Production)', color: 'success' },
+    { value: 'test', label: 'Test (Sandbox)', color: 'warning' },
+];
 
 // Dynamic auth config fields based on auth_type
 const authConfigFields = computed(() => {
@@ -124,6 +130,18 @@ const deleteProvider = () => {
                                 <v-col cols="6"><v-text-field v-model.number="form.timeout" label="Timeout (seconds)" type="number" variant="outlined" /></v-col>
                                 <v-col cols="6"><v-text-field v-model.number="form.priority" label="Priority" type="number" variant="outlined" hint="Lower = higher priority" /></v-col>
                             </v-row>
+                            <v-select v-model="form.environment" :items="environments" item-title="label" item-value="value" label="Environment *" variant="outlined" class="mb-4">
+                                <template #item="{ item, props }">
+                                    <v-list-item v-bind="props">
+                                        <template #prepend>
+                                            <v-icon :color="item.raw.color">{{ item.raw.value === 'live' ? 'mdi-rocket-launch' : 'mdi-flask' }}</v-icon>
+                                        </template>
+                                    </v-list-item>
+                                </template>
+                            </v-select>
+                            <v-alert v-if="form.environment === 'test'" type="warning" variant="tonal" density="compact" class="mb-4">
+                                <strong>Test Mode:</strong> API calls to this provider will return mock data and won't charge customers using test API keys.
+                            </v-alert>
                             <v-switch v-model="form.is_active" label="Active" color="primary" />
                         </v-card-text>
                     </v-card>

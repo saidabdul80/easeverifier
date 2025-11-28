@@ -1,0 +1,43 @@
+### Get Services List
+GET http://localhost:8000/api/v1/services
+Authorization: Bearer YOUR_BEARER_TOKEN_HERE
+Content-Type: application/json
+
+###
+
+### Verify NIN
+POST http://localhost:8000/api/v1/verify/nin
+Authorization: Bearer YOUR_BEARER_TOKEN_HERE
+Content-Type: application/json
+
+{
+    "id": "12345678901",
+    "consent": true
+}
+
+###
+
+### Verify BVN
+POST http://localhost:8000/api/v1/verify/bvn
+Authorization: Bearer YOUR_BEARER_TOKEN_HERE
+Content-Type: application/json
+
+{
+    "id": "22345678901",
+    "consent": true
+}
+
+###
+
+### Get Wallet Balance
+GET http://localhost:8000/api/v1/wallet/balance
+Authorization: Bearer YOUR_BEARER_TOKEN_HERE
+Content-Type: application/json
+
+###
+
+### Get Verification History
+GET http://localhost:8000/api/v1/verifications
+Authorization: Bearer YOUR_BEARER_TOKEN_HERE
+Content-Type: application/json
+

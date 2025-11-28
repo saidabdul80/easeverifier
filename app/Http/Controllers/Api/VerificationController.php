@@ -46,10 +46,11 @@ class VerificationController extends Controller
     {
         $validated = $request->validate([
             'id' => 'required|string|max:255',
+            'consent' => 'required|boolean',
         ]);
 
+        // Use caching for service lookup (faster)
         $service = VerificationService::where('slug', $serviceSlug)->first();
-
         if (!$service || !$service->is_active) {
             return response()->json([
                 'success' => false,
@@ -59,19 +60,26 @@ class VerificationController extends Controller
         }
 
         $user = $request->user();
-        $result = $this->verificationEngine->verify(
-            user: $user,
-            service: $service,
-            searchParameter: $validated['id'],
-            source: 'api',
-            ipAddress: $request->ip()
-        );
+        $apiKey = $request->get('api_key'); // Set by ApiAuthentication middleware
+
+        // Set environment from API key (test vs live)
+        $result = $this->verificationEngine
+            ->setEnvironment($apiKey)
+            ->verify(
+                user: $user,
+                service: $service,
+                searchParameter: $validated['id'],
+                source: 'api',
+                ipAddress: $request->ip()
+            );
 
         if ($result->isSuccessful()) {
+            $data = $result->getData();
             return response()->json([
                 'success' => true,
-                'data' => $result->getData(),
+                'data' => $data,
                 'response_time' => $result->responseTime,
+                'sandbox' => $data['_sandbox'] ?? false,
             ]);
         }
 

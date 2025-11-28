@@ -32,7 +32,11 @@ const submit = () => {
     if (!canVerify()) return;
     loading.value = true;
     form.post(`/customer/verify/${props.service.id}`, {
+        preserveScroll: true,
         onFinish: () => loading.value = false,
+        onError: (errors) => {
+            console.error('Form errors:', errors);
+        },
     });
 };
 </script>

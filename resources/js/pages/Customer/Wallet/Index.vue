@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 
 const props = defineProps<{
     user: { name: string; email: string };
@@ -10,6 +10,9 @@ const props = defineProps<{
     stats?: { balance: number; bonus_balance: number; total_balance: number; total_funded: number; total_spent: number };
     filters?: { type?: string; category?: string; date_from?: string; date_to?: string };
 }>();
+
+const page = usePage();
+const flash = computed(() => page.props.flash as { success?: string; error?: string } | undefined);
 
 const filterType = ref(props.filters?.type || '');
 const filterCategory = ref(props.filters?.category || '');
@@ -33,6 +36,14 @@ const headers = [
 <template>
     <Head title="Wallet - EaseVerifier" />
     <CustomerLayout :user="$page.props.auth.user" :wallet="$page.props.auth.wallet">
+        <!-- Flash Messages -->
+        <v-alert v-if="flash?.success" type="success" variant="tonal" closable class="mb-4">
+            {{ flash.success }}
+        </v-alert>
+        <v-alert v-if="flash?.error" type="error" variant="tonal" closable class="mb-4">
+            {{ flash.error }}
+        </v-alert>
+
         <div class="d-flex align-center mb-6">
             <div>
                 <h1 class="text-h4 font-weight-bold mb-1">My Wallet</h1>
