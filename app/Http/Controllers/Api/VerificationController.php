@@ -8,6 +8,7 @@ use App\Models\VerificationService;
 use App\Services\Verification\VerificationEngine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class VerificationController extends Controller
 {
@@ -45,7 +46,7 @@ class VerificationController extends Controller
     protected function performVerification(Request $request, string $serviceSlug): JsonResponse
     {
         $validated = $request->validate([
-            'id' => 'required|string|max:255',
+            'nin' => 'required|string|max:255',
             'consent' => 'required|boolean',
         ]);
 
@@ -68,7 +69,7 @@ class VerificationController extends Controller
             ->verify(
                 user: $user,
                 service: $service,
-                searchParameter: $validated['id'],
+                searchParameter: $validated['nin'],
                 source: 'api',
                 ipAddress: $request->ip()
             );
@@ -77,8 +78,10 @@ class VerificationController extends Controller
             $data = $result->getData();
             return response()->json([
                 'success' => true,
+                'status'=>200,
                 'data' => $data,
                 'response_time' => $result->responseTime,
+                'message'=>'NIN Verified Successfully',
                 'sandbox' => $data['_sandbox'] ?? false,
             ]);
         }

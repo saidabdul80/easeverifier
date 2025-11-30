@@ -21,7 +21,7 @@ const copyCode = async (code: string) => {
     setTimeout(() => copied.value = false, 2000);
 };
 
-const sampleRequest = `curl -X POST https://api.easeverifier.com/v1/nin/verify \\
+const sampleRequest = `curl -X POST https://api.easeverifier.com/api/v1/verify/nin \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"nin": "12345678901"}'`;

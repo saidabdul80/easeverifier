@@ -19,6 +19,7 @@ class VerificationService extends Model
         'cost_price',
         'is_active',
         'sort_order',
+        
     ];
 
     protected function casts(): array

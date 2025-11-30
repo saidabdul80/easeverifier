@@ -41,6 +41,7 @@ class ProviderController extends Controller
             'timeout' => 'integer|min:5|max:120',
             'priority' => 'integer|min:1',
             'is_active' => 'boolean',
+            'environment' => 'required|in:live,test',
         ]);
 
         $validated['verification_service_id'] = $service->id;
@@ -85,6 +86,7 @@ class ProviderController extends Controller
             'timeout' => 'integer|min:5|max:120',
             'priority' => 'integer|min:1',
             'is_active' => 'boolean',
+            'environment' => 'required|in:live,test',
         ]);
 
         $provider->update($validated);

@@ -11,6 +11,7 @@ use App\Models\VerificationService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 
 class VerificationEngine
 {
@@ -52,8 +53,8 @@ class VerificationEngine
 
         // Check if test mode and test providers exist
         if ($this->isTestMode) {
-            $testProviders = $providers->where('environment', 'test');
-            if ($testProviders->isNotEmpty()) {
+            $providers = $providers->where('environment', 'test');
+            if ($providers->isNotEmpty()) {
                 $shouldCharge = false;
                 $usedTestProvider = true;
             }
@@ -104,8 +105,7 @@ class VerificationEngine
         } else {
             $verificationRequest->markAsFailed('All providers failed');
         }
-
-        return VerificationResult::failure('Verification failed. Please try again later.', 'PROVIDER_ERROR');
+        return  $result;//VerificationResult::failure('Verification failed. Please try again later.', 'PROVIDER_ERROR');
     }
 
     /**
@@ -146,11 +146,14 @@ class VerificationEngine
                     'status' => 'completed',
                     'completed_at' => now(),
                 ]);
-
+                //Log::info('Verification successful: ' , [$result]);
                 return VerificationResult::success($data, $result->responseTime, $provider->id);
             }
         }
 
+        if($result){
+            return $result;
+        }
         return VerificationResult::failure('All providers failed', 'PROVIDER_ERROR');
     }
 
@@ -165,10 +168,7 @@ class VerificationEngine
     ): VerificationResult {
         $startTime = microtime(true);
 
-        // For test providers, return mock data immediately (faster response)
-        if ($provider->environment === 'test') {
-            return $this->getMockResponse($provider, $searchParameter, $verificationRequest);
-        }
+   
 
         try {
             $headers = array_merge(
@@ -196,7 +196,6 @@ class VerificationEngine
                 ->connectTimeout(5) // Fast connection timeout
                 ->withHeaders($headers)
                 ->send($provider->http_method, $url, ['json' => $body]);
-
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
 
             // Update API log with response
@@ -206,17 +205,25 @@ class VerificationEngine
                 'response_time' => $responseTime,
             ]);
 
+             Log::info('Response received: ' , [$response->json()]);
             if ($response->successful()) {
+                $datajson = $response->json();
+                 if(isset($datajson['response_code']) && $datajson['response_code'] == '00'){
+                    $datajson = ["data"=>$datajson];
+                    $mappedData = $this->mapResponse($datajson, $provider->response_mapping ?? []);
+                    return VerificationResult::success($mappedData, $responseTime, $provider->id);
+                }
                 $mappedData = $this->mapResponse($response->json(), $provider->response_mapping ?? []);
                 return VerificationResult::success($mappedData, $responseTime, $provider->id);
             }
-
+            $message = $response->json()['message'] ?? 'Unknown error';
             return VerificationResult::failure(
-                'Provider returned error: ' . ($response->json()['message'] ?? 'Unknown error'),
+                'Provider returned error: ' . (is_array($message) ? json_encode($message) : $message),
                 'PROVIDER_ERROR',
                 $responseTime
             );
         } catch (\Exception $e) {
+            Log::error($e);
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
             return VerificationResult::failure($e->getMessage(), 'EXCEPTION', $responseTime);
         }
