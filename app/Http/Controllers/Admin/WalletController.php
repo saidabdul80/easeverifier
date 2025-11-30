@@ -39,7 +39,7 @@ class WalletController extends Controller
         $validated = $request->validate([
             'amount' => 'required|numeric|min:1',
             'description' => 'required|string|max:255',
-            'is_bonus' => 'boolean',
+            'is_bonus' => 'nullable',
         ]);
 
         $wallet = $customer->wallet;
@@ -48,7 +48,7 @@ class WalletController extends Controller
             return back()->with('error', 'Customer does not have a wallet.');
         }
 
-        if ($validated['is_bonus'] ?? false) {
+        if ($validated['is_bonus']=='true') {
             $wallet->update([
                 'bonus_balance' => $wallet->bonus_balance + $validated['amount']
             ]);
