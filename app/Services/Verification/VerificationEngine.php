@@ -47,22 +47,36 @@ class VerificationEngine
         // Get providers based on environment
         $providers = $this->getProviders($service);
 
+        Log::info('VerificationEngine::verify', [
+            'source' => $source,
+            'isTestMode' => $this->isTestMode,
+            'apiKeyEnvironment' => $this->apiKeyEnvironment,
+            'providersCount' => $providers->count(),
+        ]);
+
         if ($providers->isEmpty()) {
             return VerificationResult::failure('Service temporarily unavailable', 'NO_PROVIDER');
         }
 
         // Check if test mode and test providers exist
-        if ($this->isTestMode) {
-            $providers = $providers->where('environment', 'test');
-            if ($providers->isNotEmpty()) {
-                $shouldCharge = false;
-                $usedTestProvider = true;
-            }
-        }
+        // if ($this->isTestMode) {
+        //     $testProviders = $providers->where('environment', 'test');
+        //     if ($testProviders->isNotEmpty()) {
+        //         $providers = $testProviders;
+        //         $shouldCharge = false;
+        //         $usedTestProvider = true;
+        //     }
+        // }
 
         // Check balance only if charging
         $price = $shouldCharge ? $user->getPriceForService($service) : 0;
         $wallet = $user->wallet;
+
+        // Log::info('VerificationEngine::verify charging', [
+        //     'shouldCharge' => $shouldCharge,
+        //     'price' => $price,
+        //     'walletBalance' => $wallet?->balance,
+        // ]);
 
         if ($shouldCharge && (!$wallet || !$wallet->hasSufficientFunds($price))) {
             return VerificationResult::failure('Insufficient wallet balance', 'INSUFFICIENT_FUNDS');
@@ -82,7 +96,7 @@ class VerificationEngine
 
         // Debit wallet only if charging
         $transaction = null;
-        if ($shouldCharge && $price > 0) {
+        //if ($shouldCharge && $price > 0) {
             $transaction = $wallet->debit(
                 $price,
                 'verification',
@@ -90,7 +104,7 @@ class VerificationEngine
                 ['verification_request_id' => $verificationRequest->id]
             );
             $verificationRequest->update(['transaction_id' => $transaction->id]);
-        }
+       // }
 
         // Try providers in order
         $result = $this->tryProviders($providers, $searchParameter, $user, $verificationRequest, $usedTestProvider);
@@ -100,11 +114,11 @@ class VerificationEngine
         }
 
         // All providers failed - refund if charged
-        if ($shouldCharge && $price > 0) {
+        //if ($shouldCharge && $price > 0) {
             $this->refundAndFail($verificationRequest, $wallet, $price, 'All providers failed');
-        } else {
+       // } else {
             $verificationRequest->markAsFailed('All providers failed');
-        }
+        //}
         return  $result;//VerificationResult::failure('Verification failed. Please try again later.', 'PROVIDER_ERROR');
     }
 
