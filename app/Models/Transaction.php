@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class Transaction extends Model
@@ -57,6 +58,14 @@ class Transaction extends Model
     public function wallet(): BelongsTo
     {
         return $this->belongsTo(Wallet::class);
+    }
+
+    /**
+     * Get the verification request associated with this transaction.
+     */
+    public function verificationRequest(): HasOne
+    {
+        return $this->hasOne(VerificationRequest::class);
     }
 
     /**
