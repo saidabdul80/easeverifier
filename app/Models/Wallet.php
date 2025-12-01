@@ -67,11 +67,15 @@ class Wallet extends Model
     public function credit(float $amount, string $category, string $description, array $metadata = []): Transaction
     {
         return DB::transaction(function () use ($amount, $category, $description, $metadata) {
-            $this->lockForUpdate();
+            // Refresh and lock to get latest balance from DB
+            $wallet = static::where('id', $this->id)->lockForUpdate()->first();
 
-            $balanceBefore = $this->balance;
-            $this->balance += $amount;
-            $this->save();
+            $balanceBefore = $wallet->balance;
+            $wallet->balance += $amount;
+            $wallet->save();
+
+            // Update this instance to reflect the new balance
+            $this->balance = $wallet->balance;
 
             return $this->transactions()->create([
                 'user_id' => $this->user_id,
@@ -80,7 +84,7 @@ class Wallet extends Model
                 'category' => $category,
                 'amount' => $amount,
                 'balance_before' => $balanceBefore,
-                'balance_after' => $this->balance,
+                'balance_after' => $wallet->balance,
                 'description' => $description,
                 'metadata' => $metadata,
                 'status' => 'completed',
@@ -94,29 +98,33 @@ class Wallet extends Model
     public function debit(float $amount, string $category, string $description, array $metadata = []): Transaction
     {
         return DB::transaction(function () use ($amount, $category, $description, $metadata) {
-            $this->lockForUpdate();
+            // Refresh and lock to get latest balance from DB
+            $wallet = static::where('id', $this->id)->lockForUpdate()->first();
 
             // Store original amount for transaction record
             $originalAmount = $amount;
 
-            if (!$this->hasSufficientFunds($amount)) {
+            if (!$wallet->hasSufficientFunds($amount)) {
                 throw new \Exception('Insufficient funds');
             }
 
-            $balanceBefore = $this->balance;
-            $bonusBalanceBefore = $this->bonus_balance;
+            $balanceBefore = $wallet->balance;
 
             // First deduct from bonus balance if available
             $bonusDeduction = 0;
-            if ($this->bonus_balance > 0) {
-                $bonusDeduction = min($this->bonus_balance, $amount);
-                $this->bonus_balance -= $bonusDeduction;
+            if ($wallet->bonus_balance > 0) {
+                $bonusDeduction = min($wallet->bonus_balance, $amount);
+                $wallet->bonus_balance -= $bonusDeduction;
                 $amount -= $bonusDeduction;
             }
 
             // Then deduct remaining from main balance
-            $this->balance -= $amount;
-            $this->save();
+            $wallet->balance -= $amount;
+            $wallet->save();
+
+            // Update this instance to reflect the new balance
+            $this->balance = $wallet->balance;
+            $this->bonus_balance = $wallet->bonus_balance;
 
             return $this->transactions()->create([
                 'user_id' => $this->user_id,
@@ -125,7 +133,7 @@ class Wallet extends Model
                 'category' => $category,
                 'amount' => $originalAmount,
                 'balance_before' => $balanceBefore,
-                'balance_after' => $this->balance,
+                'balance_after' => $wallet->balance,
                 'description' => $description,
                 'metadata' => array_merge($metadata, [
                     'bonus_deducted' => $bonusDeduction,
