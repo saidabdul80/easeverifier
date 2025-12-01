@@ -28,9 +28,9 @@ class TransactionController extends Controller
             ->withQueryString();
 
         $stats = [
-            'total_credits' => Transaction::where('type', 'credit')->sum('amount'),
+            'total_credits' => Transaction::where('type', 'credit')->where('category','!=', 'refund')->sum('amount'),
             'total_debits' => Transaction::where('type', 'debit')->sum('amount'),
-            'today_credits' => Transaction::where('type', 'credit')->whereDate('created_at', today())->sum('amount'),
+            'today_credits' => Transaction::where('type', 'credit')->where('category','!=', 'refund')->whereDate('created_at', today())->sum('amount'),
             'today_debits' => Transaction::where('type', 'debit')->whereDate('created_at', today())->sum('amount'),
         ];
 

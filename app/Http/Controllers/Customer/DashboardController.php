@@ -45,13 +45,16 @@ class DashboardController extends Controller
             ->where('status', 'completed')
             ->sum('amount_charged');
 
+        // Pending includes both 'pending' and 'processing' statuses
+        $pendingCount = ($verificationsByStatus['pending'] ?? 0) + ($verificationsByStatus['processing'] ?? 0);
+
         $stats = [
             'wallet_balance' => $wallet?->balance ?? 0,
             'bonus_balance' => $wallet?->bonus_balance ?? 0,
             'total_verifications' => $user->verificationRequests()->count(),
             'successful_verifications' => $verificationsByStatus['completed'] ?? 0,
             'failed_verifications' => $verificationsByStatus['failed'] ?? 0,
-            'pending_verifications' => $verificationsByStatus['pending'] ?? 0,
+            'pending_verifications' => $pendingCount,
             'this_month_verifications' => array_sum($thisMonthByStatus),
             'this_month_completed' => $thisMonthByStatus['completed'] ?? 0,
             'this_month_failed' => $thisMonthByStatus['failed'] ?? 0,
@@ -64,7 +67,7 @@ class DashboardController extends Controller
             'all' => $user->verificationRequests()->count(),
             'completed' => $verificationsByStatus['completed'] ?? 0,
             'failed' => $verificationsByStatus['failed'] ?? 0,
-            'pending' => $verificationsByStatus['pending'] ?? 0,
+            'pending' => $pendingCount,
         ];
 
         $recentVerifications = $user->verificationRequests()

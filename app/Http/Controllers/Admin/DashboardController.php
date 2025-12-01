@@ -34,6 +34,7 @@ class DashboardController extends Controller
             'total_verifications' => VerificationRequest::count(),
             'successful_verifications' => VerificationRequest::where('status', 'completed')->count(),
             'failed_verifications' => VerificationRequest::where('status', 'failed')->count(),
+            'pending_verifications' => VerificationRequest::whereIn('status', ['pending', 'processing'])->count(),
             'total_revenue' => Transaction::whereIn('id', $completedTransactionIds)
                 ->where('type', 'debit')
                 ->sum('amount'),

@@ -12,6 +12,7 @@ defineProps<{
         total_verifications: number;
         successful_verifications: number;
         failed_verifications: number;
+        pending_verifications: number;
         total_revenue: number;
         total_wallet_balance: number;
         today_verifications: number;
@@ -32,6 +33,42 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
             <p class="text-body-2 text-grey">Welcome back! Here's an overview of your platform.</p>
         </div>
 
+        <!-- Verification Counts by Status -->
+        <v-row class="mb-4">
+            <v-col cols="6" sm="3">
+                <v-card color="primary" variant="tonal">
+                    <v-card-text class="text-center py-4">
+                        <p class="text-h4 font-weight-bold mb-1">{{ stats?.total_verifications || 0 }}</p>
+                        <p class="text-caption mb-0">Total Requests</p>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+                <v-card color="success" variant="tonal">
+                    <v-card-text class="text-center py-4">
+                        <p class="text-h4 font-weight-bold mb-1">{{ stats?.successful_verifications || 0 }}</p>
+                        <p class="text-caption mb-0">Completed</p>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+                <v-card color="error" variant="tonal">
+                    <v-card-text class="text-center py-4">
+                        <p class="text-h4 font-weight-bold mb-1">{{ stats?.failed_verifications || 0 }}</p>
+                        <p class="text-caption mb-0">Failed</p>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+                <v-card color="warning" variant="tonal">
+                    <v-card-text class="text-center py-4">
+                        <p class="text-h4 font-weight-bold mb-1">{{ stats?.pending_verifications || 0 }}</p>
+                        <p class="text-caption mb-0">Pending</p>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+        </v-row>
+
         <!-- Stats Cards -->
         <v-row class="mb-6">
             <v-col cols="6" lg="3">
@@ -51,11 +88,13 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                 <v-card>
                     <v-card-text class="d-flex align-center">
                         <v-avatar color="success-lighten-5" size="48" class="mr-3">
-                            <v-icon color="success">mdi-shield-check</v-icon>
+                            <v-icon color="success">mdi-percent</v-icon>
                         </v-avatar>
                         <div>
-                            <p class="text-caption text-grey mb-0">Total Verifications</p>
-                            <p class="text-h5 font-weight-bold mb-0">{{ stats?.total_verifications || 0 }}</p>
+                            <p class="text-caption text-grey mb-0">Success Rate</p>
+                            <p class="text-h5 font-weight-bold text-success mb-0">
+                                {{ stats?.total_verifications ? Math.round((stats?.successful_verifications || 0) / stats.total_verifications * 100) : 0 }}%
+                            </p>
                         </div>
                     </v-card-text>
                 </v-card>
