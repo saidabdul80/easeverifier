@@ -15,31 +15,56 @@ class DashboardController extends Controller
         $user = $request->user();
         $wallet = $user->wallet;
 
-        // Get completed verification IDs for this month
-        $completedVerificationIds = $user->verificationRequests()
+        // Get verification counts by status
+        $verificationsByStatus = $user->verificationRequests()
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        // This month's stats
+        $thisMonthVerifications = $user->verificationRequests()
+            ->whereMonth('created_at', now()->month)
+            ->whereYear('created_at', now()->year);
+
+        $thisMonthByStatus = (clone $thisMonthVerifications)
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        // Sum spent from completed verifications only
+        $thisMonthSpent = $user->verificationRequests()
             ->where('status', 'completed')
             ->whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year)
-            ->pluck('transaction_id')
-            ->filter(); // Remove nulls
+            ->sum('amount_charged');
 
-        // Sum from transactions linked to completed verifications
-        $thisMonthSpent = $user->verificationRequests()->where('status', 'completed')
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
+        // Total spent all time (completed only)
+        $totalSpent = $user->verificationRequests()
+            ->where('status', 'completed')
             ->sum('amount_charged');
 
         $stats = [
             'wallet_balance' => $wallet?->balance ?? 0,
             'bonus_balance' => $wallet?->bonus_balance ?? 0,
             'total_verifications' => $user->verificationRequests()->count(),
-            'successful_verifications' => $user->verificationRequests()->where('status', 'completed')->count(),
-            'failed_verifications' => $user->verificationRequests()->where('status', 'failed')->count(),
-            'this_month_verifications' => $user->verificationRequests()
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->count(),
+            'successful_verifications' => $verificationsByStatus['completed'] ?? 0,
+            'failed_verifications' => $verificationsByStatus['failed'] ?? 0,
+            'pending_verifications' => $verificationsByStatus['pending'] ?? 0,
+            'this_month_verifications' => array_sum($thisMonthByStatus),
+            'this_month_completed' => $thisMonthByStatus['completed'] ?? 0,
+            'this_month_failed' => $thisMonthByStatus['failed'] ?? 0,
             'this_month_spent' => $thisMonthSpent,
+            'total_spent' => $totalSpent,
+        ];
+
+        // Verification counts by status (for display)
+        $verificationCounts = [
+            'all' => $user->verificationRequests()->count(),
+            'completed' => $verificationsByStatus['completed'] ?? 0,
+            'failed' => $verificationsByStatus['failed'] ?? 0,
+            'pending' => $verificationsByStatus['pending'] ?? 0,
         ];
 
         $recentVerifications = $user->verificationRequests()
@@ -61,6 +86,7 @@ class DashboardController extends Controller
 
         return Inertia::render('Customer/Dashboard', [
             'stats' => $stats,
+            'verificationCounts' => $verificationCounts,
             'recentVerifications' => $recentVerifications,
             'recentTransactions' => $recentTransactions,
             'services' => $services,

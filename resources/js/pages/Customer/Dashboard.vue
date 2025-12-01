@@ -3,16 +3,9 @@ import { Head, usePage } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
 import { computed } from 'vue';
 
-defineProps<{
-    stats?: {
-        wallet_balance: number;
-        bonus_balance: number;
-        total_verifications: number;
-        successful_verifications: number;
-        failed_verifications: number;
-        this_month_verifications: number;
-        this_month_spent: number;
-    };
+const props = defineProps<{
+    stats?: Record<string, any>;
+    verificationCounts?: Record<string, number>;
     recentVerifications?: any[];
     recentTransactions?: any[];
     services?: any[];
@@ -21,37 +14,60 @@ defineProps<{
 const page = usePage();
 const user = computed(() => page.props.auth?.user);
 
-const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
+const formatCurrency = (amount: any) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 </script>
 
 <template>
     <Head title="Dashboard - EaseVerifier" />
-    <CustomerLayout :user="$page.props.auth.user" :wallet="$page.props.auth.wallet">
+    <CustomerLayout :user="($page.props.auth as any)?.user" :wallet="($page.props.auth as any)?.wallet">
         <div class="mb-6">
             <h1 class="text-h4 font-weight-bold mb-1">Welcome back, {{ user?.name?.split(' ')[0] }}!</h1>
             <p class="text-body-2 text-grey">Here's your verification activity at a glance.</p>
         </div>
 
-        <!-- Stats -->
+        <!-- Verification Counts by Status -->
+        <v-row class="mb-4">
+            <v-col cols="6" sm="3">
+                <v-card color="primary" variant="tonal">
+                    <v-card-text class="text-center py-4">
+                        <p class="text-h4 font-weight-bold mb-1">{{ stats?.total_verifications || 0 }}</p>
+                        <p class="text-caption mb-0">Total Requests</p>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+                <v-card color="success" variant="tonal">
+                    <v-card-text class="text-center py-4">
+                        <p class="text-h4 font-weight-bold mb-1">{{ stats?.successful_verifications || 0 }}</p>
+                        <p class="text-caption mb-0">Completed</p>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+                <v-card color="error" variant="tonal">
+                    <v-card-text class="text-center py-4">
+                        <p class="text-h4 font-weight-bold mb-1">{{ stats?.failed_verifications || 0 }}</p>
+                        <p class="text-caption mb-0">Failed</p>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+                <v-card color="warning" variant="tonal">
+                    <v-card-text class="text-center py-4">
+                        <p class="text-h4 font-weight-bold mb-1">{{ stats?.pending_verifications || 0 }}</p>
+                        <p class="text-caption mb-0">Pending</p>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+        </v-row>
+
+        <!-- Financial Stats -->
         <v-row class="mb-6">
             <v-col cols="6" lg="3">
                 <v-card>
                     <v-card-text class="d-flex align-center">
-                        <v-avatar color="primary-lighten-5" size="48" class="mr-3">
-                            <v-icon color="primary">mdi-shield-check</v-icon>
-                        </v-avatar>
-                        <div>
-                            <p class="text-caption text-grey mb-0">Total Verifications</p>
-                            <p class="text-h5 font-weight-bold mb-0">{{ stats?.total_verifications || 0 }}</p>
-                        </div>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-            <v-col cols="6" lg="3">
-                <v-card>
-                    <v-card-text class="d-flex align-center">
                         <v-avatar color="success-lighten-5" size="48" class="mr-3">
-                            <v-icon color="success">mdi-check-circle</v-icon>
+                            <v-icon color="success">mdi-percent</v-icon>
                         </v-avatar>
                         <div>
                             <p class="text-caption text-grey mb-0">Success Rate</p>
@@ -84,6 +100,19 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                         <div>
                             <p class="text-caption text-grey mb-0">Month Spent</p>
                             <p class="text-h5 font-weight-bold mb-0">{{ formatCurrency(stats?.this_month_spent) }}</p>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" lg="3">
+                <v-card>
+                    <v-card-text class="d-flex align-center">
+                        <v-avatar color="primary-lighten-5" size="48" class="mr-3">
+                            <v-icon color="primary">mdi-wallet</v-icon>
+                        </v-avatar>
+                        <div>
+                            <p class="text-caption text-grey mb-0">Total Spent</p>
+                            <p class="text-h5 font-weight-bold mb-0">{{ formatCurrency(stats?.total_spent) }}</p>
                         </div>
                     </v-card-text>
                 </v-card>
@@ -138,4 +167,3 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
         </v-row>
     </CustomerLayout>
 </template>
-
