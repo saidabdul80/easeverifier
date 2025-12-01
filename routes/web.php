@@ -103,6 +103,7 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::post('verify/{service}', [CustomerVerificationController::class, 'verify'])->name('verification.verify');
     Route::get('history', [CustomerVerificationController::class, 'history'])->name('verification.history');
     Route::get('history/{verification}', [CustomerVerificationController::class, 'showResult'])->name('verification.result');
+    Route::get('verification/{verification}', [CustomerVerificationController::class, 'showResult'])->name('verification.show-result');
 
     // Wallet
     Route::get('wallet', [CustomerWalletController::class, 'index'])->name('wallet.index');
