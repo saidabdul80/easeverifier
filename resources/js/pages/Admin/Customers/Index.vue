@@ -1,23 +1,35 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 
 const props = defineProps<{
     user: { name: string; email: string };
-    customers?: { data: any[]; links: any; meta: any };
-    filters?: { search?: string; status?: string };
+    customers?: { data: any[]; links: any; meta: any; current_page: number; last_page: number; per_page: number; total: number };
+    filters?: { search?: string; status?: string; page?: number };
 }>();
 
 const search = ref(props.filters?.search || '');
+const currentPage = ref(props.customers?.current_page || 1);
 const creditDialog = ref(false);
 const selectedCustomer = ref<any>(null);
+
+const totalPages = computed(() => props.customers?.last_page || 1);
 
 const creditForm = useForm({ amount: 0, description: '', is_bonus: false });
 
 watch(search, (value) => {
-    router.get('/admin/customers', { search: value }, { preserveState: true, replace: true });
+    currentPage.value = 1;
+    router.get('/admin/customers', { search: value || undefined, page: 1 }, { preserveState: true, replace: true });
 });
+
+const goToPage = (page: number) => {
+    currentPage.value = page;
+    router.get('/admin/customers', {
+        search: search.value || undefined,
+        page
+    }, { preserveState: true, replace: true });
+};
 
 const openCreditDialog = (customer: any) => {
     selectedCustomer.value = customer;
@@ -58,7 +70,7 @@ const headers = [
             <v-card-text>
                 <v-text-field v-model="search" prepend-inner-icon="mdi-magnify" label="Search customers..." variant="outlined" density="compact" hide-details class="mb-4" style="max-width: 400px;" />
 
-                <v-data-table :headers="headers" :items="customers?.data || []" hover>
+                <v-data-table :headers="headers" :items="customers?.data || []" :items-per-page="-1" hover>
                     <template #item.name="{ item }">
                         <div class="d-flex align-center py-2">
                             <v-avatar color="primary" size="36" class="mr-3">{{ item.name?.charAt(0) || '?' }}</v-avatar>
@@ -85,7 +97,24 @@ const headers = [
                         <v-btn icon variant="text" size="small" :href="`/admin/customers/${item.id}/edit`"><v-icon>mdi-pencil</v-icon></v-btn>
                         <v-btn icon variant="text" size="small" color="success" @click="openCreditDialog(item)"><v-icon>mdi-wallet-plus</v-icon></v-btn>
                     </template>
+                    <template #bottom></template>
                 </v-data-table>
+
+                <!-- Server-side Pagination -->
+                <div class="d-flex align-center justify-space-between mt-4">
+                    <span class="text-caption text-grey">
+                        Showing {{ ((customers?.current_page || 1) - 1) * (customers?.per_page || 15) + 1 }}
+                        to {{ Math.min((customers?.current_page || 1) * (customers?.per_page || 15), customers?.total || 0) }}
+                        of {{ customers?.total || 0 }} results
+                    </span>
+                    <v-pagination
+                        v-model="currentPage"
+                        :length="totalPages"
+                        :total-visible="7"
+                        density="comfortable"
+                        @update:model-value="goToPage"
+                    />
+                </div>
             </v-card-text>
         </v-card>
 

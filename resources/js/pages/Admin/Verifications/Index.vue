@@ -1,23 +1,36 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 
 const props = defineProps<{
     user: { name: string; email: string };
-    verifications?: { data: any[]; links: any; meta: any };
+    verifications?: { data: any[]; links: any; meta: any; current_page: number; last_page: number; per_page: number; total: number };
     stats?: { total: number; completed: number; failed: number; pending: number };
-    filters?: { search?: string; status?: string };
+    filters?: { search?: string; status?: string; page?: number };
 }>();
 
 const search = ref(props.filters?.search || '');
 const filterStatus = ref(props.filters?.status || '');
+const currentPage = ref(props.verifications?.current_page || 1);
 const detailDialog = ref(false);
 const selectedVerification = ref<any>(null);
 
+const totalPages = computed(() => props.verifications?.last_page || 1);
+
 watch([search, filterStatus], ([s, st]) => {
-    router.get('/admin/verifications', { search: s, status: st || undefined }, { preserveState: true, replace: true });
+    currentPage.value = 1;
+    router.get('/admin/verifications', { search: s || undefined, status: st || undefined, page: 1 }, { preserveState: true, replace: true });
 });
+
+const goToPage = (page: number) => {
+    currentPage.value = page;
+    router.get('/admin/verifications', {
+        search: search.value || undefined,
+        status: filterStatus.value || undefined,
+        page
+    }, { preserveState: true, replace: true });
+};
 
 const openDetail = (v: any) => {
     selectedVerification.value = v;
@@ -90,7 +103,7 @@ const headers = [
                     </v-btn-toggle>
                 </div>
 
-                <v-data-table :headers="headers" :items="verifications?.data || []" hover>
+                <v-data-table :headers="headers" :items="verifications?.data || []" :items-per-page="-1" hover>
                     <template #item.reference="{ item }">
                         <span class="font-weight-medium text-primary">{{ item.reference }}</span>
                     </template>
@@ -118,7 +131,24 @@ const headers = [
                     <template #item.actions="{ item }">
                         <v-btn icon variant="text" size="small" @click="openDetail(item)"><v-icon>mdi-eye</v-icon></v-btn>
                     </template>
+                    <template #bottom></template>
                 </v-data-table>
+
+                <!-- Server-side Pagination -->
+                <div class="d-flex align-center justify-space-between mt-4">
+                    <span class="text-caption text-grey">
+                        Showing {{ ((verifications?.current_page || 1) - 1) * (verifications?.per_page || 20) + 1 }}
+                        to {{ Math.min((verifications?.current_page || 1) * (verifications?.per_page || 20), verifications?.total || 0) }}
+                        of {{ verifications?.total || 0 }} results
+                    </span>
+                    <v-pagination
+                        v-model="currentPage"
+                        :length="totalPages"
+                        :total-visible="7"
+                        density="comfortable"
+                        @update:model-value="goToPage"
+                    />
+                </div>
             </v-card-text>
         </v-card>
 

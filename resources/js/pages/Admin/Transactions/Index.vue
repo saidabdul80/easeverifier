@@ -1,23 +1,36 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 
 const props = defineProps<{
     user: { name: string; email: string };
-    transactions?: { data: any[]; links: any; meta: any };
+    transactions?: { data: any[]; links: any; meta: any; current_page: number; last_page: number; per_page: number; total: number };
     stats?: { total_credits: number; total_debits: number; today_credits: number; today_debits: number };
-    filters?: { search?: string; type?: string; category?: string };
+    filters?: { search?: string; type?: string; category?: string; page?: number };
 }>();
 
 const search = ref(props.filters?.search || '');
 const filterType = ref(props.filters?.type || '');
+const currentPage = ref(props.transactions?.current_page || 1);
+
+const totalPages = computed(() => props.transactions?.last_page || 1);
 
 watch([search, filterType], ([s, t]) => {
-    router.get('/admin/transactions', { search: s, type: t || undefined }, { preserveState: true, replace: true });
+    currentPage.value = 1;
+    router.get('/admin/transactions', { search: s || undefined, type: t || undefined, page: 1 }, { preserveState: true, replace: true });
 });
 
-const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
+const goToPage = (page: number) => {
+    currentPage.value = page;
+    router.get('/admin/transactions', {
+        search: search.value || undefined,
+        type: filterType.value || undefined,
+        page
+    }, { preserveState: true, replace: true });
+};
+
+const formatCurrency = (amount: any) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 
 const headers = [
     { title: 'Reference', key: 'reference' },
@@ -101,7 +114,7 @@ const headers = [
                     </v-btn-toggle>
                 </div>
 
-                <v-data-table :headers="headers" :items="transactions?.data || []" hover>
+                <v-data-table :headers="headers" :items="transactions?.data || []" :items-per-page="-1" hover>
                     <template #item.reference="{ item }">
                         <span class="font-weight-medium text-primary">{{ item.reference }}</span>
                     </template>
@@ -128,7 +141,24 @@ const headers = [
                     <template #item.created_at="{ item }">
                         {{ new Date(item.created_at).toLocaleString() }}
                     </template>
+                    <template #bottom></template>
                 </v-data-table>
+
+                <!-- Server-side Pagination -->
+                <div class="d-flex align-center justify-space-between mt-4">
+                    <span class="text-caption text-grey">
+                        Showing {{ ((transactions?.current_page || 1) - 1) * (transactions?.per_page || 20) + 1 }}
+                        to {{ Math.min((transactions?.current_page || 1) * (transactions?.per_page || 20), transactions?.total || 0) }}
+                        of {{ transactions?.total || 0 }} results
+                    </span>
+                    <v-pagination
+                        v-model="currentPage"
+                        :length="totalPages"
+                        :total-visible="7"
+                        density="comfortable"
+                        @update:model-value="goToPage"
+                    />
+                </div>
             </v-card-text>
         </v-card>
     </AdminLayout>
