@@ -11,6 +11,7 @@ use App\Models\VerificationService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class VerificationEngine
@@ -325,6 +326,9 @@ class VerificationEngine
     /**
      * Refund user and mark request as failed.
      */
+   /**
+ * Refund user and mark request as failed.
+ */
     protected function refundAndFail(
         VerificationRequest $request,
         $wallet,
@@ -333,30 +337,56 @@ class VerificationEngine
     ): void {
         // Prevent double refunds - check if already refunded
         if ($request->status === 'failed') {
-            \Illuminate\Support\Facades\Log::warning("Attempted double refund for verification: {$request->reference}");
+            Log::warning("Attempted double refund for verification: {$request->reference}");
             return;
         }
 
-        // Also check if a refund transaction already exists for this request
+        // Use DB transaction to ensure atomicity
+        DB::transaction(function () use ($request, $wallet, $amount, $errorMessage) {
+        // Lock the verification request to prevent race conditions
+        $lockedRequest = VerificationRequest::where('id', $request->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+            
+        // Check if already failed to prevent double processing
+        if ($lockedRequest->status === 'failed') {
+            return;
+        }
+
+        // Check if a refund transaction already exists for this request
         $existingRefund = \App\Models\Transaction::where('category', 'refund')
-            ->where('metadata->verification_request_id', $request->id)
+            ->where('metadata->verification_request_id', $lockedRequest->id)
+            ->lockForUpdate()
             ->exists();
 
         if ($existingRefund) {
-            \Illuminate\Support\Facades\Log::warning("Refund already exists for verification: {$request->reference}");
-            $request->markAsFailed($errorMessage);
+            Log::warning("Refund already exists for verification: {$lockedRequest->reference}");
+            $lockedRequest->markAsFailed($errorMessage);
             return;
         }
 
-        // Refund the user
-        $wallet->credit(
-            $amount,
-            'refund',
-            "Refund for failed verification: {$request->reference}",
-            ['verification_request_id' => $request->id]
-        );
+        try {
+            // Refund the user
+            $wallet->credit(
+                $amount,
+                'refund',
+                "Refund for failed verification: {$lockedRequest->reference}",
+                [
+                    'verification_request_id' => $lockedRequest->id,
+                    'original_amount' => $amount,
+                    'reason' => $errorMessage,
+                ]
+            );
 
-        // Update the request status
-        $request->markAsFailed($errorMessage);
-    }
+            // Update the request status
+            $lockedRequest->markAsFailed($errorMessage);
+            
+            Log::info("Successfully refunded {$amount} for verification: {$lockedRequest->reference}");
+            
+        } catch (\Exception $e) {
+            Log::error("Failed to process refund for verification {$lockedRequest->reference}: " . $e->getMessage());
+            throw $e; // Re-throw to trigger rollback
+        }
+    });
+}
 }

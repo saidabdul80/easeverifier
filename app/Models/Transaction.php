@@ -98,5 +98,11 @@ class Transaction extends Model
     {
         return $this->type === 'debit';
     }
+
+        // In Transaction.php model
+    public function refund(string $description = ''): Transaction
+    {
+        return $this->wallet->refundTransaction($this, $description);
+    }
 }
 
