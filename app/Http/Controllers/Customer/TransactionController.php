@@ -28,16 +28,18 @@ class TransactionController extends Controller
             ->withQueryString();
 
         $stats = [
-            'total_credits' => $user->transactions()->where('type', 'credit')->where('category','!=', 'refund')->sum('amount'),
-            'total_debits' => $user->transactions()->where('type', 'debit')->sum('amount'),
+            'total_credits' => $user->transactions()->where('type', 'credit')->where('status','=', 'completed')->where('category','!=', 'refund')->sum('amount'),
+            'total_debits' => $user->transactions()->where('type', 'debit')->where('status','=', 'completed')->sum('amount'),
             'this_month_credits' => $user->transactions()
                 ->where('category','!=', 'refund')
                 ->where('type', 'credit')
+                ->where('status','=', 'completed')
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
                 ->sum('amount'),
             'this_month_debits' => $user->transactions()
                 ->where('type', 'debit')
+                ->where('status','=', 'completed')
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
                 ->sum('amount'),
