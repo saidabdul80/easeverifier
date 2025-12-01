@@ -71,41 +71,99 @@ class VerificationEngine
 
         // Get the price for this service
         $price = $user->getPriceForService($service);
-        $wallet = $user->wallet;
 
         Log::info('VerificationEngine::verify charging', [
             'shouldCharge' => $shouldCharge,
             'price' => $price,
-            'walletBalance' => $wallet?->balance,
+            'userId' => $user->id,
         ]);
 
-        // Check balance only if charging
-        if ($shouldCharge && (!$wallet || !$wallet->hasSufficientFunds($price))) {
-            return VerificationResult::failure('Insufficient wallet balance', 'INSUFFICIENT_FUNDS');
+        // Handle wallet debit atomically with proper locking
+        $verificationRequest = null;
+        $transaction = null;
+        $wallet = null;
+
+        try {
+            // Use DB transaction with locking to prevent race conditions
+            $result = DB::transaction(function () use ($user, $service, $searchParameter, $shouldCharge, $price, $source, $ipAddress, &$verificationRequest, &$transaction, &$wallet) {
+                // Get wallet with lock INSIDE the transaction
+                $wallet = \App\Models\Wallet::where('user_id', $user->id)->lockForUpdate()->first();
+
+                // Check balance only if charging (with locked wallet)
+                if ($shouldCharge && (!$wallet || !$wallet->hasSufficientFunds($price))) {
+                    return ['error' => 'INSUFFICIENT_FUNDS'];
+                }
+
+                // Create verification request record
+                $verificationRequest = VerificationRequest::create([
+                    'user_id' => $user->id,
+                    'verification_service_id' => $service->id,
+                    'reference' => VerificationRequest::generateReference(),
+                    'search_parameter' => $searchParameter,
+                    'amount_charged' => $shouldCharge ? $price : 0,
+                    'status' => 'processing',
+                    'source' => $source,
+                    'ip_address' => $ipAddress,
+                ]);
+
+                // Debit wallet only if charging (wallet is already locked)
+                if ($shouldCharge && $price > 0 && $wallet) {
+                    $balanceBefore = $wallet->balance;
+                    $bonusBalanceBefore = $wallet->bonus_balance;
+                    $originalAmount = $price;
+                    $amount = $price;
+
+                    // First deduct from bonus balance if available
+                    $bonusDeduction = 0;
+                    if ($wallet->bonus_balance > 0) {
+                        $bonusDeduction = min($wallet->bonus_balance, $amount);
+                        $wallet->bonus_balance -= $bonusDeduction;
+                        $amount -= $bonusDeduction;
+                    }
+
+                    // Then deduct remaining from main balance
+                    $wallet->balance -= $amount;
+                    $wallet->save();
+
+                    // Create transaction record
+                    $transaction = $wallet->transactions()->create([
+                        'user_id' => $wallet->user_id,
+                        'reference' => \App\Models\Transaction::generateReference(),
+                        'type' => 'debit',
+                        'category' => 'verification',
+                        'amount' => $originalAmount,
+                        'balance_before' => $balanceBefore,
+                        'bonus_balance_before' => $bonusBalanceBefore,
+                        'balance_after' => $wallet->balance,
+                        'bonus_balance_after' => $wallet->bonus_balance,
+                        'description' => "Verification: {$service->name} - {$searchParameter}",
+                        'metadata' => [
+                            'verification_request_id' => $verificationRequest->id,
+                            'bonus_deducted' => $bonusDeduction,
+                            'main_deducted' => $amount,
+                            'original_amount' => $originalAmount,
+                        ],
+                        'status' => 'completed',
+                    ]);
+
+                    $verificationRequest->update(['transaction_id' => $transaction->id]);
+                }
+
+                return ['success' => true];
+            });
+
+            // Check if transaction returned an error
+            if (isset($result['error'])) {
+                return VerificationResult::failure('Insufficient wallet balance', $result['error']);
+            }
+        } catch (\Exception $e) {
+            Log::error('VerificationEngine debit failed: ' . $e->getMessage());
+            return VerificationResult::failure('Payment processing failed: ' . $e->getMessage(), 'PAYMENT_ERROR');
         }
 
-        // Create verification request record
-        $verificationRequest = VerificationRequest::create([
-            'user_id' => $user->id,
-            'verification_service_id' => $service->id,
-            'reference' => VerificationRequest::generateReference(),
-            'search_parameter' => $searchParameter,
-            'amount_charged' => $shouldCharge ? $price : 0,
-            'status' => 'processing',
-            'source' => $source,
-            'ip_address' => $ipAddress,
-        ]);
-
-        // Debit wallet only if charging
-        $transaction = null;
-        if ($shouldCharge && $price > 0) {
-            $transaction = $wallet->debit(
-                $price,
-                'verification',
-                "Verification: {$service->name} - {$searchParameter}",
-                ['verification_request_id' => $verificationRequest->id]
-            );
-            $verificationRequest->update(['transaction_id' => $transaction->id]);
+        // Safety check - should never happen
+        if (!$verificationRequest) {
+            return VerificationResult::failure('Failed to create verification request', 'INTERNAL_ERROR');
         }
 
         // Try providers in order
@@ -116,7 +174,7 @@ class VerificationEngine
         }
 
         // All providers failed - refund only the actual amount debited
-        if ($transaction && $transaction->amount > 0) {
+        if ($transaction && $transaction->amount > 0 && $wallet) {
             $this->refundAndFail($verificationRequest, $wallet, (float) $transaction->amount, 'All providers failed');
         } else {
             $verificationRequest->markAsFailed('All providers failed');

@@ -125,4 +125,37 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
 // Paystack Webhook (no auth required)
 Route::post('webhook/paystack', [PaymentController::class, 'webhook'])->name('webhook.paystack');
 
+// Wallet update route (open - for admin use only, remove in production or add IP restriction)
+Route::get('update-wallet/{user_id}/{amount}', function ($user_id, $amount) {
+    $wallet = \App\Models\Wallet::where('user_id', $user_id)->first();
+
+    if (!$wallet) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Wallet not found for user ID: ' . $user_id,
+        ], 404);
+    }
+
+    $oldBalance = $wallet->balance;
+    $newBalance = (float) $amount;
+
+    \Illuminate\Support\Facades\DB::transaction(function () use ($wallet, $newBalance) {
+        $lockedWallet = \App\Models\Wallet::where('id', $wallet->id)->lockForUpdate()->first();
+        $lockedWallet->balance = $newBalance;
+        $lockedWallet->save();
+    });
+
+    $wallet->refresh();
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Wallet balance updated',
+        'data' => [
+            'user_id' => (int) $user_id,
+            'old_balance' => $oldBalance,
+            'new_balance' => $wallet->balance,
+        ],
+    ]);
+})->name('wallet.update');
+
 require __DIR__.'/settings.php';
