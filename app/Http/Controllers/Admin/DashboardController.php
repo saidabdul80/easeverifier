@@ -3,13 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Customer;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Models\Wallet;
-use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -56,9 +54,9 @@ class DashboardController extends Controller
             ->get();
 
         // Monthly revenue chart data (based on completed verifications)
-        $monthlyRevenue = VerificationRequest::where('status', 'completed')
-            ->whereNotNull('transaction_id')
-            ->where('created_at', '>=', now()->subMonths(6))
+        $monthlyRevenue = VerificationRequest::where('verification_requests.status', 'completed')
+            ->whereNotNull('verification_requests.transaction_id')
+            ->where('verification_requests.created_at', '>=', now()->subMonths(6))
             ->join('transactions', 'verification_requests.transaction_id', '=', 'transactions.id')
             ->where('transactions.type', 'debit')
             ->selectRaw('MONTH(verification_requests.created_at) as month, YEAR(verification_requests.created_at) as year, SUM(transactions.amount) as total')
