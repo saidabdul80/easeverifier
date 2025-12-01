@@ -96,19 +96,24 @@ class Wallet extends Model
         return DB::transaction(function () use ($amount, $category, $description, $metadata) {
             $this->lockForUpdate();
 
+            // Store original amount for transaction record
+            $originalAmount = $amount;
+
             if (!$this->hasSufficientFunds($amount)) {
                 throw new \Exception('Insufficient funds');
             }
 
             $balanceBefore = $this->balance;
-            
+            $bonusBalanceBefore = $this->bonus_balance;
+
             // First deduct from bonus balance if available
+            $bonusDeduction = 0;
             if ($this->bonus_balance > 0) {
                 $bonusDeduction = min($this->bonus_balance, $amount);
                 $this->bonus_balance -= $bonusDeduction;
                 $amount -= $bonusDeduction;
             }
-            
+
             // Then deduct remaining from main balance
             $this->balance -= $amount;
             $this->save();
@@ -118,11 +123,14 @@ class Wallet extends Model
                 'reference' => Transaction::generateReference(),
                 'type' => 'debit',
                 'category' => $category,
-                'amount' => $balanceBefore - $this->balance,
+                'amount' => $originalAmount,
                 'balance_before' => $balanceBefore,
                 'balance_after' => $this->balance,
                 'description' => $description,
-                'metadata' => $metadata,
+                'metadata' => array_merge($metadata, [
+                    'bonus_deducted' => $bonusDeduction,
+                    'main_deducted' => $amount,
+                ]),
                 'status' => 'completed',
             ]);
         });
