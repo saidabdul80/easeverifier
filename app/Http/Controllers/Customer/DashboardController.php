@@ -24,12 +24,11 @@ class DashboardController extends Controller
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
                 ->count(),
-            'this_month_spent' => $user->transactions()
-                ->where('type', 'debit')
-                ->where('category', 'verification')
+            'this_month_spent' => $user->verificationRequests()
+                ->where('status', 'completed')
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
-                ->sum('amount'),
+                ->sum('amount_charged'),
         ];
 
         $recentVerifications = $user->verificationRequests()

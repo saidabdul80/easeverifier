@@ -114,9 +114,9 @@ class VerificationEngine
             return $result;
         }
 
-        // All providers failed - refund if charged
-        if ($shouldCharge && $price > 0) {
-            $this->refundAndFail($verificationRequest, $wallet, $price, 'All providers failed');
+        // All providers failed - refund only the actual amount debited
+        if ($transaction && $transaction->amount > 0) {
+            $this->refundAndFail($verificationRequest, $wallet, (float) $transaction->amount, 'All providers failed');
         } else {
             $verificationRequest->markAsFailed('All providers failed');
         }
@@ -331,6 +331,23 @@ class VerificationEngine
         float $amount,
         string $errorMessage
     ): void {
+        // Prevent double refunds - check if already refunded
+        if ($request->status === 'failed') {
+            \Illuminate\Support\Facades\Log::warning("Attempted double refund for verification: {$request->reference}");
+            return;
+        }
+
+        // Also check if a refund transaction already exists for this request
+        $existingRefund = \App\Models\Transaction::where('category', 'refund')
+            ->where('metadata->verification_request_id', $request->id)
+            ->exists();
+
+        if ($existingRefund) {
+            \Illuminate\Support\Facades\Log::warning("Refund already exists for verification: {$request->reference}");
+            $request->markAsFailed($errorMessage);
+            return;
+        }
+
         // Refund the user
         $wallet->credit(
             $amount,

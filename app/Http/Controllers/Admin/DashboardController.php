@@ -24,15 +24,12 @@ class DashboardController extends Controller
             'total_verifications' => VerificationRequest::count(),
             'successful_verifications' => VerificationRequest::where('status', 'completed')->count(),
             'failed_verifications' => VerificationRequest::where('status', 'failed')->count(),
-            'total_revenue' => Transaction::where('type', 'debit')
-                ->where('category', 'verification')
-                ->sum('amount'),
+            'total_revenue' => VerificationRequest::where('status', 'completed')->sum('amount_charged'),
             'total_wallet_balance' => Wallet::sum('balance'),
             'today_verifications' => VerificationRequest::whereDate('created_at', today())->count(),
-            'today_revenue' => Transaction::where('type', 'debit')
-                ->where('category', 'verification')
+            'today_revenue' => VerificationRequest::where('status', 'completed')
                 ->whereDate('created_at', today())
-                ->sum('amount'),
+                ->sum('amount_charged'),
         ];
 
         $recentVerifications = VerificationRequest::with(['user', 'verificationService'])
@@ -45,11 +42,10 @@ class DashboardController extends Controller
             ->take(10)
             ->get();
 
-        // Monthly revenue chart data
-        $monthlyRevenue = Transaction::where('type', 'debit')
-            ->where('category', 'verification')
+        // Monthly revenue chart data (based on completed verifications)
+        $monthlyRevenue = VerificationRequest::where('status', 'completed')
             ->where('created_at', '>=', now()->subMonths(6))
-            ->selectRaw('MONTH(created_at) as month, YEAR(created_at) as year, SUM(amount) as total')
+            ->selectRaw('MONTH(created_at) as month, YEAR(created_at) as year, SUM(amount_charged) as total')
             ->groupBy('year', 'month')
             ->orderBy('year')
             ->orderBy('month')
