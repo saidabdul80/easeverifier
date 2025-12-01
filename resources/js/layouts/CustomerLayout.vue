@@ -16,6 +16,7 @@ const navItems = [
     { title: 'Verify', icon: 'mdi-shield-check', route: '/customer/verify' },
     { title: 'History', icon: 'mdi-history', route: '/customer/history' },
     { title: 'Wallet', icon: 'mdi-wallet', route: '/customer/wallet' },
+    { title: 'Transactions', icon: 'mdi-swap-horizontal', route: '/customer/transactions' },
     { title: 'API Keys', icon: 'mdi-key', route: '/customer/api' },
 ];
 

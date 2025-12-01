@@ -43,6 +43,7 @@ const headers = [
     { title: 'Amount', key: 'amount' },
     { title: 'Balance After', key: 'balance_after' },
     { title: 'Date', key: 'created_at' },
+    { title: 'Actions', key: 'actions', sortable: false },
 ];
 </script>
 
@@ -161,6 +162,10 @@ const headers = [
                     </template>
                     <template #item.created_at="{ item }">
                         {{ new Date(item.created_at).toLocaleString() }}
+                    </template>
+                    <template #item.actions="{ item }">
+                        <v-btn size="small" variant="text" color="primary" :href="`/customer/transactions/${item.id}`" icon="mdi-eye" title="View Details" />
+                        <v-btn size="small" variant="text" color="secondary" :href="`/customer/transactions/${item.id}?print=1`" icon="mdi-printer" title="Print Receipt" />
                     </template>
                     <template #bottom></template>
                 </v-data-table>

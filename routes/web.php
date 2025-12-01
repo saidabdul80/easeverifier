@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\VerificationController as AdminVerificationContro
 use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
 use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
 use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
+use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
 use App\Http\Controllers\Customer\ApiKeyController;
 use App\Http\Controllers\Customer\PaymentController;
 
@@ -106,7 +107,10 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     // Wallet
     Route::get('wallet', [CustomerWalletController::class, 'index'])->name('wallet.index');
     Route::get('wallet/fund', [CustomerWalletController::class, 'fund'])->name('wallet.fund');
-    Route::get('wallet/transactions/{transaction}', [CustomerWalletController::class, 'showTransaction'])->name('wallet.transaction');
+
+    // Transactions
+    Route::get('transactions', [CustomerTransactionController::class, 'index'])->name('transactions.index');
+    Route::get('transactions/{transaction}', [CustomerTransactionController::class, 'show'])->name('transactions.show');
 
     // Payments (Paystack)
     Route::post('payment/initialize', [PaymentController::class, 'initialize'])->name('payment.initialize');
