@@ -1,30 +1,46 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 
 const props = defineProps<{
     user: { name: string; email: string };
-    verifications?: { data: any[]; links: any; meta: any };
+    verifications?: { data: any[]; links: any; meta: any; current_page: number; last_page: number; per_page: number; total: number };
     services?: any[];
-    filters?: { service?: string; status?: string; date_from?: string; date_to?: string };
+    filters?: { service?: string; status?: string; date_from?: string; date_to?: string; page?: number };
 }>();
 
 const filterService = ref(props.filters?.service || '');
 const filterStatus = ref(props.filters?.status || '');
 const dateFrom = ref(props.filters?.date_from || '');
 const dateTo = ref(props.filters?.date_to || '');
+const currentPage = ref(props.verifications?.current_page || 1);
 const detailDialog = ref(false);
 const selectedVerification = ref<any>(null);
 
+const totalPages = computed(() => props.verifications?.last_page || 1);
+
 watch([filterService, filterStatus, dateFrom, dateTo], ([s, st, df, dt]) => {
+    currentPage.value = 1;
     router.get('/customer/history', {
         service: s || undefined,
         status: st || undefined,
         date_from: df || undefined,
         date_to: dt || undefined,
+        page: 1,
     }, { preserveState: true, replace: true });
 });
+
+const goToPage = (page: number) => {
+    currentPage.value = page;
+    router.get('/customer/history', {
+        service: filterService.value || undefined,
+        status: filterStatus.value || undefined,
+        date_from: dateFrom.value || undefined,
+        date_to: dateTo.value || undefined,
+        page,
+    }, { preserveState: true, replace: true });
+};
 
 const openDetail = (v: any) => {
     selectedVerification.value = v;
@@ -73,7 +89,7 @@ const headers = [
                     </v-col>
                 </v-row>
 
-                <v-data-table :headers="headers" :items="verifications?.data || []" hover>
+                <v-data-table :headers="headers" :items="verifications?.data || []" :items-per-page="-1" hover>
                     <template #item.service="{ item }">
                         <v-chip size="small" variant="tonal" color="primary">{{ item.verification_service?.name || 'N/A' }}</v-chip>
                     </template>
@@ -96,7 +112,24 @@ const headers = [
                         <v-btn icon variant="text" size="small" @click="openDetail(item)"><v-icon>mdi-eye</v-icon></v-btn>
                         <v-btn icon variant="text" size="small" :href="`/customer/verification/${item.id}`"><v-icon>mdi-open-in-new</v-icon></v-btn>
                     </template>
+                    <template #bottom></template>
                 </v-data-table>
+
+                <!-- Server-side Pagination -->
+                <div class="d-flex align-center justify-space-between mt-4">
+                    <span class="text-caption text-grey">
+                        Showing {{ ((verifications?.current_page || 1) - 1) * (verifications?.per_page || 20) + 1 }}
+                        to {{ Math.min((verifications?.current_page || 1) * (verifications?.per_page || 20), verifications?.total || 0) }}
+                        of {{ verifications?.total || 0 }} results
+                    </span>
+                    <v-pagination
+                        v-model="currentPage"
+                        :length="totalPages"
+                        :total-visible="7"
+                        density="comfortable"
+                        @update:model-value="goToPage"
+                    />
+                </div>
             </v-card-text>
         </v-card>
 

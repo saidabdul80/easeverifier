@@ -6,9 +6,9 @@ import { ref, watch, computed } from 'vue';
 const props = defineProps<{
     user: { name: string; email: string };
     wallet?: any;
-    transactions?: { data: any[]; links: any; meta: any };
+    transactions?: { data: any[]; links: any; meta: any; current_page: number; last_page: number; per_page: number; total: number };
     stats?: { balance: number; bonus_balance: number; total_balance: number; total_funded: number; total_spent: number };
-    filters?: { type?: string; category?: string; date_from?: string; date_to?: string };
+    filters?: { type?: string; category?: string; date_from?: string; date_to?: string; page?: number };
 }>();
 
 const page = usePage();
@@ -16,10 +16,23 @@ const flash = computed(() => page.props.flash as { success?: string; error?: str
 
 const filterType = ref(props.filters?.type || '');
 const filterCategory = ref(props.filters?.category || '');
+const currentPage = ref(props.transactions?.current_page || 1);
+
+const totalPages = computed(() => props.transactions?.last_page || 1);
 
 watch([filterType, filterCategory], ([t, c]) => {
-    router.get('/customer/wallet', { type: t || undefined, category: c || undefined }, { preserveState: true, replace: true });
+    currentPage.value = 1;
+    router.get('/customer/wallet', { type: t || undefined, category: c || undefined, page: 1 }, { preserveState: true, replace: true });
 });
+
+const goToPage = (page: number) => {
+    currentPage.value = page;
+    router.get('/customer/wallet', {
+        type: filterType.value || undefined,
+        category: filterCategory.value || undefined,
+        page
+    }, { preserveState: true, replace: true });
+};
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 
@@ -125,7 +138,7 @@ const headers = [
                     </v-btn-toggle>
                 </div>
 
-                <v-data-table :headers="headers" :items="transactions?.data || []" hover>
+                <v-data-table :headers="headers" :items="transactions?.data || []" :items-per-page="-1" hover>
                     <template #item.reference="{ item }">
                         <span class="font-weight-medium">{{ item.reference }}</span>
                     </template>
@@ -149,7 +162,24 @@ const headers = [
                     <template #item.created_at="{ item }">
                         {{ new Date(item.created_at).toLocaleString() }}
                     </template>
+                    <template #bottom></template>
                 </v-data-table>
+
+                <!-- Server-side Pagination -->
+                <div class="d-flex align-center justify-space-between mt-4">
+                    <span class="text-caption text-grey">
+                        Showing {{ ((transactions?.current_page || 1) - 1) * (transactions?.per_page || 15) + 1 }}
+                        to {{ Math.min((transactions?.current_page || 1) * (transactions?.per_page || 15), transactions?.total || 0) }}
+                        of {{ transactions?.total || 0 }} results
+                    </span>
+                    <v-pagination
+                        v-model="currentPage"
+                        :length="totalPages"
+                        :total-visible="7"
+                        density="comfortable"
+                        @update:model-value="goToPage"
+                    />
+                </div>
             </v-card-text>
         </v-card>
     </CustomerLayout>
