@@ -24,9 +24,10 @@ class DashboardController extends Controller
             ->filter(); // Remove nulls
 
         // Sum from transactions linked to completed verifications
-        $thisMonthSpent = Transaction::whereIn('id', $completedVerificationIds)
-            ->where('type', 'debit')
-            ->sum('amount');
+        $thisMonthSpent = $user->verificationRequests()->where('status', 'completed')
+            ->whereMonth('created_at', now()->month)
+            ->whereYear('created_at', now()->year)
+            ->sum('amount_charged');
 
         $stats = [
             'wallet_balance' => $wallet?->balance ?? 0,
