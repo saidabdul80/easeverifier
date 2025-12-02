@@ -17,9 +17,9 @@ defineProps<{
 }>();
 
 const pricingTiers = [
-    { name: 'Starter', price: 0, description: 'Perfect for testing and small projects', verifications: '100 free', features: ['100 free verifications', 'NIN Verification', 'Web Dashboard', 'Email Support', 'Basic Analytics'], buttonText: 'Start Free', highlight: false },
-    { name: 'Growth', price: 50000, description: 'For growing businesses with higher volume', verifications: 'Pay-as-you-go', features: ['Unlimited verifications', 'All verification types', 'API Access', 'Priority Support', 'Advanced Analytics', 'Custom Pricing'], buttonText: 'Get Started', highlight: true },
-    { name: 'Enterprise', price: null, description: 'Custom solutions for large organizations', verifications: 'Volume discounts', features: ['Volume discounts', 'Dedicated support', 'SLA guarantee', 'Custom integration', 'White-label option', 'On-premise option'], buttonText: 'Contact Sales', highlight: false },
+    // { name: 'Starter', price: 0, description: 'Perfect for testing and small projects', verifications: '100 free', features: ['100 free verifications', 'NIN Verification', 'Web Dashboard', 'Email Support', 'Basic Analytics'], buttonText: 'Start Free', highlight: false },
+    // { name: 'Growth', price: 50000, description: 'For growing businesses with higher volume', verifications: 'Pay-as-you-go', features: ['Unlimited verifications', 'All verification types', 'API Access', 'Priority Support', 'Advanced Analytics', 'Custom Pricing'], buttonText: 'Get Started', highlight: true },
+    // { name: 'Enterprise', price: null, description: 'Custom solutions for large organizations', verifications: 'Volume discounts', features: ['Volume discounts', 'Dedicated support', 'SLA guarantee', 'Custom integration', 'White-label option', 'On-premise option'], buttonText: 'Contact Sales', highlight: false },
 ];
 
 const servicePrices = [
