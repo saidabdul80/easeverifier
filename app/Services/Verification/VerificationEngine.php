@@ -329,7 +329,7 @@ class VerificationEngine
             ]);
 
             if ($response->successful()) {
-                Log::info('Response received successfully' );
+                
                 $datajson = $response->json();
 
                 // Check for "not found" conditions in the response body
@@ -348,7 +348,8 @@ class VerificationEngine
                         $responseTime
                     );
                 }
-
+                
+                Log::info('Response received successfully' );
                 if(isset($datajson['response_code']) && $datajson['response_code'] == '00'){
                     $datajson = ["data"=>$datajson];
                     $mappedData = $this->mapResponse($datajson, $provider->response_mapping ?? []);
