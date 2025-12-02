@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { dashboard, login, register } from '@/routes';
+import { dashboard, documentation, login, register } from '@/routes';
 import { Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -91,7 +91,7 @@ const stats = [
             <v-list nav>
                 <v-list-item prepend-icon="mdi-home" title="Services" />
                 <v-list-item prepend-icon="mdi-currency-usd" title="Pricing" />
-                <v-list-item prepend-icon="mdi-book-open-variant" title="Documentation" />
+                <v-list-item :to="documentation()" prepend-icon="mdi-book-open-variant" title="Documentation" />
                 <v-divider class="my-2" />
                 <template v-if="$page.props.auth.user">
                     <Link :href="dashboard()">
@@ -129,7 +129,7 @@ const stats = [
                                         Start Free Trial
                                     </v-btn>
                                 </Link>
-                                <v-btn variant="outlined" color="white" size="x-large" class="px-8">
+                                <v-btn :to="documentation()" variant="outlined" color="white" size="x-large" class="px-8">
                                     <v-icon start>mdi-book-open-variant</v-icon>
                                     View Documentation
                                 </v-btn>
