@@ -173,14 +173,62 @@ class VerificationEngine
             return $result;
         }
 
-        // All providers failed - refund only the actual amount debited
-        if ($transaction && $transaction->amount > 0 && $wallet) {
+        // All providers failed - check if we should refund
+        // Do NOT refund for "not found" results (404 status codes or "not found" messages)
+        // These are valid verification results indicating the data doesn't exist
+        $shouldRefund = $this->shouldRefundOnFailure($result);
+
+        if ($transaction && $transaction->amount > 0 && $wallet && $shouldRefund) {
             $this->refundAndFail($verificationRequest, $wallet, (float) $transaction->amount, 'All providers failed');
         } else {
-            $verificationRequest->markAsFailed('All providers failed');
+            $verificationRequest->markAsFailed($result->getErrorMessage() ?? 'All providers failed');
         }
 
         return $result;
+    }
+
+    /**
+     * Determine if we should refund on failure.
+     * Do NOT refund for "not found" results - these are valid verification outcomes.
+     */
+    protected function shouldRefundOnFailure(VerificationResult $result): bool
+    {
+        $errorMessage = strtolower($result->getErrorMessage() ?? '');
+        $errorCode = strtolower($result->errorCode ?? '');
+
+        // List of patterns that indicate "not found" - should NOT be refunded
+        $noRefundPatterns = [
+            'not found',
+            'no record',
+            'record not found',
+            'records not found',
+            'does not exist',
+            'invalid',
+            'no data',
+            'no result',
+        ];
+
+        // List of status codes that indicate "not found" - should NOT be refunded
+        $noRefundCodes = ['404', 'not_found', 'no_record', 'invalid_id'];
+
+        // Check error message for "not found" patterns
+        foreach ($noRefundPatterns as $pattern) {
+            if (str_contains($errorMessage, $pattern)) {
+                Log::info("Not refunding - error message contains '{$pattern}': {$result->getErrorMessage()}");
+                return false;
+            }
+        }
+
+        // Check error code
+        foreach ($noRefundCodes as $code) {
+            if ($errorCode === $code || str_contains($errorCode, $code)) {
+                Log::info("Not refunding - error code matches '{$code}': {$result->errorCode}");
+                return false;
+            }
+        }
+
+        // Should refund for other failures (network errors, provider down, etc.)
+        return true;
     }
 
     /**
@@ -283,6 +331,24 @@ class VerificationEngine
              Log::info('Response received: ' , [$response->json()]);
             if ($response->successful()) {
                 $datajson = $response->json();
+
+                // Check for "not found" conditions in the response body
+                // These are valid verification results - the record simply doesn't exist
+                $statusCode = $datajson['statusCode'] ?? $datajson['status_code'] ?? null;
+                $message = $datajson['message'] ?? '';
+                $messageStr = is_array($message) ? json_encode($message) : (string) $message;
+
+                if ($statusCode === '404' || $statusCode === 404 ||
+                    stripos($messageStr, 'not found') !== false ||
+                    stripos($messageStr, 'no record') !== false) {
+                    Log::info('Record not found (valid result, no refund): ' . $messageStr);
+                    return VerificationResult::failure(
+                        'Record not found: ' . $messageStr,
+                        '404_NOT_FOUND',
+                        $responseTime
+                    );
+                }
+
                  if(isset($datajson['response_code']) && $datajson['response_code'] == '00'){
                     $datajson = ["data"=>$datajson];
                     $mappedData = $this->mapResponse($datajson, $provider->response_mapping ?? []);
