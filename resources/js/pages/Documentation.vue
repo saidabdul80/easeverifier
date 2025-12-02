@@ -42,7 +42,14 @@ const sampleResponse = `{
 </script>
 
 <template>
-    <Head title="API Documentation - EaseVerifier" />
+    <Head title="API Documentation - NIN, BVN, CAC Verification API Guide | EaseVerifier">
+        <meta name="description" content="Complete API documentation for EaseVerifier's identity verification services. Learn how to integrate NIN, BVN, and CAC verification into your application with code examples." />
+        <meta name="keywords" content="verification API documentation, NIN API, BVN API, CAC API, identity verification integration, REST API Nigeria, KYC API docs" />
+        <meta property="og:title" content="API Documentation - EaseVerifier" />
+        <meta property="og:description" content="Complete API guide for identity verification integration. Code examples, authentication, webhooks, and error handling." />
+        <meta property="og:type" content="article" />
+        <link rel="canonical" href="https://easeverifier.com/documentation" />
+    </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">
             <v-container class="d-flex align-center">

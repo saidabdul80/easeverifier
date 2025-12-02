@@ -49,6 +49,30 @@ Route::get('/documentation', function () {
     return Inertia::render('Documentation');
 })->name('documentation');
 
+Route::get('/about', function () {
+    return Inertia::render('About');
+})->name('about');
+
+Route::get('/blog', function () {
+    return Inertia::render('Blog');
+})->name('blog');
+
+Route::get('/contact', function () {
+    return Inertia::render('Contact');
+})->name('contact');
+
+Route::get('/privacy', function () {
+    return Inertia::render('PrivacyPolicy');
+})->name('privacy');
+
+Route::get('/terms', function () {
+    return Inertia::render('TermsOfService');
+})->name('terms');
+
+Route::get('/cookies', function () {
+    return Inertia::render('CookiePolicy');
+})->name('cookies');
+
 // Dashboard redirect based on role
 Route::get('dashboard', function () {
     $user = auth()->user();

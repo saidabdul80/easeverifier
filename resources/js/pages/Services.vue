@@ -27,7 +27,14 @@ const allServices = [
 </script>
 
 <template>
-    <Head title="Services - EaseVerifier" />
+    <Head title="Identity Verification Services - NIN, BVN, CAC API | EaseVerifier">
+        <meta name="description" content="Explore EaseVerifier's identity verification services: NIN verification, BVN verification, CAC business verification, Driver's License, and Voter's Card verification API for Nigerian businesses." />
+        <meta name="keywords" content="NIN verification API, BVN verification service, CAC verification, driver's license verification Nigeria, voter's card verification, identity API Nigeria" />
+        <meta property="og:title" content="Identity Verification Services | EaseVerifier" />
+        <meta property="og:description" content="Comprehensive identity verification services for Nigerian businesses - NIN, BVN, CAC, Driver's License and more." />
+        <meta property="og:type" content="website" />
+        <link rel="canonical" href="https://easeverifier.com/services" />
+    </Head>
 
     <v-app>
         <!-- Navigation -->

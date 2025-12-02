@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { dashboard, documentation, login, register } from '@/routes';
+import { about, blog, contact, cookies, dashboard, documentation, login, pricing, privacy, register, services as servicesPage, terms } from '@/routes';
 import { Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -14,7 +14,7 @@ withDefaults(
 
 const mobileMenu = ref(false);
 
-const services = [
+const servicesList = [
     {
         icon: 'mdi-card-account-details',
         title: 'NIN Verification',
@@ -51,7 +51,57 @@ const stats = [
 </script>
 
 <template>
-    <Head title="Identity Verification Services - EaseVerifier">
+    <Head title="NIN, BVN & CAC Verification API for Nigerian Businesses | EaseVerifier">
+        <meta name="description" content="EaseVerifier provides instant NIN, BVN, and CAC verification API services for Nigerian businesses. Verify identities in milliseconds with 99.9% uptime. Trusted by 500+ companies." />
+        <meta name="keywords" content="NIN verification, BVN verification, CAC verification, identity verification Nigeria, KYC Nigeria, verification API, Nigerian identity verification, business verification" />
+        <meta name="robots" content="index, follow" />
+        <meta name="author" content="EaseVerifier" />
+        <link rel="canonical" href="https://easeverifier.com/" />
+        <!-- Open Graph / Facebook -->
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://easeverifier.com/" />
+        <meta property="og:title" content="NIN, BVN & CAC Verification API for Nigerian Businesses | EaseVerifier" />
+        <meta property="og:description" content="Instant NIN, BVN, and CAC verification API. Verify identities in milliseconds with 99.9% uptime. Trusted by 500+ Nigerian businesses." />
+        <meta property="og:image" content="https://easeverifier.com/images/og-image.png" />
+        <meta property="og:site_name" content="EaseVerifier" />
+        <meta property="og:locale" content="en_NG" />
+        <!-- Twitter -->
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:url" content="https://easeverifier.com/" />
+        <meta name="twitter:title" content="NIN, BVN & CAC Verification API | EaseVerifier" />
+        <meta name="twitter:description" content="Instant identity verification API for Nigerian businesses. Verify NIN, BVN, CAC in milliseconds." />
+        <meta name="twitter:image" content="https://easeverifier.com/images/twitter-card.png" />
+        <!-- Structured Data -->
+        <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "EaseVerifier",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Web",
+            "description": "Identity verification API for Nigerian businesses - verify NIN, BVN, and CAC records instantly",
+            "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "NGN"
+            },
+            "aggregateRating": {
+                "@type": "AggregateRating",
+                "ratingValue": "4.8",
+                "ratingCount": "500"
+            },
+            "provider": {
+                "@type": "Organization",
+                "name": "EaseVerifier",
+                "url": "https://easeverifier.com",
+                "logo": "https://easeverifier.com/images/logo.png",
+                "sameAs": [
+                    "https://twitter.com/easeverifier",
+                    "https://linkedin.com/company/easeverifier"
+                ]
+            }
+        }
+        </script>
         <link rel="preconnect" href="https://rsms.me/" />
         <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
     </Head>
@@ -65,9 +115,9 @@ const stats = [
                 </div>
                 <v-spacer />
                 <div class="d-none d-md-flex align-center ga-4">
-                    <v-btn variant="text" color="primary">Services</v-btn>
-                    <v-btn variant="text" color="primary">Pricing</v-btn>
-                    <v-btn variant="text" color="primary">Documentation</v-btn>
+                    <Link :href="servicesPage()"><v-btn variant="text" color="primary">Services</v-btn></Link>
+                    <Link :href="pricing()"><v-btn variant="text" color="primary">Pricing</v-btn></Link>
+                    <Link :href="documentation()"><v-btn variant="text" color="primary">Documentation</v-btn></Link>
                     <template v-if="$page.props.auth.user">
                         <Link :href="dashboard()">
                             <v-btn color="primary" variant="flat">Dashboard</v-btn>
@@ -89,9 +139,9 @@ const stats = [
         <!-- Mobile Menu -->
         <v-navigation-drawer v-model="mobileMenu" temporary location="right">
             <v-list nav>
-                <v-list-item prepend-icon="mdi-home" title="Services" />
-                <v-list-item prepend-icon="mdi-currency-usd" title="Pricing" />
-                <v-list-item :to="documentation()" prepend-icon="mdi-book-open-variant" title="Documentation" />
+                <Link :href="servicesPage()"><v-list-item prepend-icon="mdi-home" title="Services" /></Link>
+                <Link :href="pricing()"><v-list-item prepend-icon="mdi-currency-usd" title="Pricing" /></Link>
+                <Link :href="documentation()"><v-list-item prepend-icon="mdi-book-open-variant" title="Documentation" /></Link>
                 <v-divider class="my-2" />
                 <template v-if="$page.props.auth.user">
                     <Link :href="dashboard()">
@@ -129,7 +179,7 @@ const stats = [
                                         Start Free Trial
                                     </v-btn>
                                 </Link>
-                                <v-btn :to="documentation()" variant="outlined" color="white" size="x-large" class="px-8">
+                                <v-btn :href="documentation()" variant="outlined" color="white" size="x-large" class="px-8">
                                     <v-icon start>mdi-book-open-variant</v-icon>
                                     View Documentation
                                 </v-btn>
@@ -178,7 +228,7 @@ const stats = [
                         </p>
                     </div>
                     <v-row>
-                        <v-col v-for="service in services" :key="service.title" cols="12" md="4">
+                        <v-col v-for="service in servicesList" :key="service.title" cols="12" md="4">
                             <v-card class="pa-6 h-100 service-card" hover>
                                 <div class="d-flex align-center mb-4">
                                     <v-avatar :color="service.color" size="56">
@@ -187,9 +237,11 @@ const stats = [
                                 </div>
                                 <h3 class="text-h6 font-weight-bold mb-2">{{ service.title }}</h3>
                                 <p class="text-body-2 text-grey-darken-1 mb-4">{{ service.description }}</p>
-                                <v-btn variant="text" color="primary" class="px-0">
-                                    Learn more <v-icon end>mdi-arrow-right</v-icon>
-                                </v-btn>
+                                <Link :href="servicesPage()">
+                                    <v-btn variant="text" color="primary" class="px-0">
+                                        Learn more <v-icon end>mdi-arrow-right</v-icon>
+                                    </v-btn>
+                                </Link>
                             </v-card>
                         </v-col>
                     </v-row>
@@ -291,23 +343,23 @@ const stats = [
                         </v-col>
                         <v-col cols="6" md="2">
                             <h4 class="text-subtitle-1 font-weight-bold text-white mb-3">Product</h4>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">NIN Verification</div>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">BVN Verification</div>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">CAC Verification</div>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">API Documentation</div>
+                            <Link :href="servicesPage()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">NIN Verification</div></Link>
+                            <Link :href="servicesPage()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">BVN Verification</div></Link>
+                            <Link :href="servicesPage()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">CAC Verification</div></Link>
+                            <Link :href="documentation()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">API Documentation</div></Link>
                         </v-col>
                         <v-col cols="6" md="2">
                             <h4 class="text-subtitle-1 font-weight-bold text-white mb-3">Company</h4>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">About Us</div>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">Pricing</div>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">Blog</div>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">Contact</div>
+                            <Link :href="about()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">About Us</div></Link>
+                            <Link :href="pricing()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Pricing</div></Link>
+                            <Link :href="blog()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Blog</div></Link>
+                            <Link :href="contact()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Contact</div></Link>
                         </v-col>
                         <v-col cols="6" md="2">
                             <h4 class="text-subtitle-1 font-weight-bold text-white mb-3">Legal</h4>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">Privacy Policy</div>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">Terms of Service</div>
-                            <div class="text-body-2 text-grey-lighten-1 mb-2">Cookie Policy</div>
+                            <Link :href="privacy()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Privacy Policy</div></Link>
+                            <Link :href="terms()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Terms of Service</div></Link>
+                            <Link :href="cookies()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Cookie Policy</div></Link>
                         </v-col>
                         <v-col cols="6" md="2">
                             <h4 class="text-subtitle-1 font-weight-bold text-white mb-3">Connect</h4>
@@ -340,5 +392,12 @@ const stats = [
 }
 .service-card:hover {
     transform: translateY(-8px);
+}
+.footer-link {
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+.footer-link:hover {
+    color: #4CAF50 !important;
 }
 </style>

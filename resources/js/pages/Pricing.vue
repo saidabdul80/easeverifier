@@ -36,7 +36,14 @@ const formatPrice = (price: number) => {
 </script>
 
 <template>
-    <Head title="Pricing - EaseVerifier" />
+    <Head title="Pricing - Affordable Identity Verification API | EaseVerifier">
+        <meta name="description" content="Transparent pay-as-you-go pricing for NIN, BVN, and CAC verification. Starting from ₦100 per verification. No hidden fees, volume discounts available." />
+        <meta name="keywords" content="verification API pricing, NIN verification cost, BVN verification price, identity verification pricing Nigeria, KYC pricing" />
+        <meta property="og:title" content="Pricing - EaseVerifier" />
+        <meta property="og:description" content="Affordable identity verification API pricing. Pay-as-you-go from ₦100 per verification. Volume discounts available." />
+        <meta property="og:type" content="website" />
+        <link rel="canonical" href="https://easeverifier.com/pricing" />
+    </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">
             <v-container class="d-flex align-center">
