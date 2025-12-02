@@ -12,6 +12,8 @@ use App\Http\Controllers\Admin\ProviderController as AdminProviderController;
 use App\Http\Controllers\Admin\WalletController as AdminWalletController;
 use App\Http\Controllers\Admin\TransactionController as AdminTransactionController;
 use App\Http\Controllers\Admin\VerificationController as AdminVerificationController;
+use App\Http\Controllers\Admin\BlogController as AdminBlogController;
+use App\Http\Controllers\BlogController;
 
 use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
 use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
@@ -53,9 +55,8 @@ Route::get('/about', function () {
     return Inertia::render('About');
 })->name('about');
 
-Route::get('/blog', function () {
-    return Inertia::render('Blog');
-})->name('blog');
+Route::get('/blog', [BlogController::class, 'index'])->name('blog');
+Route::get('/blog/{post:slug}', [BlogController::class, 'show'])->name('blog.show');
 
 Route::get('/contact', function () {
     return Inertia::render('Contact');
@@ -115,6 +116,9 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     // Verifications
     Route::get('verifications', [AdminVerificationController::class, 'index'])->name('verifications.index');
     Route::get('verifications/{verification}', [AdminVerificationController::class, 'show'])->name('verifications.show');
+
+    // Blog
+    Route::resource('blog', AdminBlogController::class)->except(['show']);
 });
 
 // Customer Routes

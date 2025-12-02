@@ -1,7 +1,41 @@
 <script setup lang="ts">
 import { about, blog, contact, cookies, dashboard, documentation, login, pricing, privacy, register, services as servicesPage, terms } from '@/routes';
 import { Head, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
+
+// Structured Data for SEO
+const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "EaseVerifier",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "description": "Identity verification API for Nigerian businesses - verify NIN, BVN, and CAC records instantly",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "NGN" },
+    "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.8", "ratingCount": "500" },
+    "provider": {
+        "@type": "Organization",
+        "name": "EaseVerifier",
+        "url": "https://easeverifier.com",
+        "logo": "https://easeverifier.com/images/logo.png",
+        "sameAs": ["https://twitter.com/easeverifier", "https://linkedin.com/company/easeverifier"]
+    }
+};
+
+let jsonLdScript: HTMLScriptElement | null = null;
+
+onMounted(() => {
+    jsonLdScript = document.createElement('script');
+    jsonLdScript.type = 'application/ld+json';
+    jsonLdScript.textContent = JSON.stringify(structuredData);
+    document.head.appendChild(jsonLdScript);
+});
+
+onUnmounted(() => {
+    if (jsonLdScript && jsonLdScript.parentNode) {
+        jsonLdScript.parentNode.removeChild(jsonLdScript);
+    }
+});
 
 withDefaults(
     defineProps<{
@@ -71,37 +105,6 @@ const stats = [
         <meta name="twitter:title" content="NIN, BVN & CAC Verification API | EaseVerifier" />
         <meta name="twitter:description" content="Instant identity verification API for Nigerian businesses. Verify NIN, BVN, CAC in milliseconds." />
         <meta name="twitter:image" content="https://easeverifier.com/images/twitter-card.png" />
-        <!-- Structured Data -->
-        <script type="application/ld+json">
-        {
-            "@context": "https://schema.org",
-            "@type": "SoftwareApplication",
-            "name": "EaseVerifier",
-            "applicationCategory": "BusinessApplication",
-            "operatingSystem": "Web",
-            "description": "Identity verification API for Nigerian businesses - verify NIN, BVN, and CAC records instantly",
-            "offers": {
-                "@type": "Offer",
-                "price": "0",
-                "priceCurrency": "NGN"
-            },
-            "aggregateRating": {
-                "@type": "AggregateRating",
-                "ratingValue": "4.8",
-                "ratingCount": "500"
-            },
-            "provider": {
-                "@type": "Organization",
-                "name": "EaseVerifier",
-                "url": "https://easeverifier.com",
-                "logo": "https://easeverifier.com/images/logo.png",
-                "sameAs": [
-                    "https://twitter.com/easeverifier",
-                    "https://linkedin.com/company/easeverifier"
-                ]
-            }
-        }
-        </script>
         <link rel="preconnect" href="https://rsms.me/" />
         <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
     </Head>
