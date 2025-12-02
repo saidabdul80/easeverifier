@@ -8,6 +8,7 @@ use App\Models\ServiceProvider;
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
+use App\Notifications\InsufficientBalanceNotification;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Arr;
@@ -91,7 +92,13 @@ class VerificationEngine
 
                 // Check balance only if charging (with locked wallet)
                 if ($shouldCharge && (!$wallet || !$wallet->hasSufficientFunds($price))) {
-                    return ['error' => 'INSUFFICIENT_FUNDS'];
+                    $currentBalance = $wallet ? $wallet->total_balance : 0;
+                    return [
+                        'error' => 'INSUFFICIENT_FUNDS',
+                        'current_balance' => $currentBalance,
+                        'amount_needed' => $price,
+                        'service_name' => $service->name,
+                    ];
                 }
 
                 // Create verification request record
@@ -154,6 +161,27 @@ class VerificationEngine
 
             // Check if transaction returned an error
             if (isset($result['error'])) {
+                // Send email notification for insufficient balance (max once per 5 minutes per user)
+                if ($result['error'] === 'INSUFFICIENT_FUNDS') {
+                    $cacheKey = "insufficient_balance_notified:{$user->id}";
+
+                    if (!Cache::has($cacheKey)) {
+                        try {
+                            $user->notify(new InsufficientBalanceNotification(
+                                $result['amount_needed'],
+                                $result['current_balance'],
+                                $result['service_name']
+                            ));
+                            // Set cache for 5 minutes to prevent duplicate notifications
+                            Cache::put($cacheKey, true, now()->addMinutes(5));
+                            Log::info("Insufficient balance notification sent to user {$user->id}");
+                        } catch (\Exception $e) {
+                            Log::error("Failed to send insufficient balance notification: " . $e->getMessage());
+                        }
+                    } else {
+                        Log::info("Skipping insufficient balance notification for user {$user->id} - already sent within 5 minutes");
+                    }
+                }
                 return VerificationResult::failure('Insufficient wallet balance', $result['error']);
             }
         } catch (\Exception $e) {
