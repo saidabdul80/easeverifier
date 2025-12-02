@@ -52,19 +52,18 @@ class TransactionController extends Controller
         ]);
     }
 
-    public function show(Transaction $transaction, Request $request)
+    public function show(Request $request, $transactionId)
     {
-        // Ensure user can only see their own transactions
-        if ($transaction->user_id !== $request->user()->id) {
-            abort(403);
-        }
+        $user = $request->user();
 
-        // Load related verification request if exists
-        $transaction->load(['verificationRequest.verificationService']);
+        // Get transaction scoped to the current user (prevents access to other users' transactions)
+        $transaction = $user->transactions()
+            ->with(['verificationRequest.verificationService'])
+            ->findOrFail($transactionId);
 
         return Inertia::render('Customer/Transactions/Show', [
             'transaction' => $transaction,
-            'user' => $request->user(),
+            'user' => $user,
         ]);
     }
 }
