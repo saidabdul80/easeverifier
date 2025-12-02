@@ -19,7 +19,6 @@ class ApiAuthentication
     public function handle(Request $request, Closure $next): Response
     {
         $token = $request->header('X-API-Key') ?? $request->header('Authorization');
-        Log::info('Token: ' . $token);
         // Remove 'Bearer ' pr  efix if present
         if ($token && str_starts_with($token, 'Bearer ')) {
             $token = substr($token, 7);
