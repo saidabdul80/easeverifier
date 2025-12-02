@@ -1,2 +1,8 @@
 User-agent: *
-Disallow:
+Allow: /
+Disallow: /admin/
+Disallow: /customer/
+Disallow: /settings/
+Disallow: /api/
+
+Sitemap: https://easeverifier.com/sitemap.xml

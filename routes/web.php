@@ -21,6 +21,11 @@ use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
 use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
 use App\Http\Controllers\Customer\ApiKeyController;
 use App\Http\Controllers\Customer\PaymentController;
+use App\Http\Controllers\SitemapController;
+
+// SEO Routes
+Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');
+Route::get('/robots.txt', [SitemapController::class, 'robots'])->name('robots');
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
