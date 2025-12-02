@@ -12,7 +12,7 @@ const codeExamples = {
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "X-API-Secret: YOUR_API_SECRET" \\
   -H "Content-Type: application/json" \\
-  -d '{"nin": "12345678901"}'`,
+  -d '{"nin": "12345678901","consent": true}'`,
     php: `<?php
 $client = new GuzzleHttp\\Client();
 $response = $client->post('https://api.easeverifier.com/v1/verify/nin', [

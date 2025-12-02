@@ -24,7 +24,7 @@ const copyCode = async (code: string) => {
 const sampleRequest = `curl -X POST https://api.easeverifier.com/api/v1/verify/nin \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"nin": "12345678901"}'`;
+  -d '{"nin": "12345678901", "consent": true}'`;
 
 const sampleResponse = `{
   "success": true,
