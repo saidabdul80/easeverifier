@@ -18,10 +18,10 @@ defineProps<{
 
 const allServices = [
     { name: 'NIN Verification', slug: 'nin', icon: 'mdi-card-account-details', description: 'Verify National Identification Number to retrieve personal details including name, date of birth, and photograph.', features: ['Full Name', 'Date of Birth', 'Gender', 'Photo', 'Phone Number', 'Address'] },
-    { name: 'BVN Verification', slug: 'bvn', icon: 'mdi-bank', description: 'Verify Bank Verification Number to retrieve banking and personal information securely.', features: ['Full Name', 'Date of Birth', 'Phone', 'Bank Info', 'Account Status'] },
-    { name: 'CAC Verification', slug: 'cac', icon: 'mdi-domain', description: 'Verify Corporate Affairs Commission registration to confirm business legitimacy.', features: ['Company Name', 'RC Number', 'Directors', 'Address', 'Status'] },
-    { name: "Driver's License", slug: 'drivers-license', icon: 'mdi-card-account-details-outline', description: 'Verify Nigerian Driver\'s License to confirm license holder details and validity.', features: ['Full Name', 'License Number', 'Expiry Date', 'Class', 'Photo'] },
-    { name: "Voter's Card", slug: 'voters-card', icon: 'mdi-vote', description: 'Verify INEC Voter\'s Card to confirm voter registration details.', features: ['Full Name', 'VIN', 'Polling Unit', 'State', 'LGA'] },
+    { name: 'BVN Verification', slug: 'bvn', icon: 'mdi-bank', description: 'Verify Bank Verification Number to retrieve banking and personal information securely.', features: ['Full Name', 'Date of Birth', 'Phone', 'Bank Info', 'Account Status'] , comingSoon: true},
+    { name: 'CAC Verification', slug: 'cac', icon: 'mdi-domain', description: 'Verify Corporate Affairs Commission registration to confirm business legitimacy.', features: ['Company Name', 'RC Number', 'Directors', 'Address', 'Status'], comingSoon: true },
+    { name: "Driver's License", slug: 'drivers-license', icon: 'mdi-card-account-details-outline', description: 'Verify Nigerian Driver\'s License to confirm license holder details and validity.', features: ['Full Name', 'License Number', 'Expiry Date', 'Class', 'Photo'], comingSoon: true },
+    { name: "Voter's Card", slug: 'voters-card', icon: 'mdi-vote', description: 'Verify INEC Voter\'s Card to confirm voter registration details.', features: ['Full Name', 'VIN', 'Polling Unit', 'State', 'LGA'],comingSoon: true },
     { name: 'International Passport', slug: 'passport', icon: 'mdi-passport', description: 'Verify Nigerian International Passport details for identity confirmation.', features: ['Full Name', 'Passport No', 'Expiry Date', 'Photo', 'Nationality'], comingSoon: true },
 ];
 </script>
