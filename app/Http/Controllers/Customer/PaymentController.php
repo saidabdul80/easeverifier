@@ -357,8 +357,8 @@ class PaymentController extends Controller
      */
     protected function handleDedicatedAccountTransfer(array $data): void
     {
-        $customerCode = $data['receiver_account_number'];
         Log::info('DVA-transfer',[$data]);
+        $customerCode = $data['receiver_account_number'];
         $amount = $data['amount'] / 100;
         $reference = $data['session_id'];
 
