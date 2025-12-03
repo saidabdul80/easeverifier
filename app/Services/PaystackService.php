@@ -92,5 +92,99 @@ class PaystackService
     {
         return $this->publicKey;
     }
+
+    /**
+     * Create a dedicated virtual account for a customer.
+     */
+    public function createDedicatedVirtualAccount(
+        string $email,
+        string $firstName,
+        string $lastName,
+        ?string $phone = null,
+        string $preferredBank = 'wema-bank'
+    ): array {
+        $payload = [
+            'email' => $email,
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'preferred_bank' => $preferredBank, // wema-bank, titan-paystack
+        ];
+
+        if ($phone) {
+            $payload['phone'] = $phone;
+        }
+
+        $response = Http::withToken($this->secretKey)
+            ->post("{$this->baseUrl}/dedicated_account", $payload);
+
+        if ($response->successful() && $response->json('status')) {
+            $data = $response->json('data');
+            
+            return [
+                'success' => true,
+                'account_number' => $data['account_number'],
+                'account_name' => $data['account_name'],
+                'bank_name' => $data['bank']['name'],
+                'bank_id' => $data['bank']['id'],
+                'bank_slug' => $data['bank']['slug'],
+                'customer_id' => $data['customer']['id'],
+                'customer_code' => $data['customer']['customer_code'],
+                'account_reference' => $data['id'] ?? null,
+                'active' => $data['active'] ?? true,
+            ];
+        }
+
+        Log::error('Paystack DVA creation failed', ['response' => $response->json()]);
+        
+        return [
+            'success' => false,
+            'message' => $response->json('message') ?? 'Failed to create dedicated account',
+        ];
+    }
+
+    /**
+     * Fetch all dedicated accounts for a customer.
+     */
+    public function listDedicatedAccounts(string $customerIdOrCode): array
+    {
+        $response = Http::withToken($this->secretKey)
+            ->get("{$this->baseUrl}/dedicated_account", [
+                'customer' => $customerIdOrCode,
+            ]);
+
+        if ($response->successful() && $response->json('status')) {
+            return [
+                'success' => true,
+                'accounts' => $response->json('data'),
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => $response->json('message') ?? 'Failed to fetch dedicated accounts',
+        ];
+    }
+
+    /**
+     * Deactivate a dedicated virtual account.
+     */
+    public function deactivateDedicatedAccount(string $accountReference): array
+    {
+        $response = Http::withToken($this->secretKey)
+            ->delete("{$this->baseUrl}/dedicated_account/{$accountReference}");
+
+        if ($response->successful() && $response->json('status')) {
+            return [
+                'success' => true,
+                'message' => 'Account deactivated successfully',
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => $response->json('message') ?? 'Failed to deactivate account',
+        ];
+    }
+
 }
 

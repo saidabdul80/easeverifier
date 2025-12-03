@@ -155,5 +155,32 @@ class Customer extends Model
     {
         return $query->where('api_enabled', true)->whereNotNull('api_key');
     }
+
+
+    /**
+     * Get dedicated virtual accounts through the user.
+     */
+    public function dedicatedVirtualAccounts(): HasMany
+    {
+        return $this->hasManyThrough(
+            DedicatedVirtualAccount::class,
+            User::class,
+            'id',
+            'user_id',
+            'user_id',
+            'id'
+        );
+    }
+
+    /**
+     * Get the active dedicated virtual account.
+     */
+    public function activeDedicatedAccount(): ?DedicatedVirtualAccount
+    {
+        return $this->dedicatedVirtualAccounts()
+            ->where('active', true)
+            ->first();
+    }
+
 }
 

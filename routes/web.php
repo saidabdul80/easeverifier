@@ -156,8 +156,13 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::post('api/keys/{apiKey}/regenerate', [ApiKeyController::class, 'regenerate'])->name('api.regenerate');
     Route::post('api/keys/{apiKey}/toggle', [ApiKeyController::class, 'toggle'])->name('api.toggle');
     Route::delete('api/keys/{apiKey}', [ApiKeyController::class, 'destroy'])->name('api.destroy');
-    Route::post('api/webhook', [ApiKeyController::class, 'updateWebhook'])->name('api.webhook');
     Route::get('api/documentation', [ApiKeyController::class, 'documentation'])->name('api.documentation');
+    Route::post('api/webhook', [ApiKeyController::class, 'updateWebhook'])->name('api.webhook');
+    
+    // Dedicated Virtual Accounts
+    Route::post('payment/dedicated-account/create', [PaymentController::class, 'createDedicatedAccount'])->name('payment.dva.create');   
+    Route::get('payment/dedicated-accounts', [PaymentController::class, 'getDedicatedAccounts'])->name('payment.dva.list');
+
 });
 
 // Paystack Webhook (no auth required)
