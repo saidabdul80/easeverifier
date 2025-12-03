@@ -358,9 +358,9 @@ class PaymentController extends Controller
     protected function handleDedicatedAccountTransfer(array $data): void
     {
         Log::info('DVA-transfer',[$data]);
-        $customerCode = $data['receiver_account_number'];
+        $customerCode = $data['metadata']['receiver_account_number'];
         $amount = $data['amount'] / 100;
-        $reference = $data['session_id'];
+        $reference = $data['reference'];
 
         if (!$customerCode) {
             Log::error('Customer code not found in DVA webhook', ['data' => $data]);
@@ -384,42 +384,47 @@ class PaymentController extends Controller
             Log::error('Wallet not found for user', ['user_id' => $user->id]);
             return;
         }
-
-        // Create and complete transaction
-        DB::transaction(function () use ($user, $wallet, $reference, $amount, $data, $dedicatedAccount) {
-            $wallet->lockForUpdate();
-
-            $balanceBefore = $wallet->balance;
-            $wallet->balance += $amount;
-            $wallet->save();
-
-            Transaction::create([
-                'user_id' => $user->id,
-                'wallet_id' => $wallet->id,
-                'reference' => $reference,
-                'type' => 'credit',
-                'category' => 'funding',
-                'amount' => $amount,
-                'balance_before' => $balanceBefore,
-                'balance_after' => $wallet->balance,
-                'description' => "Bank transfer to {$dedicatedAccount->bank_name} account",
-                'status' => 'completed',
-                'metadata' => [
-                    'payment_gateway' => 'paystack',
-                    'channel' => 'dedicated_nuban',
-                    'paid_at' => $data['paid_at'] ?? now(),
-                    'account_number' => $dedicatedAccount->account_number,
-                    'bank_name' => $dedicatedAccount->bank_name,
-                    'sender_name' => $data['metadata']['sender_name'] ?? null,
-                    'sender_account' => $data['metadata']['sender_account_number'] ?? null,
-                ],
-            ]);
-        });
+        $gateway_response = $data['gateway_response'];
+        $status = $data['status'];
+        if($gateway_response== 'Approved' && $status == 'success'){
+            // Create and complete transaction
+            DB::transaction(function () use ($user, $wallet, $reference, $amount, $data, $dedicatedAccount) {
+                $wallet->lockForUpdate();
+    
+                $balanceBefore = $wallet->balance;
+                $wallet->balance += $amount;
+                $wallet->save();
+    
+                Transaction::create([
+                    'user_id' => $user->id,
+                    'wallet_id' => $wallet->id,
+                    'reference' => $reference,
+                    'type' => 'credit',
+                    'category' => 'funding',
+                    'amount' => $amount,
+                    'balance_before' => $balanceBefore,
+                    'balance_after' => $wallet->balance,
+                    'description' => "Bank transfer to {$dedicatedAccount->bank_name} account",
+                    'status' => 'completed',
+                    'metadata' => [
+                        'payment_gateway' => 'paystack',
+                        'channel' => 'dedicated_nuban',
+                        'paid_at' => $data['paid_at'] ?? now(),
+                        'account_number' => $dedicatedAccount->account_number,
+                        'bank_name' => $dedicatedAccount->bank_name,
+                        'sender_name' => $data['metadata']['sender_name'] ?? null,
+                        'sender_account' => $data['metadata']['sender_account_number'] ?? null,
+                    ],
+                ]);
+            });
+        }
 
         Log::info('DVA transfer processed successfully', [
             'user_id' => $user->id,
             'amount' => $amount,
             'reference' => $reference,
+            'status' => $status,
+            'gateway_response'=> $gateway_response
         ]);
     }
 
