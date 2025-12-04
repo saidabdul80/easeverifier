@@ -29,9 +29,11 @@ class WalletController extends Controller
             'total_funded' => $request->user()->transactions()
                 ->where('type', 'credit')
                 ->where('category', 'funding')
+                ->where('status','completed')
                 ->sum('amount'),
             'total_spent' => $request->user()->transactions()
                 ->where('type', 'debit')
+                ->where('status','completed')
                 ->sum('amount'),
         ];
 
