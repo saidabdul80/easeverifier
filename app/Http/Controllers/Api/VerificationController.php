@@ -63,6 +63,32 @@ class VerificationController extends Controller
         $user = $request->user();
         $apiKey = $request->get('api_key'); // Set by ApiAuthentication middleware
 
+        // Check for existing successful verification for the same user, service, and search parameter
+        $existingVerification = VerificationRequest::where('user_id', $user->id)
+            ->where('search_parameter', $validated['nin'])
+            ->where('status', 'completed')
+            ->whereNotNull('response_data')
+            ->latest()
+            ->first();
+
+        if ($existingVerification) {
+            Log::info('Returning cached verification result',[
+                'reference' => $existingVerification->reference,
+            ]);
+
+            $data = $existingVerification->response_data;
+            return response()->json([
+                'success' => true,
+                'status' => 200,
+                'data' => $data,
+                'response_time' => 0,
+                'message' => 'NIN Verified Successfully',
+                'sandbox' => $data['_sandbox'] ?? false,
+                'cached' => true,
+                'cached_reference' => $existingVerification->reference,
+            ]);
+        }
+
         // Set environment from API key (test vs live)
         $result = $this->verificationEngine
             ->setEnvironment($apiKey)
