@@ -16,8 +16,8 @@ const structuredData = {
     "provider": {
         "@type": "Organization",
         "name": "EaseVerifier",
-        "url": "https://easeverifier.com",
-        "logo": "https://easeverifier.com/images/logo.png",
+        "url": "https://verify.ashlabtech.ng",
+        "logo": "https://verify.ashlabtech.ng/images/logo.png",
         "sameAs": ["https://twitter.com/easeverifier", "https://linkedin.com/company/easeverifier"]
     }
 };
@@ -90,21 +90,21 @@ const stats = [
         <meta name="keywords" content="NIN verification, BVN verification, CAC verification, identity verification Nigeria, KYC Nigeria, verification API, Nigerian identity verification, business verification" />
         <meta name="robots" content="index, follow" />
         <meta name="author" content="EaseVerifier" />
-        <link rel="canonical" href="https://easeverifier.com/" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng" />
         <!-- Open Graph / Facebook -->
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://easeverifier.com/" />
+        <meta property="og:url" content="https://verify.ashlabtech.ng/" />
         <meta property="og:title" content="NIN, BVN & CAC Verification API for Nigerian Businesses | EaseVerifier" />
         <meta property="og:description" content="Instant NIN, BVN, and CAC verification API. Verify identities in milliseconds with 99.9% uptime. Trusted by 500+ Nigerian businesses." />
-        <meta property="og:image" content="https://easeverifier.com/images/og-image.png" />
+        <meta property="og:image" content="https://verify.ashlabtech.ng/images/og-image.png" />
         <meta property="og:site_name" content="EaseVerifier" />
         <meta property="og:locale" content="en_NG" />
         <!-- Twitter -->
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:url" content="https://easeverifier.com/" />
+        <meta name="twitter:url" content="https://verify.ashlabtech.ng/" />
         <meta name="twitter:title" content="NIN, BVN & CAC Verification API | EaseVerifier" />
         <meta name="twitter:description" content="Instant identity verification API for Nigerian businesses. Verify NIN, BVN, CAC in milliseconds." />
-        <meta name="twitter:image" content="https://easeverifier.com/images/twitter-card.png" />
+        <meta name="twitter:image" content="https://verify.ashlabtech.ng/images/twitter-card.png" />
         <link rel="preconnect" href="https://rsms.me/" />
         <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
     </Head>

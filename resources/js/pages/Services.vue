@@ -33,7 +33,7 @@ const allServices = [
         <meta property="og:title" content="Identity Verification Services | EaseVerifier" />
         <meta property="og:description" content="Comprehensive identity verification services for Nigerian businesses - NIN, BVN, CAC, Driver's License and more." />
         <meta property="og:type" content="website" />
-        <link rel="canonical" href="https://easeverifier.com/services" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/services" />
     </Head>
 
     <v-app>

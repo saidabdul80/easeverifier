@@ -5,9 +5,10 @@ import CustomerLayout from '@/layouts/CustomerLayout.vue';
 defineProps<{
     user: { name: string; email: string };
     service: any;
-    result: { success: boolean; data?: any; error_message?: string };
+    result: { success: boolean; data?: any; error_message?: string; reference?: string };
     searchParameter: string;
     verification?: any;
+    cached?: boolean;
 }>();
 </script>
 
@@ -22,6 +23,11 @@ defineProps<{
 
         <v-row justify="center">
             <v-col cols="12" md="8">
+                <!-- Cached Result Banner -->
+                <v-alert v-if="cached" type="info" variant="tonal" class="mb-4" density="compact" icon="mdi-cached">
+                    <strong>Cached Result:</strong> This verification was previously completed. No additional charge was applied.
+                </v-alert>
+
                 <!-- Status Card -->
                 <v-card :color="result.success ? 'success-lighten-5' : 'error-lighten-5'" class="mb-6">
                     <v-card-text class="text-center py-8">

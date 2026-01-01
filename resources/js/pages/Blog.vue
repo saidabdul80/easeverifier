@@ -50,7 +50,7 @@ const formatDate = (date: string) => new Date(date).toLocaleDateString('en-NG', 
         <meta property="og:title" content="Blog - EaseVerifier" />
         <meta property="og:description" content="Expert insights on identity verification, KYC compliance, and fraud prevention for Nigerian businesses." />
         <meta property="og:type" content="blog" />
-        <link rel="canonical" href="https://easeverifier.com/blog" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/blog" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">

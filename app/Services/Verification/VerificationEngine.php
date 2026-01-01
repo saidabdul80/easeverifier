@@ -49,12 +49,12 @@ class VerificationEngine
         // Get providers based on environment
         $providers = $this->getProviders($service);
 
-        // Log::info('VerificationEngine::verify', [
-        //     'source' => $source,
-        //     'isTestMode' => $this->isTestMode,
-        //     'apiKeyEnvironment' => $this->apiKeyEnvironment,
-        //     'providersCount' => $providers->count(),
-        // ]);
+        Log::info('VerificationEngine::verify', [
+            'source' => $source,
+            'isTestMode' => $this->isTestMode,
+            'apiKeyEnvironment' => $this->apiKeyEnvironment,
+            'providersCount' => $providers->count(),
+        ]);
 
         if ($providers->isEmpty()) {
             return VerificationResult::failure('Service temporarily unavailable', 'NO_PROVIDER');

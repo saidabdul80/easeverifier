@@ -19,7 +19,7 @@ class DatabaseSeeder extends Seeder
 
         // Create admin user
         $admin = User::firstOrCreate(
-            ['email' => 'admin@easeverifier.com'],
+            ['email' => 'admin@verify.ashlabtech.ng'],
             [
                 'name' => 'Admin User',
                 'password' => Hash::make('password'),

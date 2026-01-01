@@ -10,7 +10,7 @@ import { home, login, register } from '@/routes';
         <meta property="og:title" content="Cookie Policy - EaseVerifier" />
         <meta property="og:description" content="Information about how EaseVerifier uses cookies on our website and platform." />
         <meta property="og:type" content="article" />
-        <link rel="canonical" href="https://easeverifier.com/cookies" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/cookies" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">
@@ -73,7 +73,7 @@ import { home, login, register } from '@/routes';
                         <p class="text-body-1 text-grey-darken-1 mb-6">We may update this Cookie Policy from time to time. We will notify you of any significant changes by posting a notice on our website.</p>
 
                         <h2 class="text-h5 font-weight-bold mb-4">Contact Us</h2>
-                        <p class="text-body-1 text-grey-darken-1">If you have questions about our use of cookies, please contact us at <a href="mailto:privacy@easeverifier.com" class="text-primary">privacy@easeverifier.com</a>.</p>
+                        <p class="text-body-1 text-grey-darken-1">If you have questions about our use of cookies, please contact us at <a href="mailto:privacy@verify.ashlabtech.ng" class="text-primary">privacy@verify.ashlabtech.ng</a>.</p>
                     </v-card>
                 </v-container>
             </section>

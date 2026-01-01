@@ -8,14 +8,14 @@ defineProps<{ user: { name: string; email: string } }>();
 const activeTab = ref('overview');
 
 const codeExamples = {
-    curl: `curl -X POST https://api.easeverifier.com/v1/verify/nin \\
+    curl: `curl -X POST https://api.verify.ashlabtech.ng/v1/verify/nin \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "X-API-Secret: YOUR_API_SECRET" \\
   -H "Content-Type: application/json" \\
   -d '{"nin": "12345678901","consent": true}'`,
     php: `<?php
 $client = new GuzzleHttp\\Client();
-$response = $client->post('https://api.easeverifier.com/v1/verify/nin', [
+$response = $client->post('https://api.verify.ashlabtech.ng/v1/verify/nin', [
     'headers' => [
         'Authorization' => 'Bearer YOUR_API_KEY',
         'X-API-Secret' => 'YOUR_API_SECRET',
@@ -23,7 +23,7 @@ $response = $client->post('https://api.easeverifier.com/v1/verify/nin', [
     'json' => ['nin' => '12345678901']
 ]);
 $data = json_decode($response->getBody(), true);`,
-    javascript: `const response = await fetch('https://api.easeverifier.com/v1/verify/nin', {
+    javascript: `const response = await fetch('https://api.verify.ashlabtech.ng/v1/verify/nin', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer YOUR_API_KEY',
@@ -36,7 +36,7 @@ const data = await response.json();`,
     python: `import requests
 
 response = requests.post(
-    'https://api.easeverifier.com/v1/verify/nin',
+    'https://api.verify.ashlabtech.ng/v1/verify/nin',
     headers={
         'Authorization': 'Bearer YOUR_API_KEY',
         'X-API-Secret': 'YOUR_API_SECRET'
@@ -71,7 +71,7 @@ data = response.json()`
                         <h2 class="text-h5 font-weight-bold mb-4">Getting Started</h2>
                         <p class="text-body-1 mb-4">The EaseVerifier API allows you to programmatically verify Nigerian identities including NIN, BVN, and CAC records.</p>
                         <v-alert type="info" variant="tonal" class="mb-4">
-                            <strong>Base URL:</strong> <code>https://api.easeverifier.com/v1</code>
+                            <strong>Base URL:</strong> <code>https://api.verify.ashlabtech.ng/v1</code>
                         </v-alert>
                         <h3 class="text-h6 font-weight-bold mb-3">Quick Start</h3>
                         <ol class="pl-4 mb-4">

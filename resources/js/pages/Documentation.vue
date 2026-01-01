@@ -21,7 +21,7 @@ const copyCode = async (code: string) => {
     setTimeout(() => copied.value = false, 2000);
 };
 
-const sampleRequest = `curl -X POST https://api.easeverifier.com/api/v1/verify/nin \\
+const sampleRequest = `curl -X POST https://api.verify.ashlabtech.ng/api/v1/verify/nin \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"nin": "12345678901", "consent": true}'`;
@@ -48,7 +48,7 @@ const sampleResponse = `{
         <meta property="og:title" content="API Documentation - EaseVerifier" />
         <meta property="og:description" content="Complete API guide for identity verification integration. Code examples, authentication, webhooks, and error handling." />
         <meta property="og:type" content="article" />
-        <link rel="canonical" href="https://easeverifier.com/documentation" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/documentation" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">
@@ -98,12 +98,12 @@ const sampleResponse = `{
                                 
                                 <v-card class="mb-6" variant="outlined">
                                     <v-card-title class="text-subtitle-1 font-weight-bold">Base URL</v-card-title>
-                                    <v-card-text><code class="bg-grey-lighten-4 pa-2 rounded">https://api.easeverifier.com/v1</code></v-card-text>
+                                    <v-card-text><code class="bg-grey-lighten-4 pa-2 rounded">https://api.verify.ashlabtech.ng/v1</code></v-card-text>
                                 </v-card>
 
                                 <h3 class="text-h6 font-weight-bold mb-3">Quick Start Steps</h3>
                                 <v-timeline density="compact" side="end">
-                                    <v-timeline-item dot-color="primary" size="small"><strong>1. Create Account</strong> - Sign up at easeverifier.com</v-timeline-item>
+                                    <v-timeline-item dot-color="primary" size="small"><strong>1. Create Account</strong> - Sign up at verify.ashlabtech.ng</v-timeline-item>
                                     <v-timeline-item dot-color="primary" size="small"><strong>2. Get API Key</strong> - Generate your API credentials from dashboard</v-timeline-item>
                                     <v-timeline-item dot-color="primary" size="small"><strong>3. Fund Wallet</strong> - Add funds to your wallet</v-timeline-item>
                                     <v-timeline-item dot-color="success" size="small"><strong>4. Start Verifying</strong> - Make your first API call</v-timeline-item>

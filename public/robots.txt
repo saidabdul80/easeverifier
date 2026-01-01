@@ -5,4 +5,4 @@ Disallow: /customer/
 Disallow: /settings/
 Disallow: /api/
 
-Sitemap: https://easeverifier.com/sitemap.xml
+Sitemap: https://verify.ashlabtech.ng/sitemap.xml

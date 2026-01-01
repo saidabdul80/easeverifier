@@ -7,7 +7,7 @@ const form = ref({ name: '', email: '', subject: '', message: '' });
 const loading = ref(false);
 
 const contactInfo = [
-    { icon: 'mdi-email', title: 'Email', value: 'support@easeverifier.com', link: 'mailto:support@easeverifier.com' },
+    { icon: 'mdi-email', title: 'Email', value: 'support@verify.ashlabtech.ng', link: 'mailto:support@verify.ashlabtech.ng' },
     { icon: 'mdi-phone', title: 'Phone', value: '+234 800 123 4567', link: 'tel:+2348001234567' },
     { icon: 'mdi-map-marker', title: 'Address', value: 'Lagos, Nigeria', link: null },
 ];
@@ -25,7 +25,7 @@ const submitForm = () => {
         <meta property="og:title" content="Contact Us - EaseVerifier" />
         <meta property="og:description" content="Get in touch with our support team for help with identity verification services." />
         <meta property="og:type" content="website" />
-        <link rel="canonical" href="https://easeverifier.com/contact" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/contact" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">

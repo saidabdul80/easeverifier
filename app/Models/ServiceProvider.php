@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Log;
 
 class ServiceProvider extends Model
 {
@@ -98,8 +99,17 @@ class ServiceProvider extends Model
 
         switch ($this->auth_type) {
             case 'bearer':
-                $token = $this->auth_config['token'] ?? '';
+                if(is_array($this->auth_config)){
+                        $token = $this->auth_config['token'];
+                }else{
+                    $token = '';
+                }
+                if(empty($token)){
+                   abort(400, 'Bearer token is required');
+                }
+
                 $headers['Authorization'] = 'Bearer ' . $token;
+
                 break;
 
             case 'api_key_header':
@@ -124,7 +134,7 @@ class ServiceProvider extends Model
                 }
                 break;
         }
-
+        Log::info('buildAuthHeaders: ', $headers);
         return $headers;
     }
 

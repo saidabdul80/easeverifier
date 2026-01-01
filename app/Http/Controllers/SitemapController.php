@@ -9,7 +9,7 @@ class SitemapController extends Controller
 {
     public function index(): Response
     {
-        $baseUrl = config('app.url', 'https://easeverifier.com');
+        $baseUrl = config('app.url', 'https://verify.ashlabtech.ng');
 
         // Static pages with their priority and change frequency
         $staticPages = [
@@ -65,7 +65,7 @@ class SitemapController extends Controller
 
     public function robots(): Response
     {
-        $baseUrl = config('app.url', 'https://easeverifier.com');
+        $baseUrl = config('app.url', 'https://verify.ashlabtech.ng');
 
         $robots = "User-agent: *\n";
         $robots .= "Allow: /\n";

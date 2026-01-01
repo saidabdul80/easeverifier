@@ -10,7 +10,7 @@ import { home, login, register } from '@/routes';
         <meta property="og:title" content="Privacy Policy - EaseVerifier" />
         <meta property="og:description" content="Learn how EaseVerifier protects your data and maintains privacy during identity verification." />
         <meta property="og:type" content="article" />
-        <link rel="canonical" href="https://easeverifier.com/privacy" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/privacy" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">
@@ -73,7 +73,7 @@ import { home, login, register } from '@/routes';
                         <p class="text-body-1 text-grey-darken-1 mb-6">We may share your information with third-party service providers who perform services on our behalf, such as payment processing and data verification through government databases.</p>
 
                         <h2 class="text-h5 font-weight-bold mb-4">7. Contact Us</h2>
-                        <p class="text-body-1 text-grey-darken-1">If you have any questions about this Privacy Policy, please contact us at <a href="mailto:privacy@easeverifier.com" class="text-primary">privacy@easeverifier.com</a>.</p>
+                        <p class="text-body-1 text-grey-darken-1">If you have any questions about this Privacy Policy, please contact us at <a href="mailto:privacy@verify.ashlabtech.ng" class="text-primary">privacy@verify.ashlabtech.ng</a>.</p>
                     </v-card>
                 </v-container>
             </section>

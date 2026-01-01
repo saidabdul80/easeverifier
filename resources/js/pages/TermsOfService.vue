@@ -10,7 +10,7 @@ import { home, login, register } from '@/routes';
         <meta property="og:title" content="Terms of Service - EaseVerifier" />
         <meta property="og:description" content="Terms and conditions for using EaseVerifier's identity verification services and API." />
         <meta property="og:type" content="article" />
-        <link rel="canonical" href="https://easeverifier.com/terms" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/terms" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">
@@ -75,7 +75,7 @@ import { home, login, register } from '@/routes';
                         <p class="text-body-1 text-grey-darken-1 mb-6">These terms shall be governed by the laws of the Federal Republic of Nigeria. Any disputes shall be resolved in courts located in Lagos, Nigeria.</p>
 
                         <h2 class="text-h5 font-weight-bold mb-4">10. Contact</h2>
-                        <p class="text-body-1 text-grey-darken-1">For questions about these terms, contact us at <a href="mailto:legal@easeverifier.com" class="text-primary">legal@easeverifier.com</a>.</p>
+                        <p class="text-body-1 text-grey-darken-1">For questions about these terms, contact us at <a href="mailto:legal@verify.ashlabtech.ng" class="text-primary">legal@verify.ashlabtech.ng</a>.</p>
                     </v-card>
                 </v-container>
             </section>

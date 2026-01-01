@@ -42,7 +42,7 @@ const formatPrice = (price: number) => {
         <meta property="og:title" content="Pricing - EaseVerifier" />
         <meta property="og:description" content="Affordable identity verification API pricing. Pay-as-you-go from ₦100 per verification. Volume discounts available." />
         <meta property="og:type" content="website" />
-        <link rel="canonical" href="https://easeverifier.com/pricing" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/pricing" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">

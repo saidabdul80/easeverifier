@@ -23,7 +23,7 @@ const values = [
         <meta property="og:title" content="About Us - EaseVerifier" />
         <meta property="og:description" content="Nigeria's leading identity verification company helping 500+ businesses verify identities securely." />
         <meta property="og:type" content="website" />
-        <link rel="canonical" href="https://easeverifier.com/about" />
+        <link rel="canonical" href="https://verify.ashlabtech.ng/about" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">

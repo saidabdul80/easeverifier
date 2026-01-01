@@ -142,7 +142,7 @@ onMounted(() => {
                 <!-- Footer -->
                 <div class="text-center mt-6 pt-4 border-t">
                     <p class="text-caption text-grey mb-1">Thank you for using EaseVerifier</p>
-                    <p class="text-caption text-grey mb-0">support@easeverifier.com | www.easeverifier.com</p>
+                    <p class="text-caption text-grey mb-0">support@verify.ashlabtech.ng | www.verify.ashlabtech.ng</p>
                 </div>
             </v-card-text>
         </v-card>

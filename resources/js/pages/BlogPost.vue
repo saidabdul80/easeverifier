@@ -39,7 +39,7 @@ const getCategoryIcon = (category: string): string => {
         <meta property="og:title" :content="post.title" />
         <meta property="og:description" :content="post.excerpt" />
         <meta property="og:type" content="article" />
-        <link rel="canonical" :href="`https://easeverifier.com/blog/${post.slug}`" />
+        <link rel="canonical" :href="`https://verify.ashlabtech.ng/blog/${post.slug}`" />
     </Head>
     <v-app>
         <v-app-bar flat color="white" elevation="1">
