@@ -26,7 +26,6 @@ use App\Http\Controllers\SitemapController;
 Route::get('/.well-known/acme-challenge/{token}', function (string $token) {
     $challengePath = public_path(".well-known/acme-challenge/{$token}");
 
-    abort_unless(is_file($challengePath), 404);
 
     return response()->file($challengePath, [
         'Content-Type' => 'text/plain; charset=UTF-8',
