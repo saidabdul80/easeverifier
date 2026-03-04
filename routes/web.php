@@ -23,6 +23,16 @@ use App\Http\Controllers\Customer\ApiKeyController;
 use App\Http\Controllers\Customer\PaymentController;
 use App\Http\Controllers\SitemapController;
 
+Route::get('/.well-known/acme-challenge/{token}', function (string $token) {
+    $challengePath = public_path(".well-known/acme-challenge/{$token}");
+
+    abort_unless(is_file($challengePath), 404);
+
+    return response()->file($challengePath, [
+        'Content-Type' => 'text/plain; charset=UTF-8',
+    ]);
+})->where('token', '[A-Za-z0-9_-]+');
+
 // SEO Routes
 Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');
 Route::get('/robots.txt', [SitemapController::class, 'robots'])->name('robots');
