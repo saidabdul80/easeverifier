@@ -16,6 +16,18 @@ const minAmount = ref(props.filters?.min_amount || '');
 const currentPage = ref(props.transactions?.current_page || 1);
 
 const totalPages = computed(() => props.transactions?.last_page || 1);
+const exportUrl = computed(() => {
+    const params = new URLSearchParams();
+
+    if (search.value) params.set('search', search.value);
+    if (filterType.value) params.set('type', filterType.value);
+    if (filterCategory.value) params.set('category', filterCategory.value);
+    if (minAmount.value) params.set('min_amount', minAmount.value);
+
+    const query = params.toString();
+
+    return query ? `/customer/transactions/export?${query}` : '/customer/transactions/export';
+});
 
 const applyFilters = () => {
     currentPage.value = 1;
@@ -71,7 +83,7 @@ const categoryOptions = [
                 <p class="text-body-2 text-grey">View and manage all your transactions</p>
             </div>
             <v-spacer />
-            <v-btn variant="outlined" prepend-icon="mdi-download">Export</v-btn>
+            <v-btn variant="outlined" prepend-icon="mdi-download" :href="exportUrl">Export</v-btn>
         </div>
 
         <!-- Stats Cards -->
@@ -186,4 +198,3 @@ const categoryOptions = [
         </v-card>
     </CustomerLayout>
 </template>
-

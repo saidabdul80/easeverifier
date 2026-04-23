@@ -19,6 +19,16 @@ const filterCategory = ref(props.filters?.category || '');
 const currentPage = ref(props.transactions?.current_page || 1);
 
 const totalPages = computed(() => props.transactions?.last_page || 1);
+const exportUrl = computed(() => {
+    const params = new URLSearchParams();
+
+    if (filterType.value) params.set('type', filterType.value);
+    if (filterCategory.value) params.set('category', filterCategory.value);
+
+    const query = params.toString();
+
+    return query ? `/customer/wallet/export?${query}` : '/customer/wallet/export';
+});
 
 watch([filterType, filterCategory], ([t, c]) => {
     currentPage.value = 1;
@@ -128,7 +138,7 @@ const headers = [
             <v-card-title class="d-flex align-center">
                 <span>Transaction History</span>
                 <v-spacer />
-                <v-btn variant="outlined" size="small" prepend-icon="mdi-download">Export</v-btn>
+                <v-btn variant="outlined" size="small" prepend-icon="mdi-download" :href="exportUrl">Export</v-btn>
             </v-card-title>
             <v-card-text>
                 <div class="d-flex ga-4 mb-4">
@@ -189,4 +199,3 @@ const headers = [
         </v-card>
     </CustomerLayout>
 </template>
-

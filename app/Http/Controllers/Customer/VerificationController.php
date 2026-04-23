@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Services\Verification\VerificationEngine;
+use App\Support\CsvExport;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class VerificationController extends Controller
 {
@@ -77,10 +80,18 @@ class VerificationController extends Controller
         );
 
         if ($result->isSuccessful()) {
+            $verification = VerificationRequest::query()
+                ->where('user_id', $request->user()->id)
+                ->where('verification_service_id', $service->id)
+                ->where('search_parameter', $validated['search_parameter'])
+                ->latest('id')
+                ->first();
+
             return Inertia::render('Customer/Verification/Result', [
                 'service' => $service,
                 'result' => $result->toArray(),
                 'searchParameter' => $validated['search_parameter'],
+                'verification' => $verification,
             ]);
         }
 
@@ -89,12 +100,7 @@ class VerificationController extends Controller
 
     public function history(Request $request)
     {
-        $verifications = $request->user()->verificationRequests()
-            ->with('verificationService')
-            ->when($request->service, fn($q, $service) => $q->where('verification_service_id', $service))
-            ->when($request->status, fn($q, $status) => $q->where('status', $status))
-            ->when($request->date_from, fn($q, $date) => $q->whereDate('created_at', '>=', $date))
-            ->when($request->date_to, fn($q, $date) => $q->whereDate('created_at', '<=', $date))
+        $verifications = $this->historyQuery($request)
             ->latest()
             ->paginate(15)
             ->withQueryString();
@@ -106,6 +112,29 @@ class VerificationController extends Controller
             'services' => $services,
             'filters' => $request->only(['service', 'status', 'date_from', 'date_to']),
         ]);
+    }
+
+    public function exportHistory(Request $request)
+    {
+        $query = $this->historyQuery($request)->orderByDesc('id');
+
+        return CsvExport::download(
+            filename: 'verification-history-'.now()->format('Ymd-His').'.csv',
+            headers: ['Reference', 'Service', 'Search Parameter', 'Status', 'Amount Charged', 'Created At', 'Completed At'],
+            rows: function () use ($query) {
+                foreach ($query->lazyByIdDesc(500, 'id') as $verification) {
+                    yield [
+                        $verification->reference,
+                        $verification->verificationService?->name,
+                        $verification->search_parameter,
+                        $verification->status,
+                        $verification->amount_charged,
+                        $verification->created_at,
+                        $verification->completed_at,
+                    ];
+                }
+            },
+        );
     }
 
     public function showResult(VerificationRequest $verification, Request $request)
@@ -128,5 +157,59 @@ class VerificationController extends Controller
             'verification' => $verification,
         ]);
     }
-}
 
+    public function download(VerificationRequest $verification, Request $request): StreamedResponse
+    {
+        if ($verification->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        $verification->loadMissing(['verificationService:id,name', 'serviceProvider:id,name']);
+
+        $payload = [
+            'reference' => $verification->reference,
+            'service' => $verification->verificationService?->name,
+            'provider' => $verification->serviceProvider?->name,
+            'search_parameter' => $verification->search_parameter,
+            'status' => $verification->status,
+            'amount_charged' => $verification->amount_charged,
+            'source' => $verification->source,
+            'completed_at' => $verification->completed_at,
+            'created_at' => $verification->created_at,
+            'error_message' => $verification->error_message,
+            'response_data' => $verification->response_data,
+        ];
+
+        return response()->streamDownload(function () use ($payload) {
+            echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }, sprintf('verification-result-%s.json', $verification->reference), [
+            'Content-Type' => 'application/json; charset=UTF-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+        ]);
+    }
+
+    private function historyQuery(Request $request)
+    {
+        return $request->user()->verificationRequests()
+            ->select([
+                'id',
+                'user_id',
+                'verification_service_id',
+                'service_provider_id',
+                'reference',
+                'search_parameter',
+                'amount_charged',
+                'status',
+                'source',
+                'error_message',
+                'response_data',
+                'created_at',
+                'completed_at',
+            ])
+            ->with('verificationService:id,name')
+            ->when($request->filled('service'), fn (Builder $query) => $query->where('verification_service_id', $request->integer('service')))
+            ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
+            ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
+            ->when($request->filled('date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('date_to')));
+    }
+}

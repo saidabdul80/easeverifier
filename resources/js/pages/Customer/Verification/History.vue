@@ -19,6 +19,18 @@ const detailDialog = ref(false);
 const selectedVerification = ref<any>(null);
 
 const totalPages = computed(() => props.verifications?.last_page || 1);
+const exportUrl = computed(() => {
+    const params = new URLSearchParams();
+
+    if (filterService.value) params.set('service', filterService.value);
+    if (filterStatus.value) params.set('status', filterStatus.value);
+    if (dateFrom.value) params.set('date_from', dateFrom.value);
+    if (dateTo.value) params.set('date_to', dateTo.value);
+
+    const query = params.toString();
+
+    return query ? `/customer/history/export?${query}` : '/customer/history/export';
+});
 
 watch([filterService, filterStatus, dateFrom, dateTo], ([s, st, df, dt]) => {
     currentPage.value = 1;
@@ -68,7 +80,7 @@ const headers = [
                 <p class="text-body-2 text-grey">View all your past verifications</p>
             </div>
             <v-spacer />
-            <v-btn variant="outlined" prepend-icon="mdi-download">Export</v-btn>
+            <v-btn variant="outlined" prepend-icon="mdi-download" :href="exportUrl">Export</v-btn>
         </div>
 
         <v-card>
@@ -158,4 +170,3 @@ const headers = [
         </v-dialog>
     </CustomerLayout>
 </template>
-

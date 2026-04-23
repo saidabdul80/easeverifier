@@ -126,10 +126,12 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
 
     // Transactions
     Route::get('transactions', [AdminTransactionController::class, 'index'])->name('transactions.index');
+    Route::get('transactions/export', [AdminTransactionController::class, 'export'])->name('transactions.export');
     Route::get('transactions/{transaction}', [AdminTransactionController::class, 'show'])->name('transactions.show');
 
     // Verifications
     Route::get('verifications', [AdminVerificationController::class, 'index'])->name('verifications.index');
+    Route::get('verifications/export', [AdminVerificationController::class, 'export'])->name('verifications.export');
     Route::get('verifications/{verification}', [AdminVerificationController::class, 'show'])->name('verifications.show');
 
     // Blog
@@ -145,15 +147,19 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::get('verify/{service}', [CustomerVerificationController::class, 'show'])->name('verification.show');
     Route::post('verify/{service}', [CustomerVerificationController::class, 'verify'])->name('verification.verify');
     Route::get('history', [CustomerVerificationController::class, 'history'])->name('verification.history');
+    Route::get('history/export', [CustomerVerificationController::class, 'exportHistory'])->name('verification.export');
     Route::get('history/{verification}', [CustomerVerificationController::class, 'showResult'])->name('verification.result');
     Route::get('verification/{verification}', [CustomerVerificationController::class, 'showResult'])->name('verification.show-result');
+    Route::get('verification/{verification}/download', [CustomerVerificationController::class, 'download'])->name('verification.download');
 
     // Wallet
     Route::get('wallet', [CustomerWalletController::class, 'index'])->name('wallet.index');
+    Route::get('wallet/export', [CustomerWalletController::class, 'export'])->name('wallet.export');
     Route::get('wallet/fund', [CustomerWalletController::class, 'fund'])->name('wallet.fund');
 
     // Transactions
     Route::get('transactions', [CustomerTransactionController::class, 'index'])->name('transactions.index');
+    Route::get('transactions/export', [CustomerTransactionController::class, 'export'])->name('transactions.export');
     Route::get('transactions/{transaction}', [CustomerTransactionController::class, 'show'])->name('transactions.show');
 
     // Payments (Paystack)

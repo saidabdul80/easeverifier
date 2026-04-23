@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Support\CsvExport;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -12,17 +14,8 @@ class TransactionController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        
-        $transactions = $user->transactions()
-            ->when($request->search, function ($query, $search) {
-                $query->where('reference', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
-            })
-            ->when($request->type, fn($q, $type) => $q->where('type', $type))
-            ->when($request->category, fn($q, $cat) => $q->where('category', $cat))
-            ->when($request->min_amount, fn($q, $amount) => $q->where('amount', '>=', $amount))
-            ->when($request->date_from, fn($q, $date) => $q->whereDate('created_at', '>=', $date))
-            ->when($request->date_to, fn($q, $date) => $q->whereDate('created_at', '<=', $date))
+
+        $transactions = $this->filteredTransactionsQuery($request)
             ->latest()
             ->paginate(20)
             ->withQueryString();
@@ -52,6 +45,30 @@ class TransactionController extends Controller
         ]);
     }
 
+    public function export(Request $request)
+    {
+        $query = $this->filteredTransactionsQuery($request)->orderByDesc('id');
+
+        return CsvExport::download(
+            filename: 'customer-transactions-'.now()->format('Ymd-His').'.csv',
+            headers: ['Reference', 'Type', 'Category', 'Amount', 'Balance After', 'Status', 'Description', 'Created At'],
+            rows: function () use ($query) {
+                foreach ($query->lazyByIdDesc(500, 'id') as $transaction) {
+                    yield [
+                        $transaction->reference,
+                        $transaction->type,
+                        $transaction->category,
+                        $transaction->amount,
+                        $transaction->balance_after,
+                        $transaction->status,
+                        $transaction->description,
+                        $transaction->created_at,
+                    ];
+                }
+            },
+        );
+    }
+
     public function show(Request $request, $transactionId)
     {
         $user = $request->user();
@@ -66,5 +83,34 @@ class TransactionController extends Controller
             'user' => $user,
         ]);
     }
-}
 
+    private function filteredTransactionsQuery(Request $request)
+    {
+        $search = trim((string) $request->input('search', ''));
+
+        return $request->user()->transactions()
+            ->select([
+                'id',
+                'user_id',
+                'reference',
+                'type',
+                'category',
+                'amount',
+                'balance_after',
+                'description',
+                'status',
+                'created_at',
+            ])
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $nestedQuery) use ($search) {
+                    $nestedQuery->where('reference', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
+                });
+            })
+            ->when($request->filled('type'), fn (Builder $query) => $query->where('type', $request->string('type')))
+            ->when($request->filled('category'), fn (Builder $query) => $query->where('category', $request->string('category')))
+            ->when($request->filled('min_amount'), fn (Builder $query) => $query->where('amount', '>=', (float) $request->input('min_amount')))
+            ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
+            ->when($request->filled('date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('date_to')));
+    }
+}

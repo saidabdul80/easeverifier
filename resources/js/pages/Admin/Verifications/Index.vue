@@ -17,6 +17,16 @@ const detailDialog = ref(false);
 const selectedVerification = ref<any>(null);
 
 const totalPages = computed(() => props.verifications?.last_page || 1);
+const exportUrl = computed(() => {
+    const params = new URLSearchParams();
+
+    if (search.value) params.set('search', search.value);
+    if (filterStatus.value) params.set('status', filterStatus.value);
+
+    const query = params.toString();
+
+    return query ? `/admin/verifications/export?${query}` : '/admin/verifications/export';
+});
 
 watch([search, filterStatus], ([s, st]) => {
     currentPage.value = 1;
@@ -60,7 +70,7 @@ const headers = [
                 <p class="text-body-2 text-grey">Monitor all verification requests</p>
             </div>
             <v-spacer />
-            <v-btn variant="outlined" prepend-icon="mdi-download">Export</v-btn>
+            <v-btn variant="outlined" prepend-icon="mdi-download" :href="exportUrl">Export</v-btn>
         </div>
 
         <!-- Stats -->
@@ -174,4 +184,3 @@ const headers = [
         </v-dialog>
     </AdminLayout>
 </template>
-

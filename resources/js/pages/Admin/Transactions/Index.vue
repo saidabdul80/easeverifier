@@ -15,6 +15,16 @@ const filterType = ref(props.filters?.type || '');
 const currentPage = ref(props.transactions?.current_page || 1);
 
 const totalPages = computed(() => props.transactions?.last_page || 1);
+const exportUrl = computed(() => {
+    const params = new URLSearchParams();
+
+    if (search.value) params.set('search', search.value);
+    if (filterType.value) params.set('type', filterType.value);
+
+    const query = params.toString();
+
+    return query ? `/admin/transactions/export?${query}` : '/admin/transactions/export';
+});
 
 watch([search, filterType], ([s, t]) => {
     currentPage.value = 1;
@@ -52,7 +62,7 @@ const headers = [
                 <p class="text-body-2 text-grey">View all platform transactions</p>
             </div>
             <v-spacer />
-            <v-btn variant="outlined" prepend-icon="mdi-download">Export</v-btn>
+            <v-btn variant="outlined" prepend-icon="mdi-download" :href="exportUrl">Export</v-btn>
         </div>
 
         <!-- Stats -->
@@ -163,4 +173,3 @@ const headers = [
         </v-card>
     </AdminLayout>
 </template>
-

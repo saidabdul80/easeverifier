@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
+import { computed } from 'vue';
 
-defineProps<{
+const props = defineProps<{
     user: { name: string; email: string };
     service: any;
     result: { success: boolean; data?: any; error_message?: string; reference?: string };
@@ -10,6 +11,8 @@ defineProps<{
     verification?: any;
     cached?: boolean;
 }>();
+
+const downloadUrl = computed(() => props.verification?.id ? `/customer/verification/${props.verification.id}/download` : null);
 </script>
 
 <template>
@@ -49,7 +52,15 @@ defineProps<{
                         <v-icon color="primary" class="mr-2">mdi-account-details</v-icon>
                         Verification Data
                         <v-spacer />
-                        <v-btn variant="outlined" size="small" prepend-icon="mdi-download">Download</v-btn>
+                        <v-btn
+                            variant="outlined"
+                            size="small"
+                            prepend-icon="mdi-download"
+                            :href="downloadUrl || undefined"
+                            :disabled="!downloadUrl"
+                        >
+                            Download
+                        </v-btn>
                     </v-card-title>
                     <v-card-text>
                         <v-table density="comfortable">
@@ -102,4 +113,3 @@ defineProps<{
         </v-row>
     </CustomerLayout>
 </template>
-
