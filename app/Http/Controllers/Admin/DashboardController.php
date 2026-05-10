@@ -8,22 +8,13 @@ use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Models\Wallet;
+use Illuminate\Database\Eloquent\Builder;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
     public function index()
     {
-        // Get transaction IDs for completed verifications (for accurate revenue)
-        $completedTransactionIds = VerificationRequest::where('status', 'completed')
-            ->whereNotNull('transaction_id')
-            ->pluck('transaction_id');
-
-        $todayCompletedTransactionIds = VerificationRequest::where('status', 'completed')
-            ->whereNotNull('transaction_id')
-            ->whereDate('created_at', today())
-            ->pluck('transaction_id');
-
         $stats = [
             'total_customers' => User::role('customer')->count(),
             'active_customers' => User::role('customer')->where('is_active', true)->count(),
@@ -33,12 +24,12 @@ class DashboardController extends Controller
             'successful_verifications' => VerificationRequest::where('status', 'completed')->count(),
             'failed_verifications' => VerificationRequest::where('status', 'failed')->count(),
             'pending_verifications' => VerificationRequest::whereIn('status', ['pending', 'processing'])->count(),
-            'total_revenue' => Transaction::whereIn('id', $completedTransactionIds)
+            'total_revenue' => Transaction::whereIn('id', $this->completedVerificationTransactionIdsQuery())
                 ->where('type', 'debit')
                 ->sum('amount'),
             'total_wallet_balance' => Wallet::sum('balance'),
             'today_verifications' => VerificationRequest::whereDate('created_at', today())->count(),
-            'today_revenue' => Transaction::whereIn('id', $todayCompletedTransactionIds)
+            'today_revenue' => Transaction::whereIn('id', $this->completedVerificationTransactionIdsQuery()->whereDate('created_at', today()))
                 ->where('type', 'debit')
                 ->sum('amount'),
         ];
@@ -72,5 +63,12 @@ class DashboardController extends Controller
             'monthlyRevenue' => $monthlyRevenue,
         ]);
     }
-}
 
+    private function completedVerificationTransactionIdsQuery(): Builder
+    {
+        return VerificationRequest::query()
+            ->select('transaction_id')
+            ->where('status', 'completed')
+            ->whereNotNull('transaction_id');
+    }
+}
