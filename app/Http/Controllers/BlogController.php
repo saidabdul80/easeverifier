@@ -14,10 +14,17 @@ class BlogController extends Controller
             ->latest()
             ->paginate(9);
 
+        $hottestPosts = BlogPost::with('author:id,name')
+            ->published()
+            ->orderByDesc('views')
+            ->limit(4)
+            ->get();
+
         $categories = BlogPost::getCategories();
 
         return Inertia::render('Blog', [
             'posts' => $posts,
+            'hottestPosts' => $hottestPosts,
             'categories' => $categories,
         ]);
     }
@@ -45,4 +52,3 @@ class BlogController extends Controller
         ]);
     }
 }
-

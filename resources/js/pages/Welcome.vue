@@ -1,87 +1,110 @@
 <script setup lang="ts">
-import { about, blog, contact, cookies, dashboard, documentation, login, pricing, privacy, register, services as servicesPage, terms } from '@/routes';
+import PublicTopNav from '@/components/PublicTopNav.vue';
+import { about, blog, contact, cookies, documentation, pricing, privacy, register, services as servicesPage, terms } from '@/routes';
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 
-// Structured Data for SEO
+interface Post {
+    id: number;
+    title: string;
+    slug: string;
+    excerpt: string;
+    category: string;
+    published_at: string;
+    views: number;
+}
+
 const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "EaseVerifier",
-    "applicationCategory": "BusinessApplication",
-    "operatingSystem": "Web",
-    "description": "Identity verification API for Nigerian businesses - verify NIN, BVN, and CAC records instantly",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "NGN" },
-    "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.8", "ratingCount": "500" },
-    "provider": {
-        "@type": "Organization",
-        "name": "EaseVerifier",
-        "url": "https://verify.ashlabtech.ng",
-        "logo": "https://verify.ashlabtech.ng/images/logo.png",
-        "sameAs": ["https://twitter.com/easeverifier", "https://linkedin.com/company/easeverifier"]
-    }
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'EaseVerifier',
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    description: 'Identity verification API for Nigerian businesses - verify NIN, BVN, and CAC records instantly',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'NGN' },
+    aggregateRating: { '@type': 'AggregateRating', ratingValue: '4.8', ratingCount: '500' },
+    provider: {
+        '@type': 'Organization',
+        name: 'EaseVerifier',
+        url: 'https://verify.ashlabtech.ng',
+        logo: 'https://verify.ashlabtech.ng/images/logo.png',
+        sameAs: ['https://twitter.com/easeverifier', 'https://linkedin.com/company/easeverifier'],
+    },
 };
 
 let jsonLdScript: HTMLScriptElement | null = null;
+const adsenseScriptSelector = 'script[data-adsense-loader="true"]';
 
 onMounted(() => {
     jsonLdScript = document.createElement('script');
     jsonLdScript.type = 'application/ld+json';
     jsonLdScript.textContent = JSON.stringify(structuredData);
     document.head.appendChild(jsonLdScript);
+
+    if (!document.head.querySelector(adsenseScriptSelector)) {
+        const adsenseScript = document.createElement('script');
+        adsenseScript.async = true;
+        adsenseScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5615909705062666';
+        adsenseScript.crossOrigin = 'anonymous';
+        adsenseScript.dataset.adsenseLoader = 'true';
+        document.head.appendChild(adsenseScript);
+    }
 });
 
 onUnmounted(() => {
-    if (jsonLdScript && jsonLdScript.parentNode) {
+    if (jsonLdScript?.parentNode) {
         jsonLdScript.parentNode.removeChild(jsonLdScript);
     }
 });
 
-withDefaults(
+const props = withDefaults(
     defineProps<{
         canRegister: boolean;
+        hottestPosts?: Post[];
     }>(),
     {
         canRegister: true,
+        hottestPosts: () => [],
     },
 );
 
-const mobileMenu = ref(false);
-
 const servicesList = [
-    {
-        icon: 'mdi-card-account-details',
-        title: 'NIN Verification',
-        description: 'Verify National Identification Numbers instantly with our robust API.',
-        color: 'primary',
-    },
-    {
-        icon: 'mdi-bank',
-        title: 'BVN Verification',
-        description: 'Bank Verification Number validation for financial compliance.',
-        color: 'secondary',
-    },
-    {
-        icon: 'mdi-domain',
-        title: 'CAC Verification',
-        description: 'Corporate Affairs Commission business verification services.',
-        color: 'accent',
-    },
+    { icon: 'mdi-card-account-details', title: 'NIN', description: 'Fast identity checks for onboarding.', accent: 'service-nin' },
+    { icon: 'mdi-bank', title: 'BVN', description: 'Bank-grade verification for financial flows.', accent: 'service-bvn' },
+    { icon: 'mdi-domain', title: 'CAC', description: 'Business record checks for company validation.', accent: 'service-cac' },
 ];
 
-const features = [
-    { icon: 'mdi-lightning-bolt', title: 'Lightning Fast', desc: 'Get verification results in milliseconds' },
-    { icon: 'mdi-shield-check', title: 'Secure & Reliable', desc: '99.9% uptime with bank-grade security' },
-    { icon: 'mdi-api', title: 'Easy Integration', desc: 'Simple RESTful API with comprehensive docs' },
-    { icon: 'mdi-cash-multiple', title: 'Pay-as-you-go', desc: 'Only pay for what you use, no hidden fees' },
+const quickStats = [
+    { value: '100K+', label: 'Checks run' },
+    { value: '60+', label: 'Teams onboarded' },
+    { value: '<1s', label: 'Average response' },
 ];
 
-const stats = [
-    { value: '10M+', label: 'Verifications' },
-    { value: '500+', label: 'Businesses' },
-    { value: '99.9%', label: 'Uptime' },
-    { value: '<1s', label: 'Response Time' },
+const workflow = [
+    { step: '01', title: 'Create account' },
+    { step: '02', title: 'Fund wallet' },
+    { step: '03', title: 'Verify instantly' },
 ];
+
+const featuredPost = computed(() => props.hottestPosts[0] ?? null);
+const secondaryPosts = computed(() => props.hottestPosts.slice(1, 3));
+
+const getCategoryIcon = (category: string): string => {
+    const icons: Record<string, string> = {
+        Education: 'mdi-school',
+        Compliance: 'mdi-clipboard-check',
+        Technical: 'mdi-api',
+        Security: 'mdi-shield-lock',
+        News: 'mdi-newspaper',
+        Updates: 'mdi-update',
+        Guides: 'mdi-book-open-page-variant',
+    };
+
+    return icons[category] || 'mdi-post';
+};
+
+const formatDate = (date: string) =>
+    new Date(date).toLocaleDateString('en-NG', { year: 'numeric', month: 'short', day: 'numeric' });
 </script>
 
 <template>
@@ -91,7 +114,6 @@ const stats = [
         <meta name="robots" content="index, follow" />
         <meta name="author" content="EaseVerifier" />
         <link rel="canonical" href="https://verify.ashlabtech.ng" />
-        <!-- Open Graph / Facebook -->
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://verify.ashlabtech.ng/" />
         <meta property="og:title" content="NIN, BVN & CAC Verification API for Nigerian Businesses | EaseVerifier" />
@@ -99,7 +121,6 @@ const stats = [
         <meta property="og:image" content="https://verify.ashlabtech.ng/images/og-image.png" />
         <meta property="og:site_name" content="EaseVerifier" />
         <meta property="og:locale" content="en_NG" />
-        <!-- Twitter -->
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:url" content="https://verify.ashlabtech.ng/" />
         <meta name="twitter:title" content="NIN, BVN & CAC Verification API | EaseVerifier" />
@@ -108,281 +129,234 @@ const stats = [
         <link rel="preconnect" href="https://rsms.me/" />
         <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
     </Head>
-    <v-app>
-        <!-- Navigation -->
-        <v-app-bar flat color="transparent" class="px-4">
-            <v-container class="d-flex align-center py-0">
-                <div class="d-flex align-center">
-                    <v-icon color="primary" size="32" class="mr-2">mdi-shield-check</v-icon>
-                    <span class="text-h6 font-weight-bold text-primary">EaseVerifier</span>
-                </div>
-                <v-spacer />
-                <div class="d-none d-md-flex align-center ga-4">
-                    <Link :href="servicesPage()"><v-btn variant="text" color="primary">Services</v-btn></Link>
-                    <Link :href="pricing()"><v-btn variant="text" color="primary">Pricing</v-btn></Link>
-                    <Link :href="documentation()"><v-btn variant="text" color="primary">Documentation</v-btn></Link>
-                    <template v-if="$page.props.auth.user">
-                        <Link :href="dashboard()">
-                            <v-btn color="primary" variant="flat">Dashboard</v-btn>
-                        </Link>
-                    </template>
-                    <template v-else>
-                        <Link :href="login()">
-                            <v-btn variant="outlined" color="primary">Log in</v-btn>
-                        </Link>
-                        <Link v-if="canRegister" :href="register()">
-                            <v-btn color="primary" variant="flat">Get Started</v-btn>
-                        </Link>
-                    </template>
-                </div>
-                <v-app-bar-nav-icon class="d-md-none" @click="mobileMenu = !mobileMenu" />
-            </v-container>
-        </v-app-bar>
 
-        <!-- Mobile Menu -->
-        <v-navigation-drawer v-model="mobileMenu" temporary location="right">
-            <v-list nav>
-                <Link :href="servicesPage()"><v-list-item prepend-icon="mdi-home" title="Services" /></Link>
-                <Link :href="pricing()"><v-list-item prepend-icon="mdi-currency-usd" title="Pricing" /></Link>
-                <Link :href="documentation()"><v-list-item prepend-icon="mdi-book-open-variant" title="Documentation" /></Link>
-                <v-divider class="my-2" />
-                <template v-if="$page.props.auth.user">
-                    <Link :href="dashboard()">
-                        <v-list-item prepend-icon="mdi-view-dashboard" title="Dashboard" />
-                    </Link>
-                </template>
-                <template v-else>
-                    <Link :href="login()">
-                        <v-list-item prepend-icon="mdi-login" title="Log in" />
-                    </Link>
-                    <Link v-if="canRegister" :href="register()">
-                        <v-list-item prepend-icon="mdi-account-plus" title="Get Started" />
-                    </Link>
-                </template>
-            </v-list>
-        </v-navigation-drawer>
+    <v-app class="public-app">
+        <PublicTopNav current="home" :can-register="canRegister" />
 
         <v-main>
-            <!-- Hero Section -->
-            <section class="py-16 md:py-24" style="background: linear-gradient(135deg, #1c6434 0%, #0d3a1c 100%);">
-                <v-container>
-                    <v-row align="center">
-                        <v-col cols="12" md="6" class="text-white">
-                            <h1 class="text-h3 text-md-h2 font-weight-bold mb-4">
-                                Identity Verification Made <span class="text-secondary">Simple</span>
+            <section class="hero-shell">
+                <div class="hero-glow hero-glow-a" />
+                <div class="hero-glow hero-glow-b" />
+                <v-container class="hero-content">
+                    <v-row align="center" class="ga-0">
+                        <v-col cols="12" md="7">
+                            <div class="hero-badge">
+                                <v-icon size="16">mdi-lightning-bolt</v-icon>
+                                API-first identity checks
+                            </div>
+                            <h1 class="hero-title">
+                                Verify <span style="font-size: 3rem;">NIN, BVN, CAC</span><br>
+                                without slowing the user down.
                             </h1>
-                            <p class="text-h6 font-weight-light mb-6 text-grey-lighten-2">
-                                Verify NIN, BVN, and CAC records instantly with our powerful API.
-                                Trusted by 500+ businesses across Nigeria.
+                            <p class="hero-copy">
+                                Fast checks, clean onboarding, simple pricing.
                             </p>
-                            <div class="d-flex flex-wrap ga-3">
+
+                            <div class="d-flex flex-wrap ga-3 mb-8">
                                 <Link v-if="canRegister" :href="register()">
-                                    <v-btn color="secondary" size="x-large" class="px-8">
-                                        <v-icon start>mdi-rocket-launch</v-icon>
+                                    <v-btn color="secondary" size="x-large" class="cta-primary">
                                         Start Free Trial
                                     </v-btn>
                                 </Link>
-                                <v-btn :href="documentation()" variant="outlined" color="white" size="x-large" class="px-8">
-                                    <v-icon start>mdi-book-open-variant</v-icon>
-                                    View Documentation
-                                </v-btn>
+                                <Link :href="documentation()">
+                                    <v-btn variant="outlined" color="white" size="x-large" class="cta-secondary">View Docs</v-btn>
+                                </Link>
                             </div>
-                            <div class="d-flex align-center mt-8 ga-6">
-                                <div v-for="stat in stats" :key="stat.label" class="text-center">
-                                    <div class="text-h4 font-weight-bold text-secondary">{{ stat.value }}</div>
-                                    <div class="text-caption text-grey-lighten-1">{{ stat.label }}</div>
+
+                            <div class="stats-strip">
+                                <div v-for="stat in quickStats" :key="stat.label" class="stat-pill">
+                                    <div class="stat-value">{{ stat.value }}</div>
+                                    <div class="stat-label">{{ stat.label }}</div>
                                 </div>
                             </div>
                         </v-col>
-                        <v-col cols="12" md="6" class="d-none d-md-flex justify-center">
-                            <v-card class="pa-6" width="400" elevation="12">
-                                <div class="text-center mb-4">
-                                    <v-icon color="primary" size="48">mdi-shield-check</v-icon>
-                                    <h3 class="text-h6 mt-2">Try NIN Verification</h3>
+
+                        <v-col cols="12" md="5">
+                            <div class="hero-panel">
+                                <div class="hero-panel-top">
+                                    <div class="panel-dot red" />
+                                    <div class="panel-dot amber" />
+                                    <div class="panel-dot green" />
                                 </div>
-                                <v-text-field
-                                    label="Enter NIN"
-                                    placeholder="12345678901"
-                                    prepend-inner-icon="mdi-card-account-details"
-                                    variant="outlined"
-                                    disabled
-                                />
-                                <v-btn color="primary" block size="large" disabled>
-                                    <v-icon start>mdi-magnify</v-icon>
-                                    Verify Now
-                                </v-btn>
-                                <p class="text-caption text-center mt-3 text-grey">
-                                    <v-icon size="14">mdi-lock</v-icon>
-                                    Sign up to start verifying
-                                </p>
-                            </v-card>
+                                <div class="hero-panel-body">
+                                    <div class="request-chip">POST /api/verify/nin</div>
+                                    <div class="code-card">
+                                        <div class="code-line"><span class="code-key">status</span>: <span class="code-value">"verified"</span></div>
+                                        <div class="code-line"><span class="code-key">match</span>: <span class="code-value">true</span></div>
+                                        <div class="code-line"><span class="code-key">latency</span>: <span class="code-value">"0.7s"</span></div>
+                                    </div>
+                                    <div class="trust-grid">
+                                        <div class="trust-card">
+                                            <div class="trust-number">99.9%</div>
+                                            <div class="trust-label">Uptime</div>
+                                        </div>
+                                        <div class="trust-card">
+                                            <div class="trust-number">Live</div>
+                                            <div class="trust-label">Wallet billing</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </v-col>
                     </v-row>
                 </v-container>
             </section>
 
-            <!-- Services Section -->
-            <section class="py-16 bg-grey-lighten-4">
+            <section class="section-shell">
                 <v-container>
-                    <div class="text-center mb-12">
-                        <h2 class="text-h4 text-md-h3 font-weight-bold mb-3">Our Verification Services</h2>
-                        <p class="text-body-1 text-grey-darken-1 mx-auto" style="max-width: 600px;">
-                            Comprehensive identity verification solutions designed for Nigerian businesses
-                        </p>
+                    <div class="section-head">
+                        <div class="section-kicker">Core Services</div>
+                        <h2 class="section-title">Three checks. One clean flow.</h2>
                     </div>
+
                     <v-row>
                         <v-col v-for="service in servicesList" :key="service.title" cols="12" md="4">
-                            <v-card class="pa-6 h-100 service-card" hover>
-                                <div class="d-flex align-center mb-4">
-                                    <v-avatar :color="service.color" size="56">
-                                        <v-icon color="white" size="28">{{ service.icon }}</v-icon>
-                                    </v-avatar>
-                                </div>
-                                <h3 class="text-h6 font-weight-bold mb-2">{{ service.title }}</h3>
-                                <p class="text-body-2 text-grey-darken-1 mb-4">{{ service.description }}</p>
-                                <Link :href="servicesPage()">
-                                    <v-btn variant="text" color="primary" class="px-0">
-                                        Learn more <v-icon end>mdi-arrow-right</v-icon>
-                                    </v-btn>
-                                </Link>
-                            </v-card>
-                        </v-col>
-                    </v-row>
-                </v-container>
-            </section>
-
-            <!-- Features Section -->
-            <section class="py-16">
-                <v-container>
-                    <div class="text-center mb-12">
-                        <h2 class="text-h4 text-md-h3 font-weight-bold mb-3">Why Choose EaseVerifier?</h2>
-                        <p class="text-body-1 text-grey-darken-1 mx-auto" style="max-width: 600px;">
-                            Built for developers, trusted by enterprises
-                        </p>
-                    </div>
-                    <v-row>
-                        <v-col v-for="feature in features" :key="feature.title" cols="12" sm="6" md="3">
-                            <div class="text-center pa-4">
-                                <v-avatar color="primary-lighten-5" size="72" class="mb-4">
-                                    <v-icon color="primary" size="36">{{ feature.icon }}</v-icon>
-                                </v-avatar>
-                                <h4 class="text-h6 font-weight-bold mb-2">{{ feature.title }}</h4>
-                                <p class="text-body-2 text-grey-darken-1">{{ feature.desc }}</p>
-                            </div>
-                        </v-col>
-                    </v-row>
-                </v-container>
-            </section>
-
-            <!-- How It Works Section -->
-            <section class="py-16 bg-grey-lighten-4">
-                <v-container>
-                    <div class="text-center mb-12">
-                        <h2 class="text-h4 text-md-h3 font-weight-bold mb-3">How It Works</h2>
-                        <p class="text-body-1 text-grey-darken-1 mx-auto" style="max-width: 600px;">
-                            Get started in three simple steps
-                        </p>
-                    </div>
-                    <v-row justify="center">
-                        <v-col cols="12" md="4" class="text-center">
-                            <v-avatar color="primary" size="64" class="mb-4">
-                                <span class="text-h5 font-weight-bold">1</span>
-                            </v-avatar>
-                            <h4 class="text-h6 font-weight-bold mb-2">Create Account</h4>
-                            <p class="text-body-2 text-grey-darken-1">Sign up and get your API keys instantly</p>
-                        </v-col>
-                        <v-col cols="12" md="4" class="text-center">
-                            <v-avatar color="secondary" size="64" class="mb-4">
-                                <span class="text-h5 font-weight-bold text-black">2</span>
-                            </v-avatar>
-                            <h4 class="text-h6 font-weight-bold mb-2">Fund Your Wallet</h4>
-                            <p class="text-body-2 text-grey-darken-1">Add funds to your wallet using any payment method</p>
-                        </v-col>
-                        <v-col cols="12" md="4" class="text-center">
-                            <v-avatar color="accent" size="64" class="mb-4">
-                                <span class="text-h5 font-weight-bold">3</span>
-                            </v-avatar>
-                            <h4 class="text-h6 font-weight-bold mb-2">Start Verifying</h4>
-                            <p class="text-body-2 text-grey-darken-1">Use our API or dashboard to verify identities</p>
-                        </v-col>
-                    </v-row>
-                </v-container>
-            </section>
-
-            <!-- CTA Section -->
-            <section class="py-16" style="background: linear-gradient(135deg, #1c6434 0%, #0d3a1c 100%);">
-                <v-container>
-                    <v-row justify="center">
-                        <v-col cols="12" md="8" class="text-center text-white">
-                            <h2 class="text-h4 text-md-h3 font-weight-bold mb-4">
-                                Ready to Get Started?
-                            </h2>
-                            <p class="text-h6 font-weight-light mb-6 text-grey-lighten-2">
-                                Join 500+ businesses already using EaseVerifier for their identity verification needs.
-                            </p>
-                            <Link v-if="canRegister" :href="register()">
-                                <v-btn color="secondary" size="x-large" class="px-10">
-                                    <v-icon start>mdi-rocket-launch</v-icon>
-                                    Create Free Account
-                                </v-btn>
+                            <Link :href="servicesPage()" class="text-decoration-none">
+                                <v-card class="service-card" hover>
+                                    <v-card-text class="pa-6">
+                                        <div class="service-icon" :class="service.accent">
+                                            <v-icon color="white" size="26">{{ service.icon }}</v-icon>
+                                        </div>
+                                        <h3 class="text-h6 font-weight-bold text-grey-darken-4 mb-2">{{ service.title }}</h3>
+                                        <p class="text-body-2 text-grey-darken-1 mb-0">{{ service.description }}</p>
+                                    </v-card-text>
+                                </v-card>
                             </Link>
                         </v-col>
                     </v-row>
                 </v-container>
             </section>
 
-            <!-- Footer -->
-            <v-footer class="bg-grey-darken-4 py-8">
+            <section class="section-shell section-soft">
                 <v-container>
+                    <div class="section-head d-flex flex-column flex-md-row align-md-center justify-space-between ga-4">
+                        <div>
+                            <div class="section-kicker">How It Works</div>
+                            <h2 class="section-title">Built for speed.</h2>
+                        </div>
+                        <Link :href="pricing()">
+                            <v-btn variant="text" color="primary">
+                                See pricing
+                                <v-icon end>mdi-arrow-right</v-icon>
+                            </v-btn>
+                        </Link>
+                    </div>
+
                     <v-row>
-                        <v-col cols="12" md="4">
-                            <div class="d-flex align-center mb-4">
-                                <v-icon color="primary" size="32" class="mr-2">mdi-shield-check</v-icon>
-                                <span class="text-h6 font-weight-bold text-white">EaseVerifier</span>
-                            </div>
-                            <p class="text-body-2 text-grey-lighten-1">
-                                Nigeria's trusted identity verification platform for businesses.
-                            </p>
-                        </v-col>
-                        <v-col cols="6" md="2">
-                            <h4 class="text-subtitle-1 font-weight-bold text-white mb-3">Product</h4>
-                            <Link :href="servicesPage()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">NIN Verification</div></Link>
-                            <Link :href="servicesPage()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">BVN Verification</div></Link>
-                            <Link :href="servicesPage()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">CAC Verification</div></Link>
-                            <Link :href="documentation()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">API Documentation</div></Link>
-                        </v-col>
-                        <v-col cols="6" md="2">
-                            <h4 class="text-subtitle-1 font-weight-bold text-white mb-3">Company</h4>
-                            <Link :href="about()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">About Us</div></Link>
-                            <Link :href="pricing()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Pricing</div></Link>
-                            <Link :href="blog()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Blog</div></Link>
-                            <Link :href="contact()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Contact</div></Link>
-                        </v-col>
-                        <v-col cols="6" md="2">
-                            <h4 class="text-subtitle-1 font-weight-bold text-white mb-3">Legal</h4>
-                            <Link :href="privacy()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Privacy Policy</div></Link>
-                            <Link :href="terms()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Terms of Service</div></Link>
-                            <Link :href="cookies()" class="text-decoration-none"><div class="text-body-2 text-grey-lighten-1 mb-2 footer-link">Cookie Policy</div></Link>
-                        </v-col>
-                        <v-col cols="6" md="2">
-                            <h4 class="text-subtitle-1 font-weight-bold text-white mb-3">Connect</h4>
-                            <div class="d-flex ga-2">
-                                <v-btn icon variant="text" color="grey-lighten-1" size="small">
-                                    <v-icon>mdi-twitter</v-icon>
-                                </v-btn>
-                                <v-btn icon variant="text" color="grey-lighten-1" size="small">
-                                    <v-icon>mdi-linkedin</v-icon>
-                                </v-btn>
-                                <v-btn icon variant="text" color="grey-lighten-1" size="small">
-                                    <v-icon>mdi-github</v-icon>
-                                </v-btn>
+                        <v-col v-for="item in workflow" :key="item.step" cols="12" md="4">
+                            <div class="workflow-card">
+                                <div class="workflow-step">{{ item.step }}</div>
+                                <div class="workflow-title">{{ item.title }}</div>
                             </div>
                         </v-col>
                     </v-row>
-                    <v-divider class="my-6 border-opacity-25" />
-                    <div class="text-center text-grey-lighten-1 text-body-2">
-                        &copy; {{ new Date().getFullYear() }} EaseVerifier. All rights reserved.
+                </v-container>
+            </section>
+
+            <section v-if="featuredPost" class="section-shell">
+                <v-container>
+                    <div class="section-head d-flex flex-column flex-md-row align-md-center justify-space-between ga-4">
+                        <div>
+                            <div class="section-kicker">Hot Right Now</div>
+                            <h2 class="section-title">Useful posts without the noise.</h2>
+                        </div>
+                        <Link :href="blog()">
+                            <v-btn variant="outlined" color="primary">Open Blog</v-btn>
+                        </Link>
                     </div>
+
+                    <v-row>
+                        <v-col cols="12" md="7">
+                            <Link :href="`/blog/${featuredPost.slug}`" class="text-decoration-none">
+                                <v-card class="feature-post" hover>
+                                    <v-card-text class="pa-7">
+                                        <div class="d-flex align-center justify-space-between mb-4">
+                                            <v-chip size="small" color="secondary" variant="flat">{{ featuredPost.category }}</v-chip>
+                                            <span class="text-caption text-grey-darken-1">
+                                                {{ featuredPost.views.toLocaleString() }} views
+                                            </span>
+                                        </div>
+                                        <div class="feature-post-icon">
+                                            <v-icon color="primary" size="30">{{ getCategoryIcon(featuredPost.category) }}</v-icon>
+                                        </div>
+                                        <h3 class="text-h5 font-weight-bold text-grey-darken-4 mb-3">{{ featuredPost.title }}</h3>
+                                        <p class="text-body-1 text-grey-darken-1 mb-5">{{ featuredPost.excerpt }}</p>
+                                        <div class="d-flex align-center justify-space-between">
+                                            <span class="text-caption text-grey">{{ formatDate(featuredPost.published_at) }}</span>
+                                            <span class="text-primary font-weight-medium">Read post</span>
+                                        </div>
+                                    </v-card-text>
+                                </v-card>
+                            </Link>
+                        </v-col>
+
+                        <v-col cols="12" md="5">
+                            <div class="stack-list">
+                                <Link
+                                    v-for="post in secondaryPosts"
+                                    :key="post.id"
+                                    :href="`/blog/${post.slug}`"
+                                    class="text-decoration-none"
+                                >
+                                    <v-card class="stack-card" hover>
+                                        <v-card-text class="pa-5">
+                                            <div class="d-flex align-center justify-space-between mb-3">
+                                                <v-chip size="small" variant="outlined" color="primary">{{ post.category }}</v-chip>
+                                                <span class="text-caption text-grey">{{ formatDate(post.published_at) }}</span>
+                                            </div>
+                                            <p class="font-weight-bold text-grey-darken-4 mb-1">{{ post.title }}</p>
+                                            <p class="text-body-2 text-grey-darken-1 mb-0">{{ post.excerpt }}</p>
+                                        </v-card-text>
+                                    </v-card>
+                                </Link>
+                            </div>
+                        </v-col>
+                    </v-row>
+                </v-container>
+            </section>
+
+            <section class="cta-shell">
+                <v-container>
+                    <div class="cta-band">
+                        <div>
+                            <div class="section-kicker text-white text-opacity-80">Ready</div>
+                            <h2 class="cta-title">Start verifying in minutes.</h2>
+                        </div>
+                        <Link v-if="canRegister" :href="register()">
+                            <v-btn color="secondary" size="large" class="cta-primary">Create Account</v-btn>
+                        </Link>
+                    </div>
+                </v-container>
+            </section>
+
+            <v-footer class="site-footer">
+                <v-container>
+                    <v-row class="py-2">
+                        <v-col cols="12" md="4">
+                            <div class="d-flex align-center mb-3">
+                                <v-avatar color="white" size="34" class="mr-3">
+                                    <v-icon color="primary" size="20">mdi-shield-check</v-icon>
+                                </v-avatar>
+                                <span class="text-subtitle-1 font-weight-bold text-white">EaseVerifier</span>
+                            </div>
+                            <p class="text-body-2 text-white text-opacity-70 mb-0">Verification for Nigerian products.</p>
+                        </v-col>
+                        <v-col cols="6" md="2">
+                            <Link :href="servicesPage()" class="footer-link">Services</Link>
+                            <Link :href="pricing()" class="footer-link">Pricing</Link>
+                            <Link :href="documentation()" class="footer-link">Docs</Link>
+                        </v-col>
+                        <v-col cols="6" md="2">
+                            <Link :href="about()" class="footer-link">About</Link>
+                            <Link :href="blog()" class="footer-link">Blog</Link>
+                            <Link :href="contact()" class="footer-link">Contact</Link>
+                        </v-col>
+                        <v-col cols="6" md="2">
+                            <Link :href="privacy()" class="footer-link">Privacy</Link>
+                            <Link :href="terms()" class="footer-link">Terms</Link>
+                            <Link :href="cookies()" class="footer-link">Cookies</Link>
+                        </v-col>
+                    </v-row>
                 </v-container>
             </v-footer>
         </v-main>
@@ -390,17 +364,350 @@ const stats = [
 </template>
 
 <style scoped>
+.public-app {
+    background:
+        radial-gradient(circle at top left, rgba(111, 211, 153, 0.18), transparent 32%),
+        linear-gradient(180deg, #f6fbf7 0%, #eef6f0 100%);
+}
+
+.hero-shell {
+    position: relative;
+    overflow: hidden;
+    padding: 7rem 0 4.5rem;
+    background: linear-gradient(135deg, #0d3a1c 0%, #12542a 52%, #1b7a41 100%);
+}
+
+.hero-content {
+    position: relative;
+    z-index: 1;
+}
+
+.hero-glow {
+    position: absolute;
+    border-radius: 999px;
+    filter: blur(6px);
+    opacity: 0.5;
+}
+
+.hero-glow-a {
+    top: 80px;
+    right: -120px;
+    width: 340px;
+    height: 340px;
+    background: rgba(244, 199, 76, 0.24);
+}
+
+.hero-glow-b {
+    left: -100px;
+    bottom: -80px;
+    width: 260px;
+    height: 260px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.9rem;
+    margin-bottom: 1.3rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 0.82rem;
+    backdrop-filter: blur(14px);
+}
+
+.hero-title {
+    margin: 0 0 1rem;
+    color: #fff;
+    font-size: clamp(2.7rem, 6vw, 4.8rem);
+    line-height: 0.98;
+    letter-spacing: -0.05em;
+    max-width: 11ch;
+}
+
+.hero-title span {
+    color: #f4c74c;
+}
+
+.hero-copy {
+    max-width: 32rem;
+    margin-bottom: 2rem;
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 1.05rem;
+}
+
+.cta-primary,
+.cta-secondary {
+    border-radius: 999px;
+    text-transform: none;
+    font-weight: 700;
+}
+
+.stats-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.stat-pill {
+    min-width: 140px;
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+}
+
+.stat-value {
+    color: #fff;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.stat-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.82rem;
+}
+
+.hero-panel {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 30px;
+    background: rgba(8, 26, 15, 0.44);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 32px 70px rgba(3, 18, 9, 0.28);
+}
+
+.hero-panel-top {
+    display: flex;
+    gap: 0.45rem;
+    padding: 1rem 1.1rem 0;
+}
+
+.panel-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+}
+
+.red { background: #ff6b6b; }
+.amber { background: #f4c74c; }
+.green { background: #51cf66; }
+
+.hero-panel-body {
+    padding: 1.2rem;
+}
+
+.request-chip {
+    display: inline-block;
+    padding: 0.5rem 0.8rem;
+    margin-bottom: 1rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #dcefe2;
+    font-size: 0.82rem;
+}
+
+.code-card {
+    padding: 1.2rem;
+    margin-bottom: 1rem;
+    border-radius: 24px;
+    background: #082413;
+}
+
+.code-line + .code-line {
+    margin-top: 0.75rem;
+}
+
+.code-key {
+    color: #9fe0b7;
+}
+
+.code-value {
+    color: #fff1a0;
+}
+
+.trust-grid {
+    display: grid;
+    gap: 0.9rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trust-card {
+    padding: 1rem;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.trust-number {
+    color: #fff;
+    font-weight: 700;
+}
+
+.trust-label {
+    color: rgba(255, 255, 255, 0.66);
+    font-size: 0.82rem;
+}
+
+.section-shell {
+    padding: 4.75rem 0;
+}
+
+.section-soft {
+    background: rgba(255, 255, 255, 0.52);
+}
+
+.section-head {
+    margin-bottom: 2rem;
+}
+
+.section-kicker {
+    margin-bottom: 0.5rem;
+    color: #1a7d42;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.section-title {
+    margin: 0;
+    color: #13261c;
+    font-size: clamp(1.75rem, 3.6vw, 2.8rem);
+    line-height: 1.04;
+    letter-spacing: -0.04em;
+}
+
 .service-card {
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    height: 100%;
+    border: 1px solid rgba(23, 83, 44, 0.08);
+    border-radius: 26px;
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: 0 18px 40px rgba(22, 63, 37, 0.05);
+    transition: transform 0.28s ease, box-shadow 0.28s ease;
 }
+
 .service-card:hover {
-    transform: translateY(-8px);
+    transform: translateY(-6px);
+    box-shadow: 0 28px 60px rgba(22, 63, 37, 0.09);
 }
+
+.service-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    margin-bottom: 1.25rem;
+    border-radius: 18px;
+}
+
+.service-nin { background: linear-gradient(135deg, #1a7d42, #26a269); }
+.service-bvn { background: linear-gradient(135deg, #d18f10, #f4c74c); }
+.service-cac { background: linear-gradient(135deg, #145c9e, #2f85de); }
+
+.workflow-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.35rem 1.4rem;
+    border: 1px solid rgba(19, 53, 30, 0.08);
+    border-radius: 24px;
+    background: #fff;
+}
+
+.workflow-step {
+    color: #1a7d42;
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.workflow-title {
+    color: #13261c;
+    font-weight: 700;
+}
+
+.feature-post,
+.stack-card {
+    border: 1px solid rgba(23, 83, 44, 0.08);
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 20px 40px rgba(22, 63, 37, 0.05);
+}
+
+.feature-post-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 62px;
+    height: 62px;
+    margin-bottom: 1.25rem;
+    border-radius: 20px;
+    background: #eef7f0;
+}
+
+.stack-list {
+    display: grid;
+    gap: 1rem;
+}
+
+.cta-shell {
+    padding: 0 0 4.5rem;
+}
+
+.cta-band {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 2rem;
+    border-radius: 30px;
+    background: linear-gradient(135deg, #0f3e20 0%, #196b37 100%);
+}
+
+.cta-title {
+    margin: 0;
+    color: #fff;
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
+    line-height: 1;
+    letter-spacing: -0.04em;
+}
+
+.site-footer {
+    background: #102319;
+    color: #fff;
+}
+
 .footer-link {
-    cursor: pointer;
+    display: block;
+    margin-bottom: 0.55rem;
+    color: rgba(255, 255, 255, 0.74);
+    text-decoration: none;
     transition: color 0.2s ease;
 }
+
 .footer-link:hover {
-    color: #4CAF50 !important;
+    color: #f4c74c;
+}
+
+@media (max-width: 960px) {
+    .hero-shell {
+        padding-top: 6rem;
+    }
+
+    .hero-title {
+        max-width: none;
+    }
+
+    .hero-panel {
+        margin-top: 2rem;
+    }
+
+    .cta-band {
+        flex-direction: column;
+        align-items: flex-start;
+    }
 }
 </style>

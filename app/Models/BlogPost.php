@@ -118,7 +118,6 @@ class BlogPost extends Model
      */
     public static function getCategories(): array
     {
-        return ['Education', 'Compliance', 'Technical', 'Security', 'News', 'Updates'];
+        return ['Education', 'Compliance', 'Technical', 'Security', 'News', 'Updates', 'Guides'];
     }
 }
-

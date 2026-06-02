@@ -40,6 +40,11 @@ Route::get('/robots.txt', [SitemapController::class, 'robots'])->name('robots');
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canRegister' => Features::enabled(Features::registration()),
+        'hottestPosts' => \App\Models\BlogPost::with('author:id,name')
+            ->published()
+            ->orderByDesc('views')
+            ->limit(3)
+            ->get(),
     ]);
 })->name('home');
 

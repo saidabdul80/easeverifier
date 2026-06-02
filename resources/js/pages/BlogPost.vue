@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import PublicTopNav from '@/components/PublicTopNav.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import { home, login, register, services, pricing, documentation } from '@/routes';
+import { onMounted } from 'vue';
 
 interface Post {
     id: number;
@@ -22,12 +23,26 @@ const props = defineProps<{
     relatedPosts: Post[];
 }>();
 
+const adsenseScriptSelector = 'script[data-adsense-loader="true"]';
+
+onMounted(() => {
+    if (!document.head.querySelector(adsenseScriptSelector)) {
+        const adsenseScript = document.createElement('script');
+        adsenseScript.async = true;
+        adsenseScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5615909705062666';
+        adsenseScript.crossOrigin = 'anonymous';
+        adsenseScript.dataset.adsenseLoader = 'true';
+        document.head.appendChild(adsenseScript);
+    }
+});
+
 const formatDate = (date: string) => new Date(date).toLocaleDateString('en-NG', { year: 'numeric', month: 'long', day: 'numeric' });
 
 const getCategoryIcon = (category: string): string => {
     const icons: Record<string, string> = {
         'Education': 'mdi-school', 'Compliance': 'mdi-clipboard-check', 'Technical': 'mdi-api',
         'Security': 'mdi-shield-lock', 'News': 'mdi-newspaper', 'Updates': 'mdi-update',
+        'Guides': 'mdi-book-open-page-variant',
     };
     return icons[category] || 'mdi-post';
 };
@@ -42,27 +57,7 @@ const getCategoryIcon = (category: string): string => {
         <link rel="canonical" :href="`https://verify.ashlabtech.ng/blog/${post.slug}`" />
     </Head>
     <v-app>
-        <v-app-bar flat color="white" elevation="1">
-            <v-container class="d-flex align-center">
-                <Link :href="home()" class="text-decoration-none d-flex align-center">
-                    <v-avatar color="primary" size="36" class="mr-2">
-                        <v-icon color="white" size="20">mdi-shield-check</v-icon>
-                    </v-avatar>
-                    <span class="text-h6 font-weight-bold text-primary">EaseVerifier</span>
-                </Link>
-                <v-spacer />
-                <div class="d-none d-md-flex align-center ga-2">
-                    <v-btn variant="text" :href="services()">Services</v-btn>
-                    <v-btn variant="text" :href="pricing()">Pricing</v-btn>
-                    <v-btn variant="text" :href="documentation()">Documentation</v-btn>
-                </div>
-                <v-spacer />
-                <div class="d-flex ga-2">
-                    <v-btn variant="outlined" color="primary" :href="login()">Login</v-btn>
-                    <v-btn variant="flat" color="primary" :href="register()" class="d-none d-sm-flex">Get Started</v-btn>
-                </div>
-            </v-container>
-        </v-app-bar>
+        <PublicTopNav current="blog" />
 
         <v-main>
             <v-container class="py-8" style="max-width: 900px;">
@@ -123,4 +118,3 @@ const getCategoryIcon = (category: string): string => {
 .blog-content :deep(pre) { background: #1e1e1e; color: #fff; padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 1rem 0; }
 .related-image { height: 120px; background-size: cover; background-position: center; }
 </style>
-
