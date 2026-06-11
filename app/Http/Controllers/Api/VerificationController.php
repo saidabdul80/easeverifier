@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Log;
 
 class VerificationController extends Controller
 {
+    private const TEST_NIN = '11111111111';
+
     public function __construct(
         protected VerificationEngine $verificationEngine
     ) {}
@@ -62,6 +64,14 @@ class VerificationController extends Controller
 
         $user = $request->user();
         $apiKey = $request->get('api_key'); // Set by ApiAuthentication middleware
+
+        if ($serviceSlug === 'nin' && $apiKey?->environment === 'test' && $validated['nin'] !== self::TEST_NIN) {
+            return response()->json([
+                'success' => false,
+                'error' => sprintf('Test API keys can only verify the test NIN %s.', self::TEST_NIN),
+                'error_code' => 'TEST_NIN_REQUIRED',
+            ], 422);
+        }
 
         // Check for existing successful verification for the same user, service, and search parameter
         $existingVerification = VerificationRequest::where('user_id', $user->id)
@@ -194,4 +204,3 @@ class VerificationController extends Controller
         ]);
     }
 }
-

@@ -6,13 +6,14 @@ import { ref } from 'vue';
 defineProps<{ user: { name: string; email: string } }>();
 
 const activeTab = ref('overview');
+const testNin = '11111111111';
 
 const codeExamples = {
     curl: `curl -X POST https://verify.ashlabtech.ng/v1/verify/nin \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "X-API-Secret: YOUR_API_SECRET" \\
   -H "Content-Type: application/json" \\
-  -d '{"nin": "12345678901","consent": true}'`,
+  -d '{"nin": "${testNin}","consent": true}'`,
     php: `<?php
 $client = new GuzzleHttp\\Client();
 $response = $client->post('https://verify.ashlabtech.ng/v1/verify/nin', [
@@ -20,7 +21,7 @@ $response = $client->post('https://verify.ashlabtech.ng/v1/verify/nin', [
         'Authorization' => 'Bearer YOUR_API_KEY',
         'X-API-Secret' => 'YOUR_API_SECRET',
     ],
-    'json' => ['nin' => '12345678901']
+    'json' => ['nin' => '${testNin}']
 ]);
 $data = json_decode($response->getBody(), true);`,
     javascript: `const response = await fetch('https://verify.ashlabtech.ng/v1/verify/nin', {
@@ -30,7 +31,7 @@ $data = json_decode($response->getBody(), true);`,
     'X-API-Secret': 'YOUR_API_SECRET',
     'Content-Type': 'application/json'
   },
-  body: JSON.stringify({ nin: '12345678901' })
+  body: JSON.stringify({ nin: '${testNin}' })
 });
 const data = await response.json();`,
     python: `import requests
@@ -41,7 +42,7 @@ response = requests.post(
         'Authorization': 'Bearer YOUR_API_KEY',
         'X-API-Secret': 'YOUR_API_SECRET'
     },
-    json={'nin': '12345678901'}
+    json={'nin': '${testNin}'}
 )
 data = response.json()`
 };
@@ -72,6 +73,9 @@ data = response.json()`
                         <p class="text-body-1 mb-4">The EaseVerifier API allows you to programmatically verify Nigerian identities including NIN, BVN, and CAC records.</p>
                         <v-alert type="info" variant="tonal" class="mb-4">
                             <strong>Base URL:</strong> <code>https://verify.ashlabtech.ng/v1</code>
+                        </v-alert>
+                        <v-alert type="warning" variant="tonal" class="mb-4">
+                            Test API keys only accept <strong>{{ testNin }}</strong> for NIN verification. Use a live key for real NIN checks.
                         </v-alert>
                         <h3 class="text-h6 font-weight-bold mb-3">Quick Start</h3>
                         <ol class="pl-4 mb-4">
@@ -108,8 +112,11 @@ data = response.json()`
                     <v-card-title class="d-flex align-center"><v-chip color="success" size="small" class="mr-2">POST</v-chip>/verify/nin</v-card-title>
                     <v-card-text>
                         <p class="mb-3">Verify a National Identification Number (NIN)</p>
+                        <v-alert type="info" variant="tonal" density="compact" class="mb-3">
+                            For sandbox calls, send <strong>{{ testNin }}</strong> as the NIN when using a test key.
+                        </v-alert>
                         <h4 class="text-subtitle-2 font-weight-bold mb-2">Request Body</h4>
-                        <pre class="bg-grey-lighten-4 pa-3 rounded mb-3">{ "nin": "12345678901" }</pre>
+                        <pre class="bg-grey-lighten-4 pa-3 rounded mb-3">{ "nin": "11111111111", "consent": true }</pre>
                         <h4 class="text-subtitle-2 font-weight-bold mb-2">Response</h4>
                         <pre class="bg-grey-lighten-4 pa-3 rounded">{ "success": true, "data": { "first_name": "John", "last_name": "Doe", ... } }</pre>
                     </v-card-text>
@@ -139,4 +146,3 @@ data = response.json()`
         </v-window>
     </CustomerLayout>
 </template>
-

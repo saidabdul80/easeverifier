@@ -5,6 +5,7 @@ import { ref } from 'vue';
 
 const activeSection = ref('getting-started');
 const copied = ref(false);
+const testNin = '11111111111';
 
 const sections = [
     { id: 'getting-started', title: 'Getting Started', icon: 'mdi-rocket-launch' },
@@ -24,7 +25,7 @@ const copyCode = async (code: string) => {
 const sampleRequest = `curl -X POST https://api.verify.ashlabtech.ng/api/v1/verify/nin \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"nin": "12345678901", "consent": true}'`;
+  -d '{"nin": "${testNin}", "consent": true}'`;
 
 const sampleResponse = `{
   "success": true,
@@ -101,6 +102,10 @@ const sampleResponse = `{
                                     <v-card-text><code class="bg-grey-lighten-4 pa-2 rounded">https://verify.ashlabtech.ng/v1</code></v-card-text>
                                 </v-card>
 
+                                <v-alert type="warning" variant="tonal" class="mb-6">
+                                    Test API keys only support NIN verification with <strong>{{ testNin }}</strong>. Use a live key for real NIN lookups.
+                                </v-alert>
+
                                 <h3 class="text-h6 font-weight-bold mb-3">Quick Start Steps</h3>
                                 <v-timeline density="compact" side="end">
                                     <v-timeline-item dot-color="primary" size="small"><strong>1. Create Account</strong> - Sign up at verify.ashlabtech.ng</v-timeline-item>
@@ -125,6 +130,9 @@ const sampleResponse = `{
                             <section v-show="activeSection === 'nin-verification'" class="mb-12">
                                 <h1 class="text-h4 font-weight-bold mb-4">NIN Verification</h1>
                                 <p class="text-body-1 text-grey-darken-1 mb-6">Verify National Identification Numbers and retrieve associated personal data.</p>
+                                <v-alert type="info" variant="tonal" class="mb-4">
+                                    When you are testing, send <strong>{{ testNin }}</strong> as the NIN. Other NIN values are rejected for test keys.
+                                </v-alert>
                                 <v-chip color="success" class="mb-4">POST</v-chip><code class="ml-2">/nin/verify</code>
                                 <v-card variant="outlined" class="mb-4 mt-4">
                                     <v-card-title>Request Example</v-card-title>
@@ -169,4 +177,3 @@ const sampleResponse = `{
         </v-main>
     </v-app>
 </template>
-

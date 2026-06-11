@@ -21,6 +21,7 @@ const props = defineProps<{
 
 const page = usePage();
 const flash = computed(() => page.props.flash as any);
+const testNin = '11111111111';
 
 const showCreateDialog = ref(false);
 const showCredentialsDialog = ref(false);
@@ -91,6 +92,10 @@ const copyToClipboard = async (text: string) => {
                 Create API Key
             </v-btn>
         </div>
+
+        <v-alert type="info" variant="tonal" class="mb-6">
+            Test API keys only support NIN test calls with <strong>{{ testNin }}</strong>. Live keys can be used with real customer NINs.
+        </v-alert>
 
         <!-- API Keys List -->
         <v-card class="mb-6">
@@ -189,6 +194,9 @@ const copyToClipboard = async (text: string) => {
                 <v-card-text>
                     <v-text-field v-model="createForm.name" label="Key Name" variant="outlined" placeholder="e.g., Production Server" class="mb-4" :error-messages="createForm.errors.name" />
                     <v-select v-model="createForm.environment" :items="[{ title: 'Live', value: 'live' }, { title: 'Test', value: 'test' }]" label="Environment" variant="outlined" :error-messages="createForm.errors.environment" />
+                    <v-alert v-if="createForm.environment === 'test'" type="warning" variant="tonal" density="compact">
+                        Test keys are restricted to the NIN value <strong>{{ testNin }}</strong>.
+                    </v-alert>
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
@@ -209,6 +217,9 @@ const copyToClipboard = async (text: string) => {
                     <v-alert type="warning" variant="tonal" class="mb-4">
                         Copy these credentials now. The secret will not be shown again!
                     </v-alert>
+                    <v-alert v-if="newCredentials?.key?.startsWith('ev_test_')" type="info" variant="tonal" class="mb-4">
+                        This is a test key. Use <strong>{{ testNin }}</strong> as the NIN for sandbox verification calls.
+                    </v-alert>
                     <v-text-field :model-value="newCredentials?.key" label="API Key" variant="outlined" readonly append-inner-icon="mdi-content-copy" @click:append-inner="copyToClipboard(newCredentials?.key || '')" class="mb-4" />
                     <v-text-field :model-value="newCredentials?.secret" label="API Secret" variant="outlined" readonly append-inner-icon="mdi-content-copy" @click:append-inner="copyToClipboard(newCredentials?.secret || '')" class="mb-4" />
                     <v-text-field :model-value="newCredentials?.bearer_token" label="Bearer Token (Base64)" variant="outlined" readonly append-inner-icon="mdi-content-copy" @click:append-inner="copyToClipboard(newCredentials?.bearer_token || '')" hint="Use this token in Authorization header: Bearer {token}" persistent-hint />
@@ -221,4 +232,3 @@ const copyToClipboard = async (text: string) => {
         </v-dialog>
     </CustomerLayout>
 </template>
-
