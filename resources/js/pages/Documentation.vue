@@ -98,7 +98,7 @@ const sampleResponse = `{
                                 
                                 <v-card class="mb-6" variant="outlined">
                                     <v-card-title class="text-subtitle-1 font-weight-bold">Base URL</v-card-title>
-                                    <v-card-text><code class="bg-grey-lighten-4 pa-2 rounded">https://api.verify.ashlabtech.ng/v1</code></v-card-text>
+                                    <v-card-text><code class="bg-grey-lighten-4 pa-2 rounded">https://verify.ashlabtech.ng/v1</code></v-card-text>
                                 </v-card>
 
                                 <h3 class="text-h6 font-weight-bold mb-3">Quick Start Steps</h3>
