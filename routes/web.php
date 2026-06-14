@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\WalletController as AdminWalletController;
 use App\Http\Controllers\Admin\TransactionController as AdminTransactionController;
 use App\Http\Controllers\Admin\VerificationController as AdminVerificationController;
 use App\Http\Controllers\Admin\BlogController as AdminBlogController;
+use App\Http\Controllers\Admin\CampaignEmailController as AdminCampaignEmailController;
 use App\Http\Controllers\BlogController;
 
 use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
@@ -141,6 +142,11 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
 
     // Blog
     Route::resource('blog', AdminBlogController::class)->except(['show']);
+
+    // Campaign Emails
+    Route::get('campaign-emails', [AdminCampaignEmailController::class, 'index'])->name('campaign-emails.index');
+    Route::get('campaign-emails/create', [AdminCampaignEmailController::class, 'create'])->name('campaign-emails.create');
+    Route::post('campaign-emails', [AdminCampaignEmailController::class, 'store'])->name('campaign-emails.store');
 });
 
 // Customer Routes

@@ -15,6 +15,7 @@ const navItems = [
     { title: 'Customers', icon: 'mdi-account-group', route: '/admin/customers' },
     { title: 'Services', icon: 'mdi-cog-outline', route: '/admin/services' },
     { title: 'Blog', icon: 'mdi-post', route: '/admin/blog' },
+    { title: 'Campaign Emails', icon: 'mdi-email-multiple-outline', route: '/admin/campaign-emails' },
     { title: 'Wallets', icon: 'mdi-wallet', route: '/admin/wallets' },
     { title: 'Transactions', icon: 'mdi-swap-horizontal', route: '/admin/transactions' },
     { title: 'Verifications', icon: 'mdi-shield-check', route: '/admin/verifications' },
@@ -87,4 +88,3 @@ const initials = computed(() => {
         </v-main>
     </v-app>
 </template>
-
