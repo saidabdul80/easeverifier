@@ -23,7 +23,19 @@ class CampaignEmailController extends Controller
     {
         $templates = EmailTemplate::active()
             ->orderBy('sort_order')
-            ->get();
+            ->get()
+            ->map(fn (EmailTemplate $template) => [
+                'id' => $template->id,
+                'key' => $template->key,
+                'name' => $template->name,
+                'category' => $template->category,
+                'subject' => $template->subject,
+                'heading' => $template->heading,
+                'body' => $template->body,
+                'cta_label' => $template->cta_label,
+                'cta_url' => $template->cta_url,
+            ])
+            ->values();
 
         $campaigns = EmailCampaign::with(['template:id,name,category', 'admin:id,name'])
             ->withCount([
@@ -60,7 +72,10 @@ class CampaignEmailController extends Controller
                 'total_campaigns' => EmailCampaign::count(),
                 'total_sent' => EmailCampaign::sum('sent_count'),
                 'total_failed' => EmailCampaign::sum('failed_count'),
-                'customer_count' => User::role('customer')->where('is_active', true)->count(),
+                'customer_count' => User::query()
+                    ->whereHas('roles', fn ($roleQuery) => $roleQuery->where('name', 'customer'))
+                    ->where('is_active', true)
+                    ->count(),
             ],
         ]);
     }
@@ -71,7 +86,8 @@ class CampaignEmailController extends Controller
             ->orderBy('sort_order')
             ->get();
 
-        $customers = User::role('customer')
+        $customers = User::query()
+            ->whereHas('roles', fn ($roleQuery) => $roleQuery->where('name', 'customer'))
             ->where('is_active', true)
             ->with('customer')
             ->orderBy('name')
@@ -83,7 +99,8 @@ class CampaignEmailController extends Controller
                 'company_name' => $user->customer?->company_name,
             ]);
 
-        $previewCustomer = User::role('customer')
+        $previewCustomer = User::query()
+            ->whereHas('roles', fn ($roleQuery) => $roleQuery->where('name', 'customer'))
             ->where('is_active', true)
             ->with(['customer', 'wallet'])
             ->orderBy('name')
@@ -126,42 +143,62 @@ class CampaignEmailController extends Controller
     {
         $validated = $request->validate([
             'template_id' => ['required', Rule::exists('email_templates', 'id')->where('is_active', true)],
+            'title' => ['required', 'string', 'max:255'],
+            'subject' => ['required', 'string', 'max:255'],
+            'heading' => ['nullable', 'string', 'max:255'],
+            'body' => ['required', 'string'],
+            'cta_label' => ['nullable', 'string', 'max:255'],
+            'cta_url' => ['nullable', 'string', 'max:255'],
             'recipient_scope' => ['required', Rule::in(['all', 'selected'])],
             'customer_ids' => ['nullable', 'array'],
             'customer_ids.*' => ['integer', 'exists:users,id'],
+            'additional_emails' => ['nullable', 'array'],
+            'additional_emails.*' => ['email'],
         ]);
 
-        if ($validated['recipient_scope'] === 'selected' && empty($validated['customer_ids'])) {
+        $selectedCustomerIds = array_values($validated['customer_ids'] ?? []);
+        $additionalEmails = collect($validated['additional_emails'] ?? [])
+            ->map(fn (string $email) => strtolower(trim($email)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (
+            $validated['recipient_scope'] === 'selected'
+            && empty($selectedCustomerIds)
+            && empty($additionalEmails)
+        ) {
             throw ValidationException::withMessages([
-                'customer_ids' => 'Select at least one customer.',
+                'customer_ids' => 'Select at least one customer or enter at least one email address.',
             ]);
         }
 
         $template = EmailTemplate::findOrFail($validated['template_id']);
         $recipients = $this->campaignEmailService->getRecipients(
             $validated['recipient_scope'],
-            $validated['customer_ids'] ?? []
+            $selectedCustomerIds,
+            $additionalEmails,
         );
 
         if ($recipients->isEmpty()) {
             throw ValidationException::withMessages([
-                'customer_ids' => 'No active customer matched this selection.',
+                'customer_ids' => 'No valid recipients matched this selection.',
             ]);
         }
 
         $campaign = EmailCampaign::create([
             'admin_user_id' => $request->user()->id,
             'email_template_id' => $template->id,
-            'title' => $template->name,
+            'title' => $validated['title'],
             'recipient_scope' => $validated['recipient_scope'],
-            'selected_customer_ids' => $validated['recipient_scope'] === 'selected'
-                ? array_values($validated['customer_ids'] ?? [])
-                : null,
-            'subject' => $template->subject,
-            'heading' => $template->heading,
-            'body' => $template->body,
-            'cta_label' => $template->cta_label,
-            'cta_url' => $template->cta_url,
+            'selected_customer_ids' => $validated['recipient_scope'] === 'selected' ? $selectedCustomerIds : null,
+            'additional_emails' => $additionalEmails ?: null,
+            'subject' => $validated['subject'],
+            'heading' => $validated['heading'] ?? null,
+            'body' => $validated['body'],
+            'cta_label' => $validated['cta_label'] ?? null,
+            'cta_url' => $validated['cta_url'] ?? null,
             'total_recipients' => $recipients->count(),
             'status' => 'sending',
         ]);

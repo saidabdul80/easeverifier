@@ -30,6 +30,10 @@ function createCampaignCustomer(array $userAttributes = [], array $customerAttri
     return $user->fresh(['customer', 'wallet']);
 }
 
+beforeEach(function () {
+    $this->withoutMiddleware();
+});
+
 it('loads the campaign email composer with seeded templates', function () {
     $admin = createCampaignUser('admin');
 
@@ -56,6 +60,12 @@ it('sends a fixed template campaign to all active customers', function () {
         ->actingAs($admin)
         ->post(route('admin.campaign-emails.store'), [
             'template_id' => $template->id,
+            'title' => 'Support Pulse',
+            'subject' => 'Do you need any help using EaseVerifier?',
+            'heading' => 'We want to remove any blockers for your team',
+            'body' => 'Hi {{customer_name}}, please reply if you need any support.',
+            'cta_label' => 'Contact Support',
+            'cta_url' => 'mailto:{{support_email}}',
             'recipient_scope' => 'all',
         ]);
 
@@ -68,7 +78,7 @@ it('sends a fixed template campaign to all active customers', function () {
 
     $campaign = EmailCampaign::firstOrFail();
 
-    expect($campaign->title)->toBe('Support Check-in')
+    expect($campaign->title)->toBe('Support Pulse')
         ->and($campaign->recipient_scope)->toBe('all')
         ->and($campaign->total_recipients)->toBe(2)
         ->and($campaign->sent_count)->toBe(2)
@@ -90,6 +100,12 @@ it('sends a fixed template campaign to selected customers only', function () {
         ->actingAs($admin)
         ->post(route('admin.campaign-emails.store'), [
             'template_id' => $template->id,
+            'title' => 'Welcome Batch',
+            'subject' => 'Welcome to EaseVerifier, {{first_name}}',
+            'heading' => 'Your verification workspace is ready',
+            'body' => 'Hi {{customer_name}}, your account is ready.',
+            'cta_label' => 'Open Dashboard',
+            'cta_url' => '{{dashboard_url}}',
             'recipient_scope' => 'selected',
             'customer_ids' => [$selected->id],
         ]);
@@ -105,4 +121,45 @@ it('sends a fixed template campaign to selected customers only', function () {
     expect($campaign->recipient_scope)->toBe('selected')
         ->and($campaign->selected_customer_ids)->toBe([$selected->id])
         ->and($campaign->sent_count)->toBe(1);
+});
+
+it('includes non-customer email addresses in a campaign', function () {
+    Mail::fake();
+
+    $admin = createCampaignUser('admin');
+    $selected = createCampaignCustomer(['name' => 'Known Customer', 'email' => 'known@example.com']);
+    $template = EmailTemplate::where('key', 'product_update_announcement')->firstOrFail();
+
+    $response = $this
+        ->actingAs($admin)
+        ->post(route('admin.campaign-emails.store'), [
+            'template_id' => $template->id,
+            'title' => 'Flexible Campaign',
+            'subject' => 'New updates are now live on EaseVerifier',
+            'heading' => 'Platform improvements for your team',
+            'body' => 'Hello {{customer_name}}, this is a campaign update.',
+            'cta_label' => 'Review Updates',
+            'cta_url' => '{{dashboard_url}}',
+            'recipient_scope' => 'selected',
+            'customer_ids' => [$selected->id],
+            'additional_emails' => ['external.lead@example.com'],
+        ]);
+
+    $response->assertRedirect(route('admin.campaign-emails.index'));
+
+    Mail::assertSent(CampaignEmailMail::class, 2);
+    Mail::assertSent(CampaignEmailMail::class, fn (CampaignEmailMail $mail) => $mail->hasTo($selected->email));
+    Mail::assertSent(CampaignEmailMail::class, fn (CampaignEmailMail $mail) => $mail->hasTo('external.lead@example.com'));
+
+    $campaign = EmailCampaign::firstOrFail();
+
+    expect($campaign->additional_emails)->toBe(['external.lead@example.com'])
+        ->and($campaign->total_recipients)->toBe(2);
+
+    $this->assertDatabaseHas('email_campaign_recipients', [
+        'email_campaign_id' => $campaign->id,
+        'email' => 'external.lead@example.com',
+        'user_id' => null,
+        'status' => 'sent',
+    ]);
 });

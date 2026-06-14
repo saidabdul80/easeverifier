@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('title');
             $table->string('recipient_scope')->default('all');
             $table->json('selected_customer_ids')->nullable();
+            $table->json('additional_emails')->nullable();
             $table->string('subject');
             $table->string('heading')->nullable();
             $table->text('body');

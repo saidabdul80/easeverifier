@@ -14,6 +14,7 @@ class EmailCampaign extends Model
         'title',
         'recipient_scope',
         'selected_customer_ids',
+        'additional_emails',
         'subject',
         'heading',
         'body',
@@ -30,6 +31,7 @@ class EmailCampaign extends Model
     {
         return [
             'selected_customer_ids' => 'array',
+            'additional_emails' => 'array',
             'total_recipients' => 'integer',
             'sent_count' => 'integer',
             'failed_count' => 'integer',
