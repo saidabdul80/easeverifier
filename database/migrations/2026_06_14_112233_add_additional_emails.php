@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('email_campaigns', 'additional_emails')) {
+            return;
+        }
+
         Schema::table('email_campaigns', function (Blueprint $table) {
             $table->json('additional_emails')->nullable();
         });
@@ -21,6 +25,12 @@ return new class extends Migration
      */
     public function down(): void
     {
-        //
+        if (! Schema::hasColumn('email_campaigns', 'additional_emails')) {
+            return;
+        }
+
+        Schema::table('email_campaigns', function (Blueprint $table) {
+            $table->dropColumn('additional_emails');
+        });
     }
 };
