@@ -5,8 +5,10 @@ use App\Models\Customer;
 use App\Models\EmailCampaign;
 use App\Models\EmailTemplate;
 use App\Models\User;
+use Illuminate\Mail\Transport\ArrayTransport;
 use Illuminate\Support\Facades\Mail;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\Mime\Email;
 
 function createCampaignUser(string $role, array $attributes = []): User
 {
@@ -162,4 +164,60 @@ it('includes non-customer email addresses in a campaign', function () {
         'user_id' => null,
         'status' => 'sent',
     ]);
+});
+
+it('renders and sends a campaign email through laravel array mailer', function () {
+    config(['mail.default' => 'array']);
+
+    /** @var ArrayTransport $transport */
+    $transport = Mail::mailer('array')->getSymfonyTransport();
+    $transport->flush();
+
+    $admin = createCampaignUser('admin');
+    $customer = createCampaignCustomer([
+        'name' => 'Array Mail Customer',
+        'email' => 'arraymail@example.com',
+    ]);
+    $template = EmailTemplate::where('key', 'support_check_in')->firstOrFail();
+
+    $response = $this
+        ->actingAs($admin)
+        ->post(route('admin.campaign-emails.store'), [
+            'template_id' => $template->id,
+            'title' => 'Array Mail Campaign',
+            'subject' => 'Do you need any help using EaseVerifier?',
+            'heading' => 'We want to remove any blockers for your team',
+            'body' => 'Hi {{customer_name}}, reply if you need support from {{support_name}}.',
+            'cta_label' => 'Contact Support',
+            'cta_url' => 'mailto:{{support_email}}',
+            'recipient_scope' => 'selected',
+            'customer_ids' => [$customer->id],
+        ]);
+
+    $response->assertRedirect(route('admin.campaign-emails.index'));
+
+    expect($transport->messages())->toHaveCount(1);
+
+    $sentMessage = $transport->messages()->first();
+    $raw = $sentMessage->toString();
+    $originalMessage = $sentMessage->getOriginalMessage();
+
+    expect($originalMessage)->toBeInstanceOf(Email::class);
+
+    /** @var Email $originalMessage */
+    $html = $originalMessage->getHtmlBody() ?? '';
+
+    expect($raw)
+        ->toContain('Subject: Do you need any help using EaseVerifier?');
+
+    expect($html)
+        ->toContain('Array Mail Customer')
+        ->toContain('Contact Support')
+        ->toContain('mailto:' . config('mail.from.address'));
+
+    $campaign = EmailCampaign::firstOrFail();
+
+    expect($campaign->status)->toBe('sent')
+        ->and($campaign->sent_count)->toBe(1)
+        ->and($campaign->failed_count)->toBe(0);
 });
