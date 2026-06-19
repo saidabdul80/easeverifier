@@ -52,7 +52,7 @@ onMounted(() => {
                 <!-- Header -->
                 <div class="text-center mb-6">
                     <v-avatar color="primary" size="64" class="mb-3">
-                        <v-icon size="32">mdi-shield-check</v-icon>
+                        <img src="/ashlabtech.png" alt="EaseVerifier" style="width: 100%; height: 100%; object-fit: contain;" />
                     </v-avatar>
                     <h2 class="text-h5 font-weight-bold">EaseVerifier</h2>
                     <p class="text-body-2 text-grey mb-0">Transaction Receipt</p>
@@ -157,4 +157,3 @@ onMounted(() => {
     .receipt-card { box-shadow: none !important; max-width: 100% !important; }
 }
 </style>
-

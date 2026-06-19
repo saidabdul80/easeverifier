@@ -18,7 +18,7 @@ defineProps<{
                         <div class="brand-panel fill-height w-100 d-flex flex-column justify-center pa-12">
                             <div class="brand-content">
                                 <Link :href="home()" class="d-flex align-center mb-8 text-decoration-none">
-                                    <v-icon color="white" size="48" class="mr-3">mdi-shield-check</v-icon>
+                                    <img src="/ashlabtech.png" alt="EaseVerifier" class="brand-logo-large mr-3" />
                                     <span class="text-h4 font-weight-bold text-white">EaseVerifier</span>
                                 </Link>
                                 <h1 class="text-h3 font-weight-bold text-white mb-4">
@@ -53,7 +53,7 @@ defineProps<{
                             <!-- Mobile Logo -->
                             <div class="d-lg-none text-center mb-8">
                                 <Link :href="home()" class="d-inline-flex align-center text-decoration-none">
-                                    <v-icon color="primary" size="40" class="mr-2">mdi-shield-check</v-icon>
+                                    <img src="/ashlabtech.png" alt="EaseVerifier" class="brand-logo-mobile mr-2" />
                                     <span class="text-h5 font-weight-bold text-primary">EaseVerifier</span>
                                 </Link>
                             </div>
@@ -119,6 +119,18 @@ defineProps<{
 .brand-content {
     position: relative;
     z-index: 1;
+}
+
+.brand-logo-large {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+}
+
+.brand-logo-mobile {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
 }
 
 .form-panel {

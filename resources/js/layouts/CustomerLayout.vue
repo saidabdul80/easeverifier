@@ -57,7 +57,7 @@ watch(mdAndUp, (isDesktop) => {
             <v-list-item class="py-4 px-4" :nav="false">
                 <template #prepend>
                     <v-avatar color="white" size="40">
-                        <v-icon color="primary">mdi-shield-check</v-icon>
+                        <img src="/ashlabtech.png" alt="EaseVerifier" style="width: 100%; height: 100%; object-fit: contain;" />
                     </v-avatar>
                 </template>
                 <v-list-item-title class="text-h6 font-weight-bold text-white">EaseVerifier</v-list-item-title>

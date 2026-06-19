@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AuthBase from '@/layouts/AuthLayout.vue';
-import { login } from '@/routes';
+import { login, privacy, terms } from '@/routes';
 import { store } from '@/routes/register';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
@@ -211,9 +211,9 @@ watch(
                 <template #label>
                     <span class="text-body-2">
                         I agree to the
-                        <a href="#" class="text-primary text-decoration-none font-weight-medium">Terms of Service</a>
+                        <Link :href="terms()" class="text-primary text-decoration-none font-weight-medium" @click.stop>Terms of Service</Link>
                         and
-                        <a href="#" class="text-primary text-decoration-none font-weight-medium">Privacy Policy</a>
+                        <Link :href="privacy()" class="text-primary text-decoration-none font-weight-medium" @click.stop>Privacy Policy</Link>
                     </span>
                 </template>
             </v-checkbox>

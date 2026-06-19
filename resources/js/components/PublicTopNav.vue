@@ -33,7 +33,7 @@ const navItems = [
             <div class="nav-shell">
                 <Link :href="home()" class="text-decoration-none d-flex align-center brand-lockup">
                     <v-avatar color="white" size="38" class="mr-3 brand-avatar">
-                        <v-icon color="primary" size="22">mdi-shield-check</v-icon>
+                        <img src="/ashlabtech.png" alt="EaseVerifier" class="brand-logo-img" />
                     </v-avatar>
                     <div class="brand-copy">
                         <div class="text-subtitle-1 font-weight-bold text-white">EaseVerifier</div>
@@ -108,6 +108,12 @@ const navItems = [
 .brand-avatar {
     box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
     flex-shrink: 0;
+}
+
+.brand-logo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 .brand-copy,

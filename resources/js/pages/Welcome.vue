@@ -335,7 +335,7 @@ const formatDate = (date: string) =>
                         <v-col cols="12" md="4">
                             <div class="d-flex align-center mb-3">
                                 <v-avatar color="white" size="34" class="mr-3">
-                                    <v-icon color="primary" size="20">mdi-shield-check</v-icon>
+                                    <img src="/ashlabtech.png" alt="EaseVerifier" style="width: 100%; height: 100%; object-fit: contain;" />
                                 </v-avatar>
                                 <span class="text-subtitle-1 font-weight-bold text-white">EaseVerifier</span>
                             </div>

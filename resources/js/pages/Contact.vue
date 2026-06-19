@@ -32,7 +32,7 @@ const submitForm = () => {
             <v-container class="d-flex align-center">
                 <Link :href="home()" class="text-decoration-none d-flex align-center">
                     <v-avatar color="primary" size="36" class="mr-2">
-                        <v-icon color="white" size="20">mdi-shield-check</v-icon>
+                        <img src="/ashlabtech.png" alt="EaseVerifier" style="width: 100%; height: 100%; object-fit: contain;" />
                     </v-avatar>
                     <span class="text-h6 font-weight-bold text-primary">EaseVerifier</span>
                 </Link>
@@ -115,4 +115,3 @@ const submitForm = () => {
 <style scoped>
 .hero-section { background: linear-gradient(135deg, #1c6434 0%, #0d3d1f 100%); }
 </style>
-
