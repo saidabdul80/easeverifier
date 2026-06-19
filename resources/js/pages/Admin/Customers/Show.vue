@@ -78,7 +78,7 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                 <v-row class="mb-4">
                     <v-col cols="4">
                         <v-card><v-card-text class="text-center">
-                            <p class="text-h4 font-weight-bold text-primary mb-0">{{ (verificationStats?.completed || 0) + (verificationStats?.failed || 0) }}</p>
+                            <p class="text-h4 font-weight-bold text-primary mb-0">{{ verificationStats?.total || 0 }}</p>
                             <p class="text-caption text-grey">Total Verifications</p>
                         </v-card-text></v-card>
                     </v-col>

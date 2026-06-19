@@ -107,7 +107,11 @@ class CustomerController extends Controller
         $verificationStats = $customer->verificationRequests()
             ->selectRaw('status, COUNT(*) as count')
             ->groupBy('status')
-            ->pluck('count', 'status');
+            ->pluck('count', 'status')
+            ->map(fn ($count) => (int) $count)
+            ->toArray();
+
+        $verificationStats['total'] = array_sum($verificationStats);
 
         $services = VerificationService::active()->get();
         $customPricing = $customer->customPricing()->with('verificationService')->get()
