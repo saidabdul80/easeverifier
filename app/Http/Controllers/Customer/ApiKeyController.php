@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\ApiKey;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class ApiKeyController extends Controller
@@ -12,10 +13,14 @@ class ApiKeyController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $apiKeys = $user->apiKeys()->orderBy('created_at', 'desc')->get()->map(fn($key) => [
+        $apiKeys = $user->apiKeys()->with('branch')->orderBy('created_at', 'desc')->get()->map(fn($key) => [
             'id' => $key->id,
             'name' => $key->name,
             'key' => $key->key,
+            'branch' => $key->branch ? [
+                'id' => $key->branch->id,
+                'name' => $key->branch->name,
+            ] : null,
             'environment' => $key->environment,
             'is_active' => $key->is_active,
             'rate_limit' => $key->rate_limit,
@@ -26,6 +31,7 @@ class ApiKeyController extends Controller
         return Inertia::render('Customer/Api/Index', [
             'apiKeys' => $apiKeys,
             'customer' => $user->customer,
+            'branches' => $user->branches()->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -34,16 +40,31 @@ class ApiKeyController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'environment' => 'required|in:live,test',
+            'branch_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('branches', 'id')->where('user_id', $request->user()->id),
+            ],
         ]);
 
         $user = $request->user();
+        $branchId = $validated['branch_id'] ?? null;
 
-        // Limit to 5 API keys per user
-        if ($user->apiKeys()->count() >= 5) {
-            return back()->withErrors(['limit' => 'You can only have up to 5 API keys.']);
+        $existingKeys = $user->apiKeys()
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->when(! $branchId, fn ($query) => $query->whereNull('branch_id'))
+            ->count();
+
+        if ($existingKeys >= 5) {
+            return back()->withErrors(['limit' => 'You can only have up to 5 API keys per account or branch.']);
         }
 
-        $apiKey = ApiKey::generate($user->id, $validated['name'], $validated['environment']);
+        $apiKey = ApiKey::generate(
+            $user->id,
+            $validated['name'],
+            $validated['environment'],
+            $branchId,
+        );
 
         // Get the bearer token before clearing the plain secret
         $bearerToken = $apiKey->getBearerToken();
@@ -122,4 +143,3 @@ class ApiKeyController extends Controller
         return Inertia::render('Customer/Api/Documentation');
     }
 }
-

@@ -23,11 +23,11 @@ const pricingTiers = [
 ];
 
 const servicePrices = [
-    { name: 'NIN Verification', price: 100, unit: 'per lookup' },
-    { name: 'BVN Verification', price: 150, unit: 'per lookup' },
+    { name: 'NIN Verification', price: 150, unit: 'per lookup' },
+    { name: 'BVN Verification', price: 200, unit: 'per lookup' },
     { name: 'CAC Verification', price: 200, unit: 'per lookup' },
-    { name: "Driver's License", price: 120, unit: 'per lookup' },
-    { name: "Voter's Card", price: 100, unit: 'per lookup' },
+    // { name: "Driver's License", price: 120, unit: 'per lookup' },
+    // { name: "Voter's Card", price: 100, unit: 'per lookup' },
 ];
 
 const formatPrice = (price: number) => {
@@ -55,14 +55,14 @@ const formatPrice = (price: number) => {
                 </Link>
                 <v-spacer />
                 <div class="d-none d-md-flex align-center ga-2">
-                    <v-btn variant="text" :href="services()">Services</v-btn>
+                    <v-btn variant="text" href="/services">Services</v-btn>
                     <v-btn variant="text" :href="pricing()" color="primary">Pricing</v-btn>
                     <v-btn variant="text" :href="documentation()">Documentation</v-btn>
                 </div>
                 <v-spacer />
                 <div class="d-flex ga-2">
-                    <v-btn variant="outlined" color="primary" :href="login()">Login</v-btn>
-                    <v-btn variant="flat" color="primary" :href="register()" class="d-none d-sm-flex">Get Started</v-btn>
+                    <v-btn variant="outlined" color="primary" href="/login">Login</v-btn>
+                    <v-btn variant="flat" color="primary" href="/register" class="d-none d-sm-flex">Get Started</v-btn>
                 </div>
             </v-container>
         </v-app-bar>

@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\TransactionController as AdminTransactionControll
 use App\Http\Controllers\Admin\VerificationController as AdminVerificationController;
 use App\Http\Controllers\Admin\BlogController as AdminBlogController;
 use App\Http\Controllers\Admin\CampaignEmailController as AdminCampaignEmailController;
+use App\Http\Controllers\Auth\EmailOtpVerificationController;
 use App\Http\Controllers\BlogController;
 
 use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
@@ -21,6 +22,7 @@ use App\Http\Controllers\Customer\VerificationController as CustomerVerification
 use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
 use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
 use App\Http\Controllers\Customer\ApiKeyController;
+use App\Http\Controllers\Customer\BranchController as CustomerBranchController;
 use App\Http\Controllers\Customer\PaymentController;
 use App\Http\Controllers\SitemapController;
 
@@ -106,6 +108,10 @@ Route::get('dashboard', function () {
     return redirect()->route('customer.dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
+Route::middleware(['auth', 'throttle:6,1'])->group(function () {
+    Route::post('email/verify-otp', [EmailOtpVerificationController::class, 'store'])->name('verification.otp.verify');
+});
+
 // Admin Routes
 Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');
@@ -185,6 +191,12 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::delete('api/keys/{apiKey}', [ApiKeyController::class, 'destroy'])->name('api.destroy');
     Route::get('api/documentation', [ApiKeyController::class, 'documentation'])->name('api.documentation');
     Route::post('api/webhook', [ApiKeyController::class, 'updateWebhook'])->name('api.webhook');
+
+    // Branches
+    Route::get('branches', [CustomerBranchController::class, 'index'])->name('branches.index');
+    Route::post('branches', [CustomerBranchController::class, 'store'])->name('branches.store');
+    Route::put('branches/{branch}', [CustomerBranchController::class, 'update'])->name('branches.update');
+    Route::post('branches/transfer', [CustomerBranchController::class, 'transfer'])->name('branches.transfer');
     
     // Dedicated Virtual Accounts
     Route::post('payment/dedicated-account/create', [PaymentController::class, 'createDedicatedAccount'])->name('payment.dva.create');   

@@ -14,6 +14,21 @@ class WalletController extends Controller
     public function index(Request $request)
     {
         $wallet = $request->user()->wallet;
+        $branchWallets = $request->user()->branches()
+            ->with('wallet')
+            ->orderBy('name')
+            ->get()
+            ->map(fn ($branch) => [
+                'id' => $branch->id,
+                'name' => $branch->name,
+                'code' => $branch->code,
+                'is_active' => $branch->is_active,
+                'wallet' => $branch->wallet ? [
+                    'balance' => (float) $branch->wallet->balance,
+                    'bonus_balance' => (float) $branch->wallet->bonus_balance,
+                    'total_balance' => (float) $branch->wallet->total_balance,
+                ] : null,
+            ]);
 
         $transactions = $this->filteredTransactionsQuery($request)
             ->latest()
@@ -37,6 +52,7 @@ class WalletController extends Controller
 
         return Inertia::render('Customer/Wallet/Index', [
             'wallet' => $wallet,
+            'branchWallets' => $branchWallets,
             'transactions' => $transactions,
             'stats' => $stats,
             'filters' => $request->only(['type', 'category', 'date_from', 'date_to']),

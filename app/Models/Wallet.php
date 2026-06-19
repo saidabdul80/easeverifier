@@ -14,6 +14,7 @@ class Wallet extends Model
 
     protected $fillable = [
         'user_id',
+        'branch_id',
         'balance',
         'bonus_balance',
         'currency',
@@ -38,11 +39,24 @@ class Wallet extends Model
     }
 
     /**
+     * Get the branch that owns this wallet, if any.
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /**
      * Get all transactions for this wallet.
      */
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    public function isPrimaryWallet(): bool
+    {
+        return $this->branch_id === null;
     }
 
     /**

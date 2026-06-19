@@ -2,11 +2,13 @@
 import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
 import { ref, computed } from 'vue';
+import { useDisplay } from 'vuetify';
 
 interface ApiKey {
     id: number;
     name: string;
     key: string;
+    branch?: { id: number; name: string } | null;
     environment: 'live' | 'test';
     is_active: boolean;
     rate_limit: number;
@@ -17,11 +19,13 @@ interface ApiKey {
 const props = defineProps<{
     apiKeys: ApiKey[];
     customer?: any;
+    branches?: Array<{ id: number; name: string }>;
 }>();
 
 const page = usePage();
 const flash = computed(() => page.props.flash as any);
 const testNin = '11111111111';
+const { smAndDown } = useDisplay();
 
 const showCreateDialog = ref(false);
 const showCredentialsDialog = ref(false);
@@ -30,6 +34,7 @@ const newCredentials = ref<{ key: string; secret: string; bearer_token: string }
 const createForm = useForm({
     name: 'Default',
     environment: 'live' as 'live' | 'test',
+    branch_id: null as number | null,
 });
 
 const webhookForm = useForm({ webhook_url: props.customer?.webhook_url || '' });
@@ -82,7 +87,7 @@ const copyToClipboard = async (text: string) => {
 <template>
     <Head title="API Keys - EaseVerifier" />
     <CustomerLayout :user="$page.props.auth.user" :wallet="$page.props.auth.wallet">
-        <div class="d-flex align-center mb-6">
+        <div class="d-flex flex-column flex-sm-row align-sm-center mb-6 ga-4">
             <div>
                 <h1 class="text-h4 font-weight-bold mb-1">API Integration</h1>
                 <p class="text-body-2 text-grey">Manage your API keys for programmatic access</p>
@@ -109,10 +114,38 @@ const copyToClipboard = async (text: string) => {
                     You haven't created any API keys yet. Create one to start using the API.
                 </v-alert>
             </v-card-text>
+            <div v-else-if="smAndDown" class="grid gap-3">
+                <v-card v-for="key in apiKeys" :key="key.id" variant="outlined">
+                    <v-card-text class="pa-4">
+                        <div class="font-weight-bold">{{ key.name }}</div>
+                        <div class="d-flex flex-wrap ga-2 mt-2">
+                            <v-chip size="small" variant="outlined">{{ key.branch?.name || 'Primary account' }}</v-chip>
+                            <v-chip :color="key.environment === 'live' ? 'success' : 'warning'" size="small">{{ key.environment }}</v-chip>
+                            <v-chip :color="key.is_active ? 'success' : 'grey'" size="small">{{ key.is_active ? 'Active' : 'Inactive' }}</v-chip>
+                        </div>
+                        <div class="text-caption text-grey mt-3">Key</div>
+                        <div class="d-flex align-center ga-1">
+                            <code class="bg-grey-lighten-4 px-2 py-1 rounded text-caption">{{ key.key.substring(0, 20) }}...</code>
+                            <v-btn icon size="x-small" variant="text" @click="copyToClipboard(key.key)">
+                                <v-icon size="16">mdi-content-copy</v-icon>
+                            </v-btn>
+                        </div>
+                        <div class="text-caption text-grey mt-2">Last used: {{ key.last_used_at || 'Never' }}</div>
+                        <div class="text-caption text-grey">Created: {{ key.created_at }}</div>
+                    </v-card-text>
+                    <v-divider />
+                    <v-card-actions class="justify-end px-3 py-2">
+                        <v-btn size="small" variant="text" @click="toggleKey(key.id)">{{ key.is_active ? 'Pause' : 'Activate' }}</v-btn>
+                        <v-btn size="small" variant="text" color="warning" @click="regenerateKey(key.id)">Regenerate</v-btn>
+                        <v-btn size="small" variant="text" color="error" @click="deleteKey(key.id)">Delete</v-btn>
+                    </v-card-actions>
+                </v-card>
+            </div>
             <v-table v-else density="comfortable">
                 <thead>
                     <tr>
                         <th>Name</th>
+                        <th>Scope</th>
                         <th>Key</th>
                         <th>Environment</th>
                         <th>Status</th>
@@ -124,6 +157,9 @@ const copyToClipboard = async (text: string) => {
                 <tbody>
                     <tr v-for="key in apiKeys" :key="key.id">
                         <td class="font-weight-medium">{{ key.name }}</td>
+                        <td>
+                            <v-chip size="small" variant="outlined">{{ key.branch?.name || 'Primary account' }}</v-chip>
+                        </td>
                         <td>
                             <code class="bg-grey-lighten-4 pa-1 rounded">{{ key.key.substring(0, 20) }}...</code>
                             <v-btn icon size="x-small" variant="text" @click="copyToClipboard(key.key)">
@@ -193,6 +229,13 @@ const copyToClipboard = async (text: string) => {
                 <v-card-title>Create API Key</v-card-title>
                 <v-card-text>
                     <v-text-field v-model="createForm.name" label="Key Name" variant="outlined" placeholder="e.g., Production Server" class="mb-4" :error-messages="createForm.errors.name" />
+                    <v-select
+                        v-model="createForm.branch_id"
+                        :items="[{ title: 'Primary account', value: null }, ...(branches || []).map(branch => ({ title: branch.name, value: branch.id }))]"
+                        label="Wallet scope"
+                        variant="outlined"
+                        class="mb-4"
+                    />
                     <v-select v-model="createForm.environment" :items="[{ title: 'Live', value: 'live' }, { title: 'Test', value: 'test' }]" label="Environment" variant="outlined" :error-messages="createForm.errors.environment" />
                     <v-alert v-if="createForm.environment === 'test'" type="warning" variant="tonal" density="compact">
                         Test keys are restricted to the NIN value <strong>{{ testNin }}</strong>.

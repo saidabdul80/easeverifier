@@ -41,7 +41,7 @@ const navItems = [
                     </div>
                 </Link>
 
-                <div class="d-none d-md-flex nav-center">
+                <div class="d-none d-lg-flex nav-center">
                     <Link v-for="item in navItems" :key="item.key" :href="item.href">
                         <v-btn
                             variant="text"
@@ -54,7 +54,7 @@ const navItems = [
                     </Link>
                 </div>
 
-                <div class="d-none d-md-flex align-center ga-2 nav-right">
+                <div class="d-none d-lg-flex align-center ga-2 nav-right">
                     <template v-if="authUser">
                         <Link :href="dashboard()"><v-btn color="white" variant="flat" class="nav-action">Dashboard</v-btn></Link>
                     </template>
@@ -64,7 +64,7 @@ const navItems = [
                     </template>
                 </div>
 
-                <v-app-bar-nav-icon class="d-md-none text-white" @click="mobileMenu = !mobileMenu" />
+                <v-app-bar-nav-icon class="d-lg-none text-white" @click="mobileMenu = !mobileMenu" />
             </div>
         </v-container>
     </v-app-bar>
@@ -107,11 +107,26 @@ const navItems = [
 
 .brand-avatar {
     box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+    flex-shrink: 0;
 }
 
 .brand-copy,
 .brand-lockup {
     min-width: 0;
+}
+
+.brand-lockup {
+    flex: 1 1 auto;
+    max-width: 320px;
+}
+
+.brand-copy {
+    overflow: hidden;
+}
+
+.brand-copy .text-subtitle-1 {
+    line-height: 1.1;
+    white-space: nowrap;
 }
 
 .brand-subtitle {
@@ -121,6 +136,9 @@ const navItems = [
 .nav-center {
     display: flex;
     align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-width: 0;
     gap: 0.25rem;
     padding: 0.25rem;
     border-radius: 999px;
@@ -147,6 +165,9 @@ const navItems = [
 }
 
 @media (max-width: 960px) {
+    .nav-center {
+        display: none;
+    }
     .nav-shell {
         padding: 0.6rem 0.75rem;
         border-radius: 20px;
@@ -156,6 +177,16 @@ const navItems = [
     .brand-avatar {
         width: 34px !important;
         height: 34px !important;
+    }
+
+    .brand-subtitle {
+        display: none;
+    }
+}
+
+@media (max-width: 1280px) {
+    .brand-lockup {
+        max-width: 250px;
     }
 
     .brand-subtitle {

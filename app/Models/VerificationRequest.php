@@ -13,6 +13,7 @@ class VerificationRequest extends Model
 
     protected $fillable = [
         'user_id',
+        'branch_id',
         'verification_service_id',
         'service_provider_id',
         'transaction_id',
@@ -52,6 +53,14 @@ class VerificationRequest extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the branch that initiated this verification, if any.
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     /**
@@ -134,4 +143,3 @@ class VerificationRequest extends Model
         return $this->status === 'completed';
     }
 }
-

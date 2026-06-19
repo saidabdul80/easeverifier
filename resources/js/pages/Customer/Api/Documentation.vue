@@ -9,26 +9,23 @@ const activeTab = ref('overview');
 const testNin = '11111111111';
 
 const codeExamples = {
-    curl: `curl -X POST https://verify.ashlabtech.ng/v1/verify/nin \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "X-API-Secret: YOUR_API_SECRET" \\
+    curl: `curl -X POST https://verify.ashlabtech.ng/api/v1/verify/nin \\
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"nin": "${testNin}","consent": true}'`,
     php: `<?php
 $client = new GuzzleHttp\\Client();
-$response = $client->post('https://verify.ashlabtech.ng/v1/verify/nin', [
+$response = $client->post('https://verify.ashlabtech.ng/api/v1/verify/nin', [
     'headers' => [
-        'Authorization' => 'Bearer YOUR_API_KEY',
-        'X-API-Secret' => 'YOUR_API_SECRET',
+        'Authorization' => 'Bearer YOUR_BEARER_TOKEN',
     ],
     'json' => ['nin' => '${testNin}']
 ]);
 $data = json_decode($response->getBody(), true);`,
-    javascript: `const response = await fetch('https://verify.ashlabtech.ng/v1/verify/nin', {
+    javascript: `const response = await fetch('https://verify.ashlabtech.ng/api/v1/verify/nin', {
   method: 'POST',
   headers: {
-    'Authorization': 'Bearer YOUR_API_KEY',
-    'X-API-Secret': 'YOUR_API_SECRET',
+    'Authorization': 'Bearer YOUR_BEARER_TOKEN',
     'Content-Type': 'application/json'
   },
   body: JSON.stringify({ nin: '${testNin}' })
@@ -37,10 +34,9 @@ const data = await response.json();`,
     python: `import requests
 
 response = requests.post(
-    'https://verify.ashlabtech.ng/v1/verify/nin',
+    'https://verify.ashlabtech.ng/api/v1/verify/nin',
     headers={
-        'Authorization': 'Bearer YOUR_API_KEY',
-        'X-API-Secret': 'YOUR_API_SECRET'
+        'Authorization': 'Bearer YOUR_BEARER_TOKEN'
     },
     json={'nin': '${testNin}'}
 )
@@ -72,15 +68,15 @@ data = response.json()`
                         <h2 class="text-h5 font-weight-bold mb-4">Getting Started</h2>
                         <p class="text-body-1 mb-4">The EaseVerifier API allows you to programmatically verify Nigerian identities including NIN, BVN, and CAC records.</p>
                         <v-alert type="info" variant="tonal" class="mb-4">
-                            <strong>Base URL:</strong> <code>https://verify.ashlabtech.ng/v1</code>
+                            <strong>Base URL:</strong> <code>https://verify.ashlabtech.ng/api/v1</code>
                         </v-alert>
                         <v-alert type="warning" variant="tonal" class="mb-4">
                             Test API keys only accept <strong>{{ testNin }}</strong> for NIN verification. Use a live key for real NIN checks.
                         </v-alert>
                         <h3 class="text-h6 font-weight-bold mb-3">Quick Start</h3>
                         <ol class="pl-4 mb-4">
-                            <li class="mb-2">Generate your API credentials from the <a href="/customer/api">API Keys page</a></li>
-                            <li class="mb-2">Include your credentials in the request headers</li>
+                            <li class="mb-2">Generate your API key and copy the bearer token from the <a href="/customer/api">API Keys page</a></li>
+                            <li class="mb-2">Include the bearer token in the request headers</li>
                             <li class="mb-2">Make a POST request to the verification endpoint</li>
                             <li>Handle the response in your application</li>
                         </ol>
@@ -93,12 +89,11 @@ data = response.json()`
                 <v-card>
                     <v-card-text class="pa-6">
                         <h2 class="text-h5 font-weight-bold mb-4">Authentication</h2>
-                        <p class="text-body-1 mb-4">All API requests require authentication using your API Key and Secret.</p>
+                        <p class="text-body-1 mb-4">All API requests require authentication using your generated bearer token.</p>
                         <v-table class="mb-4">
                             <thead><tr><th>Header</th><th>Value</th><th>Description</th></tr></thead>
                             <tbody>
-                                <tr><td><code>Authorization</code></td><td><code>Bearer YOUR_API_KEY</code></td><td>Your API key</td></tr>
-                                <tr><td><code>X-API-Secret</code></td><td><code>YOUR_API_SECRET</code></td><td>Your API secret</td></tr>
+                                <tr><td><code>Authorization</code></td><td><code>Bearer YOUR_BEARER_TOKEN</code></td><td>The bearer token generated for the key</td></tr>
                                 <tr><td><code>Content-Type</code></td><td><code>application/json</code></td><td>Request content type</td></tr>
                             </tbody>
                         </v-table>

@@ -14,6 +14,7 @@ class ApiKey extends Model
 
     protected $fillable = [
         'user_id',
+        'branch_id',
         'name',
         'key',
         'secret_hash',
@@ -52,9 +53,22 @@ class ApiKey extends Model
     }
 
     /**
+     * Get the branch this key is scoped to, if any.
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /**
      * Generate a new API key pair.
      */
-    public static function generate(int $userId, string $name = 'Default', string $environment = 'live'): self
+    public static function generate(
+        int $userId,
+        string $name = 'Default',
+        string $environment = 'live',
+        ?int $branchId = null,
+    ): self
     {
         $prefix = $environment === 'live' ? 'ev_live_' : 'ev_test_';
         $key = $prefix . Str::random(32);
@@ -62,6 +76,7 @@ class ApiKey extends Model
 
         return self::create([
             'user_id' => $userId,
+            'branch_id' => $branchId,
             'name' => $name,
             'key' => $key,
             'secret_hash' => hash('sha256', $secret),
@@ -174,4 +189,3 @@ class ApiKey extends Model
             });
     }
 }
-

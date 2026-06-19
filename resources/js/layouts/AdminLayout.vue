@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { logout as logoutRoute } from '@/routes';
+import { useDisplay } from 'vuetify';
 
 const props = defineProps<{
     user: { name: string; email: string };
 }>();
 
-const drawer = ref(true);
+const { mdAndUp, smAndDown } = useDisplay();
+const drawer = ref(mdAndUp.value);
 const rail = ref(false);
 
 const navItems = [
@@ -28,11 +30,25 @@ const logout = () => {
 const initials = computed(() => {
     return props.user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'A';
 });
+
+watch(mdAndUp, (isDesktop) => {
+    drawer.value = isDesktop;
+
+    if (!isDesktop) {
+        rail.value = false;
+    }
+});
 </script>
 
 <template>
     <v-app>
-        <v-navigation-drawer v-model="drawer" :rail="rail" permanent color="primary-darken-1">
+        <v-navigation-drawer
+            v-model="drawer"
+            :rail="mdAndUp ? rail : false"
+            :permanent="mdAndUp"
+            :temporary="smAndDown"
+            color="primary-darken-1"
+        >
             <v-list-item class="py-4 px-4" :nav="false">
                 <template #prepend>
                     <v-avatar color="white" size="40">
@@ -42,7 +58,13 @@ const initials = computed(() => {
                 <v-list-item-title class="text-h6 font-weight-bold text-white">EaseVerifier</v-list-item-title>
                 <v-list-item-subtitle class="text-white opacity-60">Admin Panel</v-list-item-subtitle>
                 <template #append>
-                    <v-btn variant="text" :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'" color="white" @click="rail = !rail" />
+                    <v-btn
+                        v-if="mdAndUp"
+                        variant="text"
+                        :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
+                        color="white"
+                        @click="rail = !rail"
+                    />
                 </template>
             </v-list-item>
 
@@ -61,7 +83,7 @@ const initials = computed(() => {
         </v-navigation-drawer>
 
         <v-app-bar flat color="white" elevation="1">
-            <v-app-bar-nav-icon @click="drawer = !drawer" class="d-md-none" />
+            <v-app-bar-nav-icon @click="drawer = !drawer" />
             <v-spacer />
             <v-btn icon variant="text" class="mr-2"><v-icon>mdi-bell-outline</v-icon><v-badge color="error" content="3" floating /></v-btn>
             <v-menu>
@@ -82,7 +104,7 @@ const initials = computed(() => {
         </v-app-bar>
 
         <v-main class="bg-grey-lighten-4">
-            <v-container fluid class="pa-6">
+            <v-container fluid class="pa-4 pa-md-6">
                 <slot />
             </v-container>
         </v-main>

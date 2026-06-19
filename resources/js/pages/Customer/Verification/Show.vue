@@ -1,21 +1,30 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps<{
     user: { name: string; email: string };
     service: any;
     price: number;
     walletBalance: number;
+    branches?: Array<{ id: number; name: string; code: string; wallet_balance: number }>;
 }>();
 
-const form = useForm({ search_parameter: '' });
+const form = useForm({ search_parameter: '', branch_id: null as number | null });
 const loading = ref(false);
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 
-const canVerify = () => props.walletBalance >= props.price;
+const activeWalletBalance = computed(() => {
+    if (!form.branch_id) {
+        return props.walletBalance;
+    }
+
+    return props.branches?.find((branch) => branch.id === form.branch_id)?.wallet_balance || 0;
+});
+
+const canVerify = () => activeWalletBalance.value >= props.price;
 
 const getPlaceholder = () => {
     const placeholders: Record<string, string> = {
@@ -64,7 +73,7 @@ const submit = () => {
                     <v-card-text>
                         <v-alert v-if="!canVerify()" type="warning" variant="tonal" class="mb-4">
                             <v-alert-title>Insufficient Balance</v-alert-title>
-                            Your wallet balance ({{ formatCurrency(walletBalance) }}) is less than the verification cost ({{ formatCurrency(price) }}).
+                            Your selected wallet balance ({{ formatCurrency(activeWalletBalance) }}) is less than the verification cost ({{ formatCurrency(price) }}).
                             <template #append>
                                 <v-btn color="warning" variant="tonal" href="/customer/wallet/fund">Fund Wallet</v-btn>
                             </template>
@@ -78,6 +87,15 @@ const submit = () => {
                                 variant="outlined"
                                 :error-messages="form.errors.search_parameter"
                                 prepend-inner-icon="mdi-magnify"
+                                class="mb-4"
+                            />
+
+                            <v-select
+                                v-if="branches?.length"
+                                v-model="form.branch_id"
+                                :items="[{ title: 'Primary account wallet', value: null }, ...branches.map(branch => ({ title: `${branch.name} (${formatCurrency(branch.wallet_balance)})`, value: branch.id }))]"
+                                label="Charge wallet"
+                                variant="outlined"
                                 class="mb-4"
                             />
 
@@ -112,7 +130,7 @@ const submit = () => {
                             </v-list-item>
                             <v-list-item>
                                 <v-list-item-title class="text-caption">Your Balance</v-list-item-title>
-                                <v-list-item-subtitle :class="canVerify() ? 'text-success' : 'text-error'" class="font-weight-medium">{{ formatCurrency(walletBalance) }}</v-list-item-subtitle>
+                                <v-list-item-subtitle :class="canVerify() ? 'text-success' : 'text-error'" class="font-weight-medium">{{ formatCurrency(activeWalletBalance) }}</v-list-item-subtitle>
                             </v-list-item>
                             <v-list-item>
                                 <v-list-item-title class="text-caption">Response Time</v-list-item-title>
@@ -136,4 +154,3 @@ const submit = () => {
         </v-row>
     </CustomerLayout>
 </template>
-

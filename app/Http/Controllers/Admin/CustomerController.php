@@ -11,6 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
+use Illuminate\Validation\Rule;
+use Spatie\Permission\Models\Role;
 
 class CustomerController extends Controller
 {
@@ -50,11 +52,21 @@ class CustomerController extends Controller
             'email' => 'required|email|unique:users,email',
             'phone' => 'nullable|string|max:20',
             'password' => 'required|string|min:8',
+            'account_type' => ['required', Rule::in(Customer::ACCOUNT_TYPES)],
             'company_name' => 'nullable|string|max:255',
             'business_type' => 'nullable|string|max:255',
-            'address' => 'nullable|string',
+            'registration_number' => ['nullable', 'string', 'max:255', Rule::requiredIf($request->input('account_type') === 'business')],
+            'address' => ['nullable', 'string', Rule::requiredIf($request->input('account_type') === 'business')],
             'city' => 'nullable|string|max:100',
             'state' => 'nullable|string|max:100',
+            'website' => ['nullable', 'url', 'max:255', Rule::requiredIf($request->input('account_type') === 'business')],
+            'use_case' => ['nullable', 'string', Rule::requiredIf($request->input('account_type') === 'business')],
+            'expected_monthly_volume' => [
+                'nullable',
+                'string',
+                Rule::in(Customer::EXPECTED_MONTHLY_VOLUMES),
+                Rule::requiredIf($request->input('account_type') === 'business'),
+            ],
         ]);
 
         DB::transaction(function () use ($validated) {
@@ -66,15 +78,21 @@ class CustomerController extends Controller
                 'is_active' => true,
             ]);
 
+            Role::findOrCreate('customer');
             $user->assignRole('customer');
 
             Customer::create([
                 'user_id' => $user->id,
+                'account_type' => $validated['account_type'],
                 'company_name' => $validated['company_name'] ?? null,
                 'business_type' => $validated['business_type'] ?? null,
+                'registration_number' => $validated['account_type'] === 'business' ? ($validated['registration_number'] ?? null) : null,
                 'address' => $validated['address'] ?? null,
                 'city' => $validated['city'] ?? null,
                 'state' => $validated['state'] ?? null,
+                'website' => $validated['account_type'] === 'business' ? ($validated['website'] ?? null) : null,
+                'use_case' => $validated['account_type'] === 'business' ? ($validated['use_case'] ?? null) : null,
+                'expected_monthly_volume' => $validated['account_type'] === 'business' ? ($validated['expected_monthly_volume'] ?? null) : null,
             ]);
         });
 
@@ -119,11 +137,21 @@ class CustomerController extends Controller
             'email' => 'required|email|unique:users,email,' . $customer->id,
             'phone' => 'nullable|string|max:20',
             'is_active' => 'boolean',
+            'account_type' => ['required', Rule::in(Customer::ACCOUNT_TYPES)],
             'company_name' => 'nullable|string|max:255',
             'business_type' => 'nullable|string|max:255',
-            'address' => 'nullable|string',
+            'registration_number' => ['nullable', 'string', 'max:255', Rule::requiredIf($request->input('account_type') === 'business')],
+            'address' => ['nullable', 'string', Rule::requiredIf($request->input('account_type') === 'business')],
             'city' => 'nullable|string|max:100',
             'state' => 'nullable|string|max:100',
+            'website' => ['nullable', 'url', 'max:255', Rule::requiredIf($request->input('account_type') === 'business')],
+            'use_case' => ['nullable', 'string', Rule::requiredIf($request->input('account_type') === 'business')],
+            'expected_monthly_volume' => [
+                'nullable',
+                'string',
+                Rule::in(Customer::EXPECTED_MONTHLY_VOLUMES),
+                Rule::requiredIf($request->input('account_type') === 'business'),
+            ],
         ]);
 
         DB::transaction(function () use ($validated, $customer) {
@@ -134,12 +162,17 @@ class CustomerController extends Controller
                 'is_active' => $validated['is_active'] ?? true,
             ]);
 
-            $customer->customer?->update([
+            $customer->customer()->updateOrCreate(['user_id' => $customer->id], [
+                'account_type' => $validated['account_type'],
                 'company_name' => $validated['company_name'] ?? null,
                 'business_type' => $validated['business_type'] ?? null,
-                'address' => $validated['address'] ?? null,
+                'registration_number' => $validated['account_type'] === 'business' ? ($validated['registration_number'] ?? null) : null,
+                'address' => $validated['account_type'] === 'business' ? ($validated['address'] ?? null) : null,
                 'city' => $validated['city'] ?? null,
                 'state' => $validated['state'] ?? null,
+                'website' => $validated['account_type'] === 'business' ? ($validated['website'] ?? null) : null,
+                'use_case' => $validated['account_type'] === 'business' ? ($validated['use_case'] ?? null) : null,
+                'expected_monthly_volume' => $validated['account_type'] === 'business' ? ($validated['expected_monthly_volume'] ?? null) : null,
             ]);
         });
 
@@ -165,4 +198,3 @@ class CustomerController extends Controller
         return back()->with('success', 'Pricing updated successfully.');
     }
 }
-

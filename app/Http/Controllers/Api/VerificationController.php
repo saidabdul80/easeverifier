@@ -64,6 +64,7 @@ class VerificationController extends Controller
 
         $user = $request->user();
         $apiKey = $request->get('api_key'); // Set by ApiAuthentication middleware
+        $branch = $request->get('branch');
 
         if ($serviceSlug === 'nin' && $apiKey?->environment === 'test' && $validated['nin'] !== self::TEST_NIN) {
             return response()->json([
@@ -75,6 +76,8 @@ class VerificationController extends Controller
 
         // Check for existing successful verification for the same user, service, and search parameter
         $existingVerification = VerificationRequest::where('user_id', $user->id)
+            ->when($branch, fn ($query) => $query->where('branch_id', $branch->id))
+            ->when(!$branch, fn ($query) => $query->whereNull('branch_id'))
             ->where('search_parameter', $validated['nin'])
             ->where('status', 'completed')
             ->whereNotNull('response_data')
@@ -107,7 +110,8 @@ class VerificationController extends Controller
                 service: $service,
                 searchParameter: $validated['nin'],
                 source: 'api',
-                ipAddress: $request->ip()
+                ipAddress: $request->ip(),
+                branch: $branch,
             );
 
         if ($result->isSuccessful()) {
@@ -135,6 +139,8 @@ class VerificationController extends Controller
     public function walletBalance(Request $request): JsonResponse
     {
         $wallet = $request->user()->wallet;
+        $branch = $request->get('branch');
+        $wallet = $branch?->wallet ?? $wallet;
 
         return response()->json([
             'success' => true,
@@ -154,6 +160,8 @@ class VerificationController extends Controller
     {
         $verifications = $request->user()->verificationRequests()
             ->with('verificationService:id,name,slug')
+            ->when($request->get('branch'), fn ($query, $branch) => $query->where('branch_id', $branch->id))
+            ->when(! $request->get('branch'), fn ($query) => $query->whereNull('branch_id'))
             ->when($request->service, fn($q, $s) => $q->whereHas('verificationService', fn($sq) => $sq->where('slug', $s)))
             ->when($request->status, fn($q, $status) => $q->where('status', $status))
             ->latest()
@@ -172,6 +180,8 @@ class VerificationController extends Controller
     {
         $verification = VerificationRequest::where('reference', $reference)
             ->where('user_id', $request->user()->id)
+            ->when($request->get('branch'), fn ($query, $branch) => $query->where('branch_id', $branch->id))
+            ->when(! $request->get('branch'), fn ($query) => $query->whereNull('branch_id'))
             ->with('verificationService:id,name,slug')
             ->first();
 

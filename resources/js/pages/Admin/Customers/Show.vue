@@ -50,8 +50,13 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                     <v-card-title>Customer Details</v-card-title>
                     <v-card-text>
                         <v-list density="compact">
+                            <v-list-item><v-list-item-title class="text-caption">Account Type</v-list-item-title><v-list-item-subtitle>{{ customer.customer?.account_type || '-' }}</v-list-item-subtitle></v-list-item>
                             <v-list-item><v-list-item-title class="text-caption">Company</v-list-item-title><v-list-item-subtitle>{{ customer.customer?.company_name || '-' }}</v-list-item-subtitle></v-list-item>
                             <v-list-item><v-list-item-title class="text-caption">Business Type</v-list-item-title><v-list-item-subtitle>{{ customer.customer?.business_type || '-' }}</v-list-item-subtitle></v-list-item>
+                            <v-list-item><v-list-item-title class="text-caption">RC/BN Number</v-list-item-title><v-list-item-subtitle>{{ customer.customer?.registration_number || '-' }}</v-list-item-subtitle></v-list-item>
+                            <v-list-item><v-list-item-title class="text-caption">Website</v-list-item-title><v-list-item-subtitle>{{ customer.customer?.website || '-' }}</v-list-item-subtitle></v-list-item>
+                            <v-list-item><v-list-item-title class="text-caption">Expected Volume</v-list-item-title><v-list-item-subtitle>{{ customer.customer?.expected_monthly_volume || '-' }}</v-list-item-subtitle></v-list-item>
+                            <v-list-item><v-list-item-title class="text-caption">Use Case</v-list-item-title><v-list-item-subtitle>{{ customer.customer?.use_case || '-' }}</v-list-item-subtitle></v-list-item>
                             <v-list-item><v-list-item-title class="text-caption">Phone</v-list-item-title><v-list-item-subtitle>{{ customer.phone || '-' }}</v-list-item-subtitle></v-list-item>
                             <v-list-item><v-list-item-title class="text-caption">Location</v-list-item-title><v-list-item-subtitle>{{ [customer.customer?.city, customer.customer?.state].filter(Boolean).join(', ') || '-' }}</v-list-item-subtitle></v-list-item>
                             <v-list-item><v-list-item-title class="text-caption">Joined</v-list-item-title><v-list-item-subtitle>{{ new Date(customer.created_at).toLocaleDateString() }}</v-list-item-subtitle></v-list-item>
@@ -122,4 +127,3 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
         </v-dialog>
     </AdminLayout>
 </template>
-

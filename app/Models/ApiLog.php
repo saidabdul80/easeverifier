@@ -12,6 +12,7 @@ class ApiLog extends Model
 
     protected $fillable = [
         'user_id',
+        'branch_id',
         'verification_request_id',
         'direction',
         'endpoint',
@@ -45,6 +46,14 @@ class ApiLog extends Model
     }
 
     /**
+     * Get the branch associated with this log, if any.
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /**
      * Get the verification request associated with this log.
      */
     public function verificationRequest(): BelongsTo
@@ -68,4 +77,3 @@ class ApiLog extends Model
         return $query->where('direction', 'outbound');
     }
 }
-

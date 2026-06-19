@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { logout as logoutRoute } from '@/routes';
+import { useDisplay } from 'vuetify';
 
 const props = defineProps<{
     user: { name: string; email: string };
     wallet?: { balance: number; bonus_balance: number };
 }>();
 
-const drawer = ref(true);
+const { mdAndUp, smAndDown } = useDisplay();
+
+const drawer = ref(mdAndUp.value);
 const rail = ref(false);
 
 const navItems = [
@@ -16,6 +19,7 @@ const navItems = [
     { title: 'Verify', icon: 'mdi-shield-check', route: '/customer/verify' },
     { title: 'History', icon: 'mdi-history', route: '/customer/history' },
     { title: 'Wallet', icon: 'mdi-wallet', route: '/customer/wallet' },
+    { title: 'Branches', icon: 'mdi-source-branch', route: '/customer/branches' },
     { title: 'Transactions', icon: 'mdi-swap-horizontal', route: '/customer/transactions' },
     { title: 'API Keys', icon: 'mdi-key', route: '/customer/api' },
 ];
@@ -31,11 +35,25 @@ const initials = computed(() => {
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 };
+
+watch(mdAndUp, (isDesktop) => {
+    drawer.value = isDesktop;
+
+    if (!isDesktop) {
+        rail.value = false;
+    }
+});
 </script>
 
 <template>
     <v-app>
-        <v-navigation-drawer v-model="drawer" :rail="rail" permanent color="primary-darken-1">
+        <v-navigation-drawer
+            v-model="drawer"
+            :rail="mdAndUp ? rail : false"
+            :permanent="mdAndUp"
+            :temporary="smAndDown"
+            color="primary-darken-1"
+        >
             <v-list-item class="py-4 px-4" :nav="false">
                 <template #prepend>
                     <v-avatar color="white" size="40">
@@ -45,7 +63,13 @@ const formatCurrency = (amount: number) => {
                 <v-list-item-title class="text-h6 font-weight-bold text-white">EaseVerifier</v-list-item-title>
                 <v-list-item-subtitle class="text-white opacity-60">Customer Portal</v-list-item-subtitle>
                 <template #append>
-                    <v-btn variant="text" :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'" color="white" @click="rail = !rail" />
+                    <v-btn
+                        v-if="mdAndUp"
+                        variant="text"
+                        :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
+                        color="white"
+                        @click="rail = !rail"
+                    />
                 </template>
             </v-list-item>
 
@@ -75,16 +99,16 @@ const formatCurrency = (amount: number) => {
         </v-navigation-drawer>
 
         <v-app-bar flat color="white" elevation="1">
-            <v-app-bar-nav-icon @click="drawer = !drawer" class="d-md-none" />
+            <v-app-bar-nav-icon @click="drawer = !drawer" />
             <v-spacer />
             
             <!-- Quick Balance -->
-            <v-chip color="primary" variant="flat" class="mr-4 d-none d-sm-flex">
+            <v-chip color="primary" variant="flat" class="mr-2 d-none d-md-flex">
                 <v-icon start>mdi-wallet</v-icon>
                 {{ formatCurrency(wallet?.balance) }}
             </v-chip>
 
-            <v-btn variant="flat" color="secondary" class="mr-4" href="/customer/wallet/fund">
+            <v-btn variant="flat" color="secondary" class="mr-2 d-none d-sm-flex" href="/customer/wallet/fund">
                 <v-icon start>mdi-plus</v-icon>Fund Wallet
             </v-btn>
 
@@ -106,10 +130,9 @@ const formatCurrency = (amount: number) => {
         </v-app-bar>
 
         <v-main class="bg-grey-lighten-4">
-            <v-container fluid class="pa-6">
+            <v-container fluid class="pa-4 pa-md-6">
                 <slot />
             </v-container>
         </v-main>
     </v-app>
 </template>
-

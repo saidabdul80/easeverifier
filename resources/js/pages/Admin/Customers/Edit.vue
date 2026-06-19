@@ -12,15 +12,25 @@ const form = useForm({
     email: props.customer.email,
     phone: props.customer.phone || '',
     is_active: props.customer.is_active,
+    account_type: props.customer.customer?.account_type || 'individual',
     company_name: props.customer.customer?.company_name || '',
     business_type: props.customer.customer?.business_type || '',
+    registration_number: props.customer.customer?.registration_number || '',
     address: props.customer.customer?.address || '',
     city: props.customer.customer?.city || '',
     state: props.customer.customer?.state || '',
+    website: props.customer.customer?.website || '',
+    use_case: props.customer.customer?.use_case || '',
+    expected_monthly_volume: props.customer.customer?.expected_monthly_volume || '',
 });
 
+const accountTypes = [
+    { title: 'Individual', value: 'individual' },
+    { title: 'Business profile', value: 'business' },
+];
 const businessTypes = ['Fintech', 'Banking', 'Insurance', 'E-commerce', 'Healthcare', 'Education', 'Government', 'Other'];
 const nigerianStates = ['Lagos', 'Abuja', 'Kano', 'Rivers', 'Oyo', 'Kaduna', 'Ogun', 'Enugu', 'Delta', 'Anambra', 'Other'];
+const volumeOptions = ['1-100', '101-500', '501-1000', '1001-5000', '5001+'];
 
 const submit = () => {
     form.put(`/admin/customers/${props.customer.id}`);
@@ -53,11 +63,14 @@ const submit = () => {
                         <v-col cols="12" md="6">
                             <v-switch v-model="form.is_active" label="Account Active" color="primary" />
                         </v-col>
+                        <v-col cols="12" md="6">
+                            <v-select v-model="form.account_type" label="Account Type *" :items="accountTypes" variant="outlined" :error-messages="form.errors.account_type" />
+                        </v-col>
                     </v-row>
 
                     <v-divider class="my-6" />
 
-                    <h3 class="text-subtitle-1 font-weight-bold mb-4">Business Information</h3>
+                    <h3 class="text-subtitle-1 font-weight-bold mb-4">Profile Information</h3>
                     <v-row>
                         <v-col cols="12" md="6">
                             <v-text-field v-model="form.company_name" label="Company Name" variant="outlined" :error-messages="form.errors.company_name" />
@@ -65,8 +78,11 @@ const submit = () => {
                         <v-col cols="12" md="6">
                             <v-select v-model="form.business_type" label="Business Type" :items="businessTypes" variant="outlined" :error-messages="form.errors.business_type" />
                         </v-col>
+                        <v-col cols="12" md="6" v-if="form.account_type === 'business'">
+                            <v-text-field v-model="form.registration_number" label="RC/BN Number *" variant="outlined" :error-messages="form.errors.registration_number" />
+                        </v-col>
                         <v-col cols="12">
-                            <v-textarea v-model="form.address" label="Address" variant="outlined" rows="2" :error-messages="form.errors.address" />
+                            <v-textarea v-model="form.address" :label="form.account_type === 'business' ? 'Address *' : 'Address'" variant="outlined" rows="2" :error-messages="form.errors.address" />
                         </v-col>
                         <v-col cols="12" md="6">
                             <v-text-field v-model="form.city" label="City" variant="outlined" :error-messages="form.errors.city" />
@@ -74,6 +90,17 @@ const submit = () => {
                         <v-col cols="12" md="6">
                             <v-select v-model="form.state" label="State" :items="nigerianStates" variant="outlined" :error-messages="form.errors.state" />
                         </v-col>
+                        <template v-if="form.account_type === 'business'">
+                            <v-col cols="12" md="6">
+                                <v-text-field v-model="form.website" label="Website *" variant="outlined" :error-messages="form.errors.website" />
+                            </v-col>
+                            <v-col cols="12" md="6">
+                                <v-select v-model="form.expected_monthly_volume" label="Expected Monthly Volume *" :items="volumeOptions" variant="outlined" :error-messages="form.errors.expected_monthly_volume" />
+                            </v-col>
+                            <v-col cols="12">
+                                <v-textarea v-model="form.use_case" label="Use Case *" variant="outlined" rows="2" :error-messages="form.errors.use_case" />
+                            </v-col>
+                        </template>
                     </v-row>
 
                     <div class="d-flex justify-end ga-3 mt-6">
@@ -85,4 +112,3 @@ const submit = () => {
         </v-card>
     </AdminLayout>
 </template>
-

@@ -179,7 +179,7 @@ const formatDate = (date: string) =>
                                     <div class="panel-dot green" />
                                 </div>
                                 <div class="hero-panel-body">
-                                    <div class="request-chip">POST /api/verify/nin</div>
+                                    <div class="request-chip">POST /api/v1/verify/nin</div>
                                     <div class="code-card">
                                         <div class="code-line"><span class="code-key">status</span>: <span class="code-value">"verified"</span></div>
                                         <div class="code-line"><span class="code-key">match</span>: <span class="code-value">true</span></div>

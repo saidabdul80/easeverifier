@@ -2,19 +2,23 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\VerifyEmailOtpNotification;
+use Illuminate\Auth\MustVerifyEmail as MustVerifyEmailTrait;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, MustVerifyEmailTrait, Notifiable, HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -24,6 +28,8 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'email_verification_otp',
+        'email_verification_otp_expires_at',
         'password',
         'phone',
         'is_active',
@@ -36,6 +42,8 @@ class User extends Authenticatable
      */
     protected $hidden = [
         'password',
+        'email_verification_otp',
+        'email_verification_otp_expires_at',
         'two_factor_secret',
         'two_factor_recovery_codes',
         'remember_token',
@@ -50,6 +58,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'email_verification_otp_expires_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'is_active' => 'boolean',
@@ -85,7 +94,15 @@ class User extends Authenticatable
      */
     public function wallet(): HasOne
     {
-        return $this->hasOne(Wallet::class);
+        return $this->hasOne(Wallet::class)->whereNull('branch_id');
+    }
+
+    /**
+     * Get all wallets for the user, including branch wallets.
+     */
+    public function wallets(): HasMany
+    {
+        return $this->hasMany(Wallet::class);
     }
 
     /**
@@ -121,6 +138,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the user's branches.
+     */
+    public function branches(): HasMany
+    {
+        return $this->hasMany(Branch::class);
+    }
+
+    /**
      * Get the price for a specific service.
      */
     public function getPriceForService(VerificationService $service): float
@@ -131,5 +156,57 @@ class User extends Authenticatable
             ->first();
 
         return $customPrice ? $customPrice->price : $service->default_price;
+    }
+
+    public function sendEmailVerificationNotification(): void
+    {
+        $otp = $this->generateEmailVerificationOtp();
+
+        try {
+            $this->notify(new VerifyEmailOtpNotification($otp));
+        } catch (\Throwable $exception) {
+            Log::error('Failed to send email verification OTP.', [
+                'user_id' => $this->id,
+                'email' => $this->email,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    public function generateEmailVerificationOtp(): string
+    {
+        $otp = (string) random_int(100000, 999999);
+
+        $this->forceFill([
+            'email_verification_otp' => Hash::make($otp),
+            'email_verification_otp_expires_at' => now()->addMinutes(10),
+        ])->save();
+
+        return $otp;
+    }
+
+    public function verifyEmailOtp(string $otp): bool
+    {
+        if (
+            blank($this->email_verification_otp) ||
+            ! $this->email_verification_otp_expires_at ||
+            now()->greaterThan($this->email_verification_otp_expires_at) ||
+            ! Hash::check($otp, $this->email_verification_otp)
+        ) {
+            return false;
+        }
+
+        $this->markEmailAsVerified();
+        $this->clearEmailVerificationOtp();
+
+        return true;
+    }
+
+    public function clearEmailVerificationOtp(): void
+    {
+        $this->forceFill([
+            'email_verification_otp' => null,
+            'email_verification_otp_expires_at' => null,
+        ])->save();
     }
 }

@@ -6,21 +6,41 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Str;
 
 class Customer extends Model
 {
     use HasFactory;
 
+    public const ACCOUNT_TYPES = [
+        'individual',
+        'business',
+    ];
+
+    public const EXPECTED_MONTHLY_VOLUMES = [
+        '1-100',
+        '101-500',
+        '501-1000',
+        '1001-5000',
+        '5001+',
+    ];
+
     protected $fillable = [
         'user_id',
         'company_name',
+        'account_type',
         'business_type',
+        'registration_number',
         'address',
         'city',
         'state',
         'country',
+        'website',
+        'use_case',
+        'expected_monthly_volume',
         'api_key',
         'api_secret',
         'webhook_url',
@@ -65,7 +85,7 @@ class Customer extends Model
     /**
      * Get the wallet through the user.
      */
-    public function wallet(): HasOne
+    public function wallet(): HasOneThrough
     {
         return $this->hasOneThrough(Wallet::class, User::class, 'id', 'user_id', 'user_id', 'id');
     }
@@ -73,7 +93,7 @@ class Customer extends Model
     /**
      * Get all verification requests through the user.
      */
-    public function verificationRequests(): HasMany
+    public function verificationRequests(): HasManyThrough
     {
         return $this->hasManyThrough(VerificationRequest::class, User::class, 'id', 'user_id', 'user_id', 'id');
     }
@@ -81,9 +101,17 @@ class Customer extends Model
     /**
      * Get all transactions through the user.
      */
-    public function transactions(): HasMany
+    public function transactions(): HasManyThrough
     {
         return $this->hasManyThrough(Transaction::class, User::class, 'id', 'user_id', 'user_id', 'id');
+    }
+
+    /**
+     * Get all branches for this customer.
+     */
+    public function branches(): HasManyThrough
+    {
+        return $this->hasManyThrough(Branch::class, User::class, 'id', 'user_id', 'user_id', 'id');
     }
 
     /**
@@ -183,4 +211,3 @@ class Customer extends Model
     }
 
 }
-

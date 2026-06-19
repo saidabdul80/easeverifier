@@ -22,8 +22,8 @@ const copyCode = async (code: string) => {
     setTimeout(() => copied.value = false, 2000);
 };
 
-const sampleRequest = `curl -X POST https://api.verify.ashlabtech.ng/api/v1/verify/nin \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
+const sampleRequest = `curl -X POST https://verify.ashlabtech.ng/api/v1/verify/nin \\
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"nin": "${testNin}", "consent": true}'`;
 
@@ -99,7 +99,7 @@ const sampleResponse = `{
                                 
                                 <v-card class="mb-6" variant="outlined">
                                     <v-card-title class="text-subtitle-1 font-weight-bold">Base URL</v-card-title>
-                                    <v-card-text><code class="bg-grey-lighten-4 pa-2 rounded">https://verify.ashlabtech.ng/v1</code></v-card-text>
+                                    <v-card-text><code class="bg-grey-lighten-4 pa-2 rounded">https://verify.ashlabtech.ng/api/v1</code></v-card-text>
                                 </v-card>
 
                                 <v-alert type="warning" variant="tonal" class="mb-6">
@@ -118,11 +118,11 @@ const sampleResponse = `{
                             <!-- Authentication -->
                             <section v-show="activeSection === 'authentication'" class="mb-12">
                                 <h1 class="text-h4 font-weight-bold mb-4">Authentication</h1>
-                                <p class="text-body-1 text-grey-darken-1 mb-6">All API requests require authentication using Bearer tokens.</p>
+                                <p class="text-body-1 text-grey-darken-1 mb-6">All API requests require authentication using your generated bearer token.</p>
                                 <v-alert type="info" variant="tonal" class="mb-6"><strong>Security:</strong> Never expose your API key in client-side code.</v-alert>
                                 <v-card variant="outlined" class="mb-4">
-                                    <v-card-title class="d-flex align-center"><span>Example Header</span><v-spacer /><v-btn size="small" variant="text" @click="copyCode('Authorization: Bearer YOUR_API_KEY')">{{ copied ? 'Copied!' : 'Copy' }}</v-btn></v-card-title>
-                                    <v-card-text class="bg-grey-darken-4"><pre class="text-white text-body-2">Authorization: Bearer YOUR_API_KEY</pre></v-card-text>
+                                    <v-card-title class="d-flex align-center"><span>Example Header</span><v-spacer /><v-btn size="small" variant="text" @click="copyCode('Authorization: Bearer YOUR_BEARER_TOKEN')">{{ copied ? 'Copied!' : 'Copy' }}</v-btn></v-card-title>
+                                    <v-card-text class="bg-grey-darken-4"><pre class="text-white text-body-2">Authorization: Bearer YOUR_BEARER_TOKEN</pre></v-card-text>
                                 </v-card>
                             </section>
 
@@ -133,7 +133,7 @@ const sampleResponse = `{
                                 <v-alert type="info" variant="tonal" class="mb-4">
                                     When you are testing, send <strong>{{ testNin }}</strong> as the NIN. Other NIN values are rejected for test keys.
                                 </v-alert>
-                                <v-chip color="success" class="mb-4">POST</v-chip><code class="ml-2">/nin/verify</code>
+                                <v-chip color="success" class="mb-4">POST</v-chip><code class="ml-2">/verify/nin</code>
                                 <v-card variant="outlined" class="mb-4 mt-4">
                                     <v-card-title>Request Example</v-card-title>
                                     <v-card-text class="bg-grey-darken-4"><pre class="text-green-lighten-1 text-body-2" style="white-space: pre-wrap;">{{ sampleRequest }}</pre></v-card-text>

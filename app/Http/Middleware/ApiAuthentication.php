@@ -62,6 +62,7 @@ class ApiAuthentication
         // Log the API request
         ApiLog::create([
             'user_id' => $apiKey->user_id,
+            'branch_id' => $apiKey->branch_id,
             'direction' => 'inbound',
             'endpoint' => $request->path(),
             'method' => $request->method(),
@@ -75,7 +76,10 @@ class ApiAuthentication
 
         // Set the authenticated user
         auth()->guard('web')->setUser($apiKey->user);
-        $request->merge(['api_key' => $apiKey]);
+        $request->merge([
+            'api_key' => $apiKey,
+            'branch' => $apiKey->branch,
+        ]);
 
         return $next($request);
     }
@@ -101,4 +105,3 @@ class ApiAuthentication
         })->toArray();
     }
 }
-

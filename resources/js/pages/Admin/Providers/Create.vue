@@ -111,7 +111,7 @@ const submit = () => {
                         <v-card-text>
                             <v-text-field v-model="form.name" label="Provider Name *" variant="outlined" placeholder="e.g., NIMC Direct API" :error-messages="form.errors.name" class="mb-4" />
                             <v-text-field v-model="form.base_url" label="Base URL *" variant="outlined" placeholder="https://api.example.com" :error-messages="form.errors.base_url" class="mb-4" />
-                            <v-text-field v-model="form.endpoint" label="Endpoint *" variant="outlined" placeholder="/v1/nin/verify" hint="Use {{search_parameter}} for dynamic values" :error-messages="form.errors.endpoint" class="mb-4" />
+                            <v-text-field v-model="form.endpoint" label="Endpoint *" variant="outlined" placeholder="/v1/verify/nin" hint="Use {{search_parameter}} for dynamic values" :error-messages="form.errors.endpoint" class="mb-4" />
                             <v-select v-model="form.http_method" :items="httpMethods" label="HTTP Method" variant="outlined" class="mb-4" />
                             <v-row>
                                 <v-col cols="6"><v-text-field v-model.number="form.timeout" label="Timeout (seconds)" type="number" variant="outlined" /></v-col>
@@ -233,4 +233,3 @@ const submit = () => {
         </v-form>
     </AdminLayout>
 </template>
-

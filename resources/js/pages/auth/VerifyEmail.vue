@@ -3,15 +3,33 @@ import AuthLayout from '@/layouts/AuthLayout.vue';
 import { logout } from '@/routes';
 import { send } from '@/routes/verification';
 import { Head, useForm, router } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 defineProps<{
     status?: string;
+    email?: string | null;
 }>();
 
 const form = useForm({});
+const verifyForm = useForm({
+    otp: '',
+});
+
+const otpValue = computed({
+    get: () => verifyForm.otp,
+    set: (value: string) => {
+        verifyForm.otp = value.replace(/\D/g, '').slice(0, 6);
+    },
+});
 
 const resendVerification = () => {
     form.post(send() as unknown as string);
+};
+
+const submitOtp = () => {
+    verifyForm.post('/email/verify-otp', {
+        preserveScroll: true,
+    });
 };
 
 const handleLogout = () => {
@@ -22,7 +40,7 @@ const handleLogout = () => {
 <template>
     <AuthLayout
         title="Verify your email"
-        description="We've sent a verification link to your email address"
+        description="Enter the one-time code sent to your inbox"
     >
         <Head title="Verify Email - EaseVerifier" />
 
@@ -41,7 +59,7 @@ const handleLogout = () => {
         >
             <div class="d-flex align-center">
                 <v-icon start>mdi-check-circle</v-icon>
-                A new verification link has been sent to your email address.
+                A new verification code has been sent to your email address.
             </div>
         </v-alert>
 
@@ -50,17 +68,46 @@ const handleLogout = () => {
                 <v-icon color="info" class="mr-3 mt-1">mdi-information-outline</v-icon>
                 <div>
                     <p class="text-body-2 text-grey-darken-2 mb-0">
-                        Before getting started, please verify your email address by clicking
-                        on the link we just sent you. If you didn't receive the email, we will
-                        gladly send you another.
+                        We've sent a 6-digit code to <strong>{{ email }}</strong>. Enter it below to activate your account.
                     </p>
                 </div>
             </div>
         </v-card>
 
+        <v-form @submit.prevent="submitOtp">
+            <v-otp-input
+                v-model="otpValue"
+                length="6"
+                class="mb-4"
+                variant="outlined"
+            />
+
+            <v-alert
+                v-if="verifyForm.errors.otp"
+                type="error"
+                variant="tonal"
+                density="compact"
+                class="mb-4"
+            >
+                {{ verifyForm.errors.otp }}
+            </v-alert>
+
+            <v-btn
+                type="submit"
+                color="primary"
+                size="large"
+                block
+                :loading="verifyForm.processing"
+                :disabled="verifyForm.processing || verifyForm.otp.length !== 6"
+                class="mb-4"
+            >
+                <v-icon start>mdi-shield-check</v-icon>
+                Verify Email
+            </v-btn>
+        </v-form>
+
         <v-btn
-            color="primary"
-            size="large"
+            variant="outlined"
             block
             :loading="form.processing"
             :disabled="form.processing"
@@ -68,7 +115,7 @@ const handleLogout = () => {
             class="mb-4"
         >
             <v-icon start>mdi-email-sync</v-icon>
-            Resend Verification Email
+            Resend Code
         </v-btn>
 
         <v-btn

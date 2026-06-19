@@ -4,6 +4,7 @@ namespace App\Services\Verification;
 
 use App\Models\ApiKey;
 use App\Models\ApiLog;
+use App\Models\Branch;
 use App\Models\ServiceProvider;
 use App\Models\User;
 use App\Models\VerificationRequest;
@@ -19,6 +20,7 @@ class VerificationEngine
 {
     protected ?string $apiKeyEnvironment = null;
     protected bool $isTestMode = false;
+    protected ?Branch $activeBranch = null;
 
     /**
      * Set the API key environment (test/live).
@@ -28,6 +30,7 @@ class VerificationEngine
         if ($apiKey) {
             $this->apiKeyEnvironment = $apiKey->environment;
             $this->isTestMode = $apiKey->environment === 'test';
+            $this->activeBranch = $apiKey->branch;
         }
         return $this;
     }
@@ -40,8 +43,11 @@ class VerificationEngine
         VerificationService $service,
         string $searchParameter,
         string $source = 'web',
-        ?string $ipAddress = null
+        ?string $ipAddress = null,
+        ?Branch $branch = null,
     ): VerificationResult {
+        $branch ??= $this->activeBranch;
+
         // Determine if we should charge (test mode = free if test provider available)
         $shouldCharge = true;
         $usedTestProvider = false;
@@ -83,12 +89,16 @@ class VerificationEngine
         $verificationRequest = null;
         $transaction = null;
         $wallet = null;
+        $targetWallet = $branch?->wallet ?? $user->wallet;
 
         try {
             // Use DB transaction with locking to prevent race conditions
-            $result = DB::transaction(function () use ($user, $service, $searchParameter, $shouldCharge, $price, $source, $ipAddress, &$verificationRequest, &$transaction, &$wallet) {
+            $result = DB::transaction(function () use ($user, $service, $searchParameter, $shouldCharge, $price, $source, $ipAddress, $branch, $targetWallet, &$verificationRequest, &$transaction, &$wallet) {
                 // Get wallet with lock INSIDE the transaction
-                $wallet = \App\Models\Wallet::where('user_id', $user->id)->lockForUpdate()->first();
+                $wallet = \App\Models\Wallet::query()
+                    ->whereKey($targetWallet?->id)
+                    ->lockForUpdate()
+                    ->first();
 
                 // Check balance only if charging (with locked wallet)
                 if ($shouldCharge && (!$wallet || !$wallet->hasSufficientFunds($price))) {
@@ -104,6 +114,7 @@ class VerificationEngine
                 // Create verification request record
                 $verificationRequest = VerificationRequest::create([
                     'user_id' => $user->id,
+                    'branch_id' => $branch?->id,
                     'verification_service_id' => $service->id,
                     'reference' => VerificationRequest::generateReference(),
                     'search_parameter' => $searchParameter,
@@ -195,7 +206,7 @@ class VerificationEngine
         }
 
         // Try providers in order
-        $result = $this->tryProviders($providers, $searchParameter, $user, $verificationRequest, $usedTestProvider);
+        $result = $this->tryProviders($providers, $searchParameter, $user, $verificationRequest, $usedTestProvider, $branch);
 
         if ($result->isSuccessful()) {
             return $result;
@@ -274,7 +285,14 @@ class VerificationEngine
     /**
      * Try providers in the correct order based on environment.
      */
-    protected function tryProviders($providers, string $searchParameter, User $user, VerificationRequest $verificationRequest, bool $tryTestFirst): VerificationResult
+    protected function tryProviders(
+        $providers,
+        string $searchParameter,
+        User $user,
+        VerificationRequest $verificationRequest,
+        bool $tryTestFirst,
+        ?Branch $branch = null
+    ): VerificationResult
     {
         // Sort providers: test first if in test mode, otherwise live first
         $sortedProviders = $providers->sortBy(function ($provider) use ($tryTestFirst) {
@@ -284,7 +302,7 @@ class VerificationEngine
         });
 
         foreach ($sortedProviders as $provider) {
-            $result = $this->callProvider($provider, $searchParameter, $user, $verificationRequest);
+            $result = $this->callProvider($provider, $searchParameter, $user, $verificationRequest, $branch);
 
             if ($result->isSuccessful()) {
                 $isSandbox = $provider->environment === 'test';
@@ -315,7 +333,8 @@ class VerificationEngine
         ServiceProvider $provider,
         string $searchParameter,
         User $user,
-        VerificationRequest $verificationRequest
+        VerificationRequest $verificationRequest,
+        ?Branch $branch = null
     ): VerificationResult {
         $startTime = microtime(true);
 
@@ -333,6 +352,7 @@ class VerificationEngine
             // Log outbound request (async would be better for production)
             $apiLog = ApiLog::create([
                 'user_id' => $user->id,
+                'branch_id' => $branch?->id,
                 'verification_request_id' => $verificationRequest->id,
                 'direction' => 'outbound',
                 'endpoint' => $url,

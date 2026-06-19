@@ -3,11 +3,17 @@ import AuthBase from '@/layouts/AuthLayout.vue';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 
 const form = useForm({
     name: '',
     email: '',
+    account_type: 'individual',
+    registration_number: '',
+    address: '',
+    website: '',
+    use_case: '',
+    expected_monthly_volume: '',
     password: '',
     password_confirmation: '',
 });
@@ -15,6 +21,12 @@ const form = useForm({
 const showPassword = ref(false);
 const showConfirmPassword = ref(false);
 const agreeToTerms = ref(false);
+const accountTypes = [
+    { title: 'Individual', value: 'individual' },
+    { title: 'Business profile', value: 'business' },
+];
+const volumeOptions = ['1-100', '101-500', '501-1000', '1001-5000', '5001+'];
+const isBusinessAccount = computed(() => form.account_type === 'business');
 
 const passwordStrength = computed(() => {
     const password = form.password;
@@ -42,6 +54,19 @@ const submit = () => {
         onFinish: () => form.reset('password', 'password_confirmation'),
     });
 };
+
+watch(
+    () => form.account_type,
+    (value) => {
+        if (value !== 'business') {
+            form.registration_number = '';
+            form.address = '';
+            form.website = '';
+            form.use_case = '';
+            form.expected_monthly_volume = '';
+        }
+    },
+);
 </script>
 
 <template>
@@ -73,6 +98,61 @@ const submit = () => {
                 autocomplete="email"
                 class="mb-1"
             />
+
+            <v-select
+                v-model="form.account_type"
+                label="Account Type"
+                :items="accountTypes"
+                :error-messages="form.errors.account_type"
+                class="mb-1"
+            />
+
+            <v-expand-transition>
+                <div v-if="isBusinessAccount">
+                    <v-text-field
+                        v-model="form.registration_number"
+                        label="RC/BN Number"
+                        prepend-inner-icon="mdi-card-account-details-outline"
+                        :error-messages="form.errors.registration_number"
+                        class="mb-1"
+                    />
+
+                    <v-textarea
+                        v-model="form.address"
+                        label="Address"
+                        rows="2"
+                        auto-grow
+                        :error-messages="form.errors.address"
+                        class="mb-1"
+                    />
+
+                    <v-text-field
+                        v-model="form.website"
+                        label="Website"
+                        prepend-inner-icon="mdi-web"
+                        placeholder="https://example.com"
+                        :error-messages="form.errors.website"
+                        class="mb-1"
+                    />
+
+                    <v-textarea
+                        v-model="form.use_case"
+                        label="Use Case"
+                        rows="2"
+                        auto-grow
+                        :error-messages="form.errors.use_case"
+                        class="mb-1"
+                    />
+
+                    <v-select
+                        v-model="form.expected_monthly_volume"
+                        label="Expected Monthly Volume"
+                        :items="volumeOptions"
+                        :error-messages="form.errors.expected_monthly_volume"
+                        class="mb-1"
+                    />
+                </div>
+            </v-expand-transition>
 
             <v-text-field
                 v-model="form.password"

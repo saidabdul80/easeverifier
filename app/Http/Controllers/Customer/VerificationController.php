@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Services\Verification\VerificationEngine;
@@ -40,11 +41,23 @@ class VerificationController extends Controller
 
         $price = $request->user()->getPriceForService($service);
         $walletBalance = $request->user()->wallet?->total_balance ?? 0;
+        $branches = $request->user()->branches()
+            ->where('is_active', true)
+            ->with('wallet')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Branch $branch) => [
+                'id' => $branch->id,
+                'name' => $branch->name,
+                'code' => $branch->code,
+                'wallet_balance' => (float) ($branch->wallet?->total_balance ?? 0),
+            ]);
 
         return Inertia::render('Customer/Verification/Show', [
             'service' => $service,
             'price' => $price,
             'walletBalance' => $walletBalance,
+            'branches' => $branches,
         ]);
     }
 
@@ -52,7 +65,18 @@ class VerificationController extends Controller
     {
         $validated = $request->validate([
             'search_parameter' => 'required|string|max:255',
+            'branch_id' => 'nullable|integer',
         ]);
+
+        $branch = null;
+
+        if (! empty($validated['branch_id'])) {
+            $branch = $request->user()->branches()
+                ->where('is_active', true)
+                ->whereKey($validated['branch_id'])
+                ->with('wallet')
+                ->firstOrFail();
+        }
 
         if (!$service->is_active) {
             return back()->withErrors(['search_parameter' => 'This service is not available.']);
@@ -60,7 +84,7 @@ class VerificationController extends Controller
 
         // Check if user has sufficient balance
         $price = $request->user()->getPriceForService($service);
-        $walletBalance = $request->user()->wallet?->total_balance ?? 0;
+        $walletBalance = $branch?->wallet?->total_balance ?? $request->user()->wallet?->total_balance ?? 0;
 
         if ($walletBalance < $price) {
             return back()->withErrors(['search_parameter' => 'Insufficient wallet balance. Please fund your wallet.']);
@@ -76,7 +100,8 @@ class VerificationController extends Controller
             service: $service,
             searchParameter: $validated['search_parameter'],
             source: 'web',
-            ipAddress: $request->ip()
+            ipAddress: $request->ip(),
+            branch: $branch,
         );
 
         if ($result->isSuccessful()) {
@@ -110,7 +135,10 @@ class VerificationController extends Controller
         return Inertia::render('Customer/Verification/History', [
             'verifications' => $verifications,
             'services' => $services,
-            'filters' => $request->only(['service', 'status', 'date_from', 'date_to']),
+            'branches' => $request->user()->branches()
+                ->orderBy('name')
+                ->get(['id', 'name', 'code']),
+            'filters' => $request->only(['branch', 'service', 'status', 'date_from', 'date_to']),
         ]);
     }
 
@@ -194,6 +222,7 @@ class VerificationController extends Controller
             ->select([
                 'id',
                 'user_id',
+                'branch_id',
                 'verification_service_id',
                 'service_provider_id',
                 'reference',
@@ -207,6 +236,15 @@ class VerificationController extends Controller
                 'completed_at',
             ])
             ->with('verificationService:id,name')
+            ->with('branch:id,name,code')
+            ->when(
+                $request->string('branch')->value() === 'primary',
+                fn (Builder $query) => $query->whereNull('branch_id')
+            )
+            ->when(
+                $request->filled('branch') && $request->string('branch')->value() !== 'primary',
+                fn (Builder $query) => $query->where('branch_id', $request->integer('branch'))
+            )
             ->when($request->filled('service'), fn (Builder $query) => $query->where('verification_service_id', $request->integer('service')))
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
             ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))

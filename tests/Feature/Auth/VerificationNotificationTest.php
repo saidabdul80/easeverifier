@@ -1,8 +1,13 @@
 <?php
 
 use App\Models\User;
-use Illuminate\Auth\Notifications\VerifyEmail;
+use App\Notifications\VerifyEmailOtpNotification;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Notification;
+
+beforeEach(function () {
+    $this->withoutMiddleware(ValidateCsrfToken::class);
+});
 
 test('sends verification notification', function () {
     Notification::fake();
@@ -11,9 +16,9 @@ test('sends verification notification', function () {
 
     $this->actingAs($user)
         ->post(route('verification.send'))
-        ->assertRedirect(route('home'));
+        ->assertRedirect();
 
-    Notification::assertSentTo($user, VerifyEmail::class);
+    Notification::assertSentTo($user, VerifyEmailOtpNotification::class);
 });
 
 test('does not send verification notification if email is verified', function () {
