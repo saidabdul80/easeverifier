@@ -59,10 +59,36 @@ it('allows the dedicated test nin for test api keys', function () {
     ]);
 
     $response
-        ->assertStatus(400)
+        ->assertOk()
         ->assertJson([
-            'success' => false,
-            'error_code' => 'NO_PROVIDER',
+            'success' => true,
+            'sandbox' => true,
+        ]);
+});
+
+it('does not require wallet balance for test api keys without test providers', function () {
+    $user = createApiUser();
+    createNinService();
+
+    $user->wallet()->create([
+        'balance' => 0,
+        'bonus_balance' => 0,
+    ]);
+
+    $apiKey = ApiKey::generate($user->id, 'Sandbox', 'test');
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+    ])->postJson('/api/v1/verify/nin', [
+        'nin' => '11111111111',
+        'consent' => true,
+    ]);
+
+    $response
+        ->assertOk()
+        ->assertJson([
+            'success' => true,
+            'sandbox' => true,
         ]);
 });
 

@@ -51,16 +51,17 @@ class VerificationEngine
         // Determine if we should charge (test mode = free if test provider available)
         $shouldCharge = true;
         $usedTestProvider = false;
+        $useMockTestResponse = false;
 
         // Get providers based on environment
         $providers = $this->getProviders($service);
 
-        Log::info('VerificationEngine::verify', [
-            'source' => $source,
-            'isTestMode' => $this->isTestMode,
-            'apiKeyEnvironment' => $this->apiKeyEnvironment,
-            'providersCount' => $providers->count(),
-        ]);
+        // Log::info('VerificationEngine::verify', [
+        //     'source' => $source,
+        //     'isTestMode' => $this->isTestMode,
+        //     'apiKeyEnvironment' => $this->apiKeyEnvironment,
+        //     'providersCount' => $providers->count(),
+        // ]);
 
         if ($providers->isEmpty()) {
             return VerificationResult::failure('Service temporarily unavailable', 'NO_PROVIDER');
@@ -73,6 +74,9 @@ class VerificationEngine
                 $providers = $testProviders;
                 $shouldCharge = false;
                 $usedTestProvider = true;
+            } else {
+                $shouldCharge = false;
+                $useMockTestResponse = true;
             }
         }
 
@@ -203,6 +207,18 @@ class VerificationEngine
         // Safety check - should never happen
         if (!$verificationRequest) {
             return VerificationResult::failure('Failed to create verification request', 'INTERNAL_ERROR');
+        }
+
+        if ($useMockTestResponse) {
+            $result = $this->getMockResponseForService($service, $searchParameter);
+
+            $verificationRequest->update([
+                'response_data' => $result->getData(),
+                'status' => 'completed',
+                'completed_at' => now(),
+            ]);
+
+            return $result;
         }
 
         // Try providers in order
@@ -422,10 +438,8 @@ class VerificationEngine
     /**
      * Generate mock response for test providers (instant response).
      */
-    protected function getMockResponse(ServiceProvider $provider, string $searchParameter, VerificationRequest $_verificationRequest): VerificationResult
+    protected function getMockResponseForService(VerificationService $service, string $searchParameter): VerificationResult
     {
-        $service = $provider->verificationService;
-
         $mockData = match ($service->slug) {
             'nin' => [
                 'first_name' => 'John',
@@ -461,7 +475,9 @@ class VerificationEngine
             ],
         };
 
-        return VerificationResult::success($mockData, 50, $provider->id); // 50ms mock response time
+        $mockData['_sandbox'] = true;
+
+        return VerificationResult::success($mockData, 50, null); // 50ms mock response time
     }
 
     /**
