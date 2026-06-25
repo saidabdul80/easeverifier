@@ -172,6 +172,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::get('result-pins', [AdminResultPinController::class, 'index'])->name('result-pins.index');
     Route::post('result-pins/sync', [AdminResultPinController::class, 'sync'])->name('result-pins.sync');
     Route::post('result-pins/purchase', [AdminResultPinController::class, 'purchase'])->name('result-pins.purchase');
+    Route::get('result-pins/callback', [AdminResultPinController::class, 'callback'])->name('result-pins.callback');
     Route::put('result-pins/products/{product}', [AdminResultPinController::class, 'updateProductPrice'])->name('result-pins.products.update');
 });
 

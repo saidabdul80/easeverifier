@@ -99,7 +99,6 @@ class NabtebResult implements ResultInterface
                 cookieJar: $cookieJar,
             );
 
-            \Log::debug($response);
             return $response;
         } finally {
             @unlink($cookieJar);
@@ -111,6 +110,30 @@ class NabtebResult implements ResultInterface
         $html = trim($html, " \t\n\r\0\x0B'\",");
         $lower = strtolower($html);
 
+        $dom = new \DOMDocument();
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+        $xpath = new \DOMXPath($dom);
+
+        $candidate = $this->extractCandidate($xpath, $html);
+        $subjects = $this->extractSubjects($xpath, $html);
+
+        if ($subjects !== []) {
+            $result = [
+                'board' => 'NABTEB',
+                'exam_type' => $candidate['exam_type'] ?? null,
+                'exam_year' => $candidate['exam_year'] ?? null,
+                'subjects' => $subjects,
+            ];
+
+            return [
+                'status' => 'success',
+                'candidate' => $candidate,
+                'result' => $result,
+                'subjects' => $subjects,
+                'overall' => null,
+            ];
+        }
+
         if ($this->looksLikeError($lower)) {
             return [
                 'status' => 'error',
@@ -119,41 +142,23 @@ class NabtebResult implements ResultInterface
             ];
         }
 
-        $dom = new \DOMDocument();
-        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
-        $xpath = new \DOMXPath($dom);
-
-        $candidate = $this->extractCandidate($xpath, $html);
-        $subjects = $this->extractSubjects($xpath, $html);
-
-        if ($subjects === []) {
-            $message = $this->extractHtmlErrorMessage($html);
-
-            return [
-                'status' => 'error',
-                'code' => $message ? $this->mapErrorCode($message) : 'RESULT_NOT_FOUND',
-                'message' => $message ?: 'No NABTEB subject results were found. Please verify the supplied details.',
-            ];
-        }
-
-        $result = [
-            'board' => 'NABTEB',
-            'exam_type' => $candidate['exam_type'] ?? null,
-            'exam_year' => $candidate['exam_year'] ?? null,
-            'subjects' => $subjects,
-        ];
+        $message = $this->extractHtmlErrorMessage($html);
 
         return [
-            'status' => 'success',
-            'candidate' => $candidate,
-            'result' => $result,
-            'subjects' => $subjects,
-            'overall' => null,
+            'status' => 'error',
+            'code' => $message ? $this->mapErrorCode($message) : 'RESULT_NOT_FOUND',
+            'message' => $message ?: 'No NABTEB subject results were found. Please verify the supplied details.',
         ];
     }
 
     private function request(string $url, string $method, ?array $payload, array $headers, string $cookieJar): string
     {
+        $timeout = max(1, (int) config('services.nabteb.timeout', 12));
+        $connectTimeout = min(
+            $timeout,
+            max(1, (int) config('services.nabteb.connect_timeout', 5)),
+        );
+
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
@@ -164,8 +169,10 @@ class NabtebResult implements ResultInterface
             CURLOPT_COOKIEFILE => $cookieJar,
             CURLOPT_USERAGENT => $this->userAgent,
             CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_CONNECTTIMEOUT => 20,
-            CURLOPT_TIMEOUT => 90,
+            CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_LOW_SPEED_LIMIT => 1,
+            CURLOPT_LOW_SPEED_TIME => $timeout,
             CURLOPT_ENCODING => '',
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
@@ -176,19 +183,22 @@ class NabtebResult implements ResultInterface
             $body = http_build_query($payload ?? []);
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge($headers, [
-                'Content-Length: '.strlen($body),
-            ]));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         } else {
             curl_setopt($ch, CURLOPT_HTTPGET, true);
         }
 
         $response = curl_exec($ch);
+        $errno = curl_errno($ch);
         $error = curl_error($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         if ($error) {
+            if ($errno === CURLE_OPERATION_TIMEDOUT) {
+                throw new RuntimeException("NABTEB result checker timed out after {$timeout} seconds. Please try again.");
+            }
+
             throw new RuntimeException("NABTEB {$method} request failed: {$error}");
         }
 
@@ -229,7 +239,7 @@ class NabtebResult implements ResultInterface
         $patterns = [
             'name' => '/(?:candidate\s+name|name)\s*:?\s*([A-Z][A-Z\s\.\'-]{2,})(?=\s+(?:candidate|exam|centre|center|subject|grade)\b|$)/i',
             'exam_number' => '/(?:candidate\s+number|candidate\s+no|exam\s+number|exam\s+no)\s*:?\s*([A-Z0-9\/\-]+)/i',
-            'exam_year' => '/(?:exam\s+year|year)\s*:?\s*(\d{4})/i',
+            'exam_year' => '/(?:exam\s+year|year|type\s+of\s+examination)\s*:?\s*[A-Z\/,\s]*(\d{4})/i',
         ];
 
         foreach ($patterns as $key => $pattern) {
@@ -303,7 +313,7 @@ class NabtebResult implements ResultInterface
         }
 
         $text = $this->normalizeText(strip_tags($html));
-        preg_match_all('/([A-Z][A-Z&\-\',\.\/\(\) ]{2,})\s+(A1|B2|B3|C4|C5|C6|D7|E8|F9|PASS|FAIL|ABS|ABSENT|WITHHELD)\b(?:\s+([A-Z ]{2,}))?/i', $text, $matches, PREG_SET_ORDER);
+        preg_match_all('/([A-Z][A-Z&\-\',\.\/\(\) ]{2,})\s+(A1|B2|B3|C4|C5|C6|D7|E8|P7|P8|F9|PASS|FAIL|ABS|ABSENT|WITHHELD)\b(?:\s+([A-Z ]{2,}))?/i', $text, $matches, PREG_SET_ORDER);
 
         foreach ($matches as $match) {
             $subject = $this->normalizeText((string) ($match[1] ?? ''));
@@ -342,8 +352,13 @@ class NabtebResult implements ResultInterface
             return;
         }
 
-        if (str_contains($key, 'exam type') || str_contains($key, 'examination type')) {
+        if (str_contains($key, 'exam type') || str_contains($key, 'examination type') || str_contains($key, 'type of examination')) {
             $candidate['exam_type'] ??= $value;
+
+            if ($candidate['exam_year'] === null && preg_match('/\b(\d{4})\b/', $value, $matches)) {
+                $candidate['exam_year'] = $matches[1];
+            }
+
             return;
         }
 
@@ -364,7 +379,7 @@ class NabtebResult implements ResultInterface
 
     private function looksLikeGrade(string $value): bool
     {
-        return (bool) preg_match('/^(A1|B2|B3|C4|C5|C6|D7|E8|F9|PASS|FAIL|ABS|ABSENT|WITHHELD)$/i', trim($value));
+        return (bool) preg_match('/^(A1|B2|B3|C4|C5|C6|D7|E8|P7|P8|F9|PASS|FAIL|ABS|ABSENT|WITHHELD)$/i', trim($value));
     }
 
     private function looksLikeMetadataLabel(string $value): bool
@@ -391,7 +406,7 @@ class NabtebResult implements ResultInterface
                 str_contains($lowerHtml, 'invalid')
                 || str_contains($lowerHtml, 'incorrect')
                 || str_contains($lowerHtml, 'wrong')
-                || str_contains($lowerHtml, 'used')
+                || (bool) preg_match('/\bused\b/', $lowerHtml)
                 || str_contains($lowerHtml, 'expired')
             );
 

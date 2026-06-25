@@ -43,6 +43,8 @@ return [
 
     'nabteb' => [
         'latest_year' => env('NABTEB_LATEST_YEAR', 2025),
+        'connect_timeout' => env('NABTEB_CONNECT_TIMEOUT', 5),
+        'timeout' => env('NABTEB_TIMEOUT', 12),
     ],
 
     'naija_result_pins' => [

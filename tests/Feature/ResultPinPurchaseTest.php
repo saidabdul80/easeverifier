@@ -327,3 +327,90 @@ it('creates a guest public pin order, verifies payment, purchases pins and shows
         ->and($order->user_id)->toBeNull()
         ->and($order->transaction_id)->toBeNull();
 });
+
+it('requires admin result pin purchases to complete payment before provider fulfillment', function () {
+    config([
+        'services.paystack.secret_key' => 'paystack-secret',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+        'services.naija_result_pins.token' => 'provider-token',
+    ]);
+
+    Role::firstOrCreate(['name' => 'admin']);
+
+    $admin = User::factory()->create([
+        'is_active' => true,
+        'email_verified_at' => now(),
+    ]);
+    $admin->assignRole('admin');
+
+    $product = createResultPinProduct(1000);
+
+    Http::fake([
+        'https://api.paystack.co/transaction/initialize' => Http::response([
+            'status' => true,
+            'data' => [
+                'authorization_url' => 'https://checkout.test/admin-pay',
+                'access_code' => 'ACCESS',
+                'reference' => 'PAY_ADMIN',
+            ],
+        ]),
+        'https://api.paystack.co/transaction/verify/*' => Http::response([
+            'status' => true,
+            'data' => [
+                'status' => 'success',
+                'amount' => 200000,
+                'reference' => 'PAY_ADMIN',
+                'paid_at' => now()->toISOString(),
+                'channel' => 'card',
+                'customer' => ['email' => $admin->email],
+            ],
+        ]),
+        'https://www.naijaresultpins.com/api/v1' => Http::response([
+            'status' => true,
+            'data' => [
+                [
+                    'card_type_id' => '1',
+                    'card_name' => 'WAEC Scratch Card',
+                    'unit_amount' => '1000',
+                    'availability' => 'In Stock',
+                ],
+            ],
+        ]),
+        'https://www.naijaresultpins.com/api/v1/exam-card/buy' => Http::response([
+            'status' => true,
+            'code' => '000',
+            'message' => '2 WAEC Scratch Card generated',
+            'reference' => 'PROVIDER-ADMIN',
+            'quantity' => '2',
+            'amount' => '1600.00',
+            'cards' => [
+                ['pin' => '555566667777', 'serial_no' => 'WRN000000021'],
+                ['pin' => '888899990000', 'serial_no' => 'WRN000000022'],
+            ],
+        ]),
+    ]);
+
+    $this->actingAs($admin)
+        ->withoutMiddleware(ValidateCsrfToken::class)
+        ->post('/admin/result-pins/purchase', [
+            'product_id' => $product->id,
+            'quantity' => 2,
+        ])
+        ->assertRedirect('https://checkout.test/admin-pay');
+
+    $order = ResultPinOrder::where('user_id', $admin->id)->firstOrFail();
+
+    expect($order->status)->toBe('pending')
+        ->and($order->provider_response['payment_status'])->toBe('pending');
+
+    $this->actingAs($admin)
+        ->get('/admin/result-pins/callback?reference='.$order->reference)
+        ->assertRedirect(route('admin.result-pins.index'));
+
+    $order->refresh();
+
+    expect($order->status)->toBe('completed')
+        ->and($order->pins[0]['pin'])->toBe('555566667777')
+        ->and($order->provider_response['payment_status'])->toBe('success')
+        ->and($order->provider_response['payment_reference'])->toBe('PAY_ADMIN');
+});

@@ -405,6 +405,52 @@ HTML;
         ]);
 });
 
+it('parses NABTEB eWorld result pages that use pass grade codes', function () {
+    $html = <<<'HTML'
+<!doctype html>
+<html>
+<body>
+    <table>
+        <tr><td>NABTEBeWorld NABTEB - Results Disclaimer : The results given below are correct at the time of release of the results. The Board and its agents accept no responsibility thereafter for errors or omissions caused as a result of their transmission via the Internet.</td></tr>
+        <tr><td>NABTEB - Results</td></tr>
+        <tr><td>Disclaimer : The results given below are correct at the time of release of the results. The Board and its agents accept no responsibility thereafter for errors or omissions caused as a result of their transmission via the Internet.</td></tr>
+        <tr><td>Candidate's Details</td></tr>
+        <tr><td>Candidate Number</td><td>13123006</td></tr>
+        <tr><td>Candidate Name</td><td>TEST NABTEB CANDIDATE</td></tr>
+        <tr><td>Type of Examination</td><td>NOVEMBER/DECEMBER, 2021</td></tr>
+        <tr><td>Trade Name</td><td>GENERAL EDUCATION</td></tr>
+        <tr><td>Examination Centre</td><td>TEST CENTRE</td></tr>
+        <tr><td>Card Details</td></tr>
+        <tr><td>Card use</td><td>4 of 5</td></tr>
+        <tr><td>Results</td></tr>
+        <tr><td>TRADE RELATED</td></tr>
+        <tr><td>COMMERCE</td><td>P7</td></tr>
+        <tr><td>GOVERNMENT</td><td>P7</td></tr>
+        <tr><td>GENERAL EDUCATION</td></tr>
+        <tr><td>ENGLISH LANGUAGE</td><td>C4</td></tr>
+        <tr><td>MATHEMATICS</td><td>A1</td></tr>
+        <tr><td>ECONOMICS</td><td>C5</td></tr>
+        <tr><td>LITERATURE-IN-ENGLISH</td><td>C5</td></tr>
+        <tr><td>INFORMATION AND COMMUNICATIONS TECHNOLOGY</td><td>C4</td></tr>
+    </table>
+</body>
+</html>
+HTML;
+
+    $parsed = app(NabtebResult::class)->parseResult($html);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['name'])->toBe('TEST NABTEB CANDIDATE')
+        ->and($parsed['candidate']['exam_number'])->toBe('13123006')
+        ->and($parsed['candidate']['exam_year'])->toBe('2021')
+        ->and($parsed['candidate']['exam_type'])->toBe('NOVEMBER/DECEMBER, 2021')
+        ->and($parsed['result']['subjects'])->toHaveCount(7)
+        ->and($parsed['result']['subjects'][0])->toMatchArray([
+            'subject' => 'COMMERCE',
+            'grade' => 'P7',
+        ]);
+});
+
 it('maps NABTEB html error responses into structured errors', function () {
     $parsed = app(NabtebResult::class)->parseResult('<html><head><title>Length Required</title></head><body><h2>Length Required</h2><p>HTTP Error 411. The request must be chunked or have a content length.</p></body></html>');
 

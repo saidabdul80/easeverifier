@@ -195,6 +195,11 @@ class ResultPinPurchaseService
 
     public function fulfillPaidGuestOrder(ResultPinOrder $order): ResultPinOrder
     {
+        return $this->fulfillPaidProviderOrder($order);
+    }
+
+    public function fulfillPaidProviderOrder(ResultPinOrder $order): ResultPinOrder
+    {
         $product = $order->product;
         if (!$product) {
             throw new \RuntimeException('Result PIN product was not found for this order.');

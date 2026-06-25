@@ -26,6 +26,9 @@ const priceForm = useForm({
 const selectedProduct = computed(() => props.products.find((product) => product.id === Number(purchaseForm.product_id)));
 const totalAmount = computed(() => Number(selectedProduct.value?.price ?? 0) * Number(purchaseForm.quantity || 0));
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
+const paymentStatus = (order: any) => order.provider_response?.payment_status ?? (order.status === 'completed' ? 'success' : 'pending');
+const paymentChannel = (order: any) => order.provider_response?.payment_channel ?? order.provider_response?.payment_gateway ?? 'gateway';
+const statusColor = (status: string) => status === 'completed' || status === 'success' ? 'success' : status === 'failed' ? 'error' : 'warning';
 
 const syncProducts = () => syncForm.post('/admin/result-pins/sync');
 const purchase = () => purchaseForm.post('/admin/result-pins/purchase');
@@ -51,7 +54,7 @@ const updatePrice = () => {
         <div class="d-flex flex-column flex-sm-row align-sm-center mb-6 ga-4">
             <div>
                 <h1 class="text-h4 font-weight-bold mb-1">Result PINs</h1>
-                <p class="text-body-2 text-grey">Sync provider products and purchase PINs from NaijaResultPins.</p>
+                <p class="text-body-2 text-grey">Sync provider products, pay online, and manage result checker PIN orders.</p>
             </div>
             <v-spacer />
             <v-btn color="secondary" :loading="syncForm.processing" @click="syncProducts">Sync Products</v-btn>
@@ -79,15 +82,25 @@ const updatePrice = () => {
         <v-row>
             <v-col cols="12" md="4">
                 <v-card>
-                    <v-card-title>Purchase From Provider</v-card-title>
+                    <v-card-title>Buy PINs</v-card-title>
                     <v-card-text>
                         <v-form @submit.prevent="purchase">
                             <v-select v-model="purchaseForm.product_id" :items="products" item-title="name" item-value="id" label="Product" :error-messages="purchaseForm.errors.product_id" />
-                            <v-text-field v-model.number="purchaseForm.quantity" type="number" label="Quantity" min="1" max="100" :error-messages="purchaseForm.errors.quantity" />
+                            <v-text-field
+                                v-model.number="purchaseForm.quantity"
+                                type="number"
+                                label="Quantity"
+                                :min="selectedProduct?.min_quantity ?? 1"
+                                :max="selectedProduct?.max_quantity ?? 100"
+                                :error-messages="purchaseForm.errors.quantity"
+                            />
                             <v-sheet color="grey-lighten-4" class="pa-4 rounded-lg mb-4">
-                                <div class="d-flex justify-space-between"><span>Customer Value</span><strong>{{ formatCurrency(totalAmount) }}</strong></div>
+                                <div class="d-flex justify-space-between"><span>Total</span><strong>{{ formatCurrency(totalAmount) }}</strong></div>
                             </v-sheet>
-                            <v-btn type="submit" color="primary" block :loading="purchaseForm.processing" :disabled="!products.length">Purchase PINs</v-btn>
+                            <v-btn type="submit" color="primary" block :loading="purchaseForm.processing" :disabled="!products.length">Proceed to Payment</v-btn>
+                            <p class="text-caption text-grey-darken-1 text-center mt-3 mb-0">
+                                PINs are purchased from the provider after payment confirmation.
+                            </p>
                         </v-form>
                     </v-card-text>
                 </v-card>
@@ -112,14 +125,19 @@ const updatePrice = () => {
                 <v-card>
                     <v-card-title>Recent PIN Orders</v-card-title>
                     <v-table>
-                        <thead><tr><th>Reference</th><th>Channel</th><th>Product</th><th>Qty</th><th>Status</th><th class="text-right">Amount</th></tr></thead>
+                        <thead><tr><th>Reference</th><th>Channel</th><th>Product</th><th>Qty</th><th>Payment</th><th>Status</th><th class="text-right">Amount</th></tr></thead>
                         <tbody>
                             <tr v-for="order in orders?.data || []" :key="order.id">
                                 <td>{{ order.reference }}</td>
                                 <td>{{ order.channel }}</td>
                                 <td>{{ order.product?.name }}</td>
                                 <td>{{ order.quantity }}</td>
-                                <td><v-chip size="small" :color="order.status === 'completed' ? 'success' : order.status === 'failed' ? 'error' : 'warning'">{{ order.status }}</v-chip></td>
+                                <td>
+                                    <v-chip size="small" :color="statusColor(paymentStatus(order))">
+                                        {{ paymentChannel(order) }} · {{ paymentStatus(order) }}
+                                    </v-chip>
+                                </td>
+                                <td><v-chip size="small" :color="statusColor(order.status)">{{ order.status }}</v-chip></td>
                                 <td class="text-right">{{ formatCurrency(order.total_amount) }}</td>
                             </tr>
                         </tbody>
