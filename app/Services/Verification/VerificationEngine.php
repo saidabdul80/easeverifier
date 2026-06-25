@@ -63,10 +63,6 @@ class VerificationEngine
         //     'providersCount' => $providers->count(),
         // ]);
 
-        if ($providers->isEmpty()) {
-            return VerificationResult::failure('Service temporarily unavailable', 'NO_PROVIDER');
-        }
-
         // Check if test mode and test providers exist
         if ($this->isTestMode) {
             $testProviders = $providers->where('environment', 'test');
@@ -78,6 +74,10 @@ class VerificationEngine
                 $shouldCharge = false;
                 $useMockTestResponse = true;
             }
+        }
+
+        if ($providers->isEmpty() && !$useMockTestResponse) {
+            return VerificationResult::failure('Service temporarily unavailable', 'NO_PROVIDER');
         }
 
         // Get the price for this service

@@ -71,6 +71,7 @@ class DatabaseSeeder extends Seeder
 
         // Seed verification services
         $this->call(VerificationServicesSeeder::class);
+        $this->call(ResultPinProductSeeder::class);
         $this->call(BlogPostSeeder::class);
         $this->call(MissingNinIntentSeeder::class);
         $this->call(LegacyBlogPostContentCorrectionSeeder::class);

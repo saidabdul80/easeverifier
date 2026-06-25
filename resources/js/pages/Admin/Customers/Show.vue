@@ -9,10 +9,14 @@ const props = defineProps<{
     verificationStats?: any;
     services?: any[];
     customPricing?: any;
+    resultPinProducts?: any[];
+    resultPinPricing?: any;
 }>();
 
 const pricingDialog = ref(false);
 const pricingForm = useForm({ service_id: null, price: 0 });
+const resultPinPricingDialog = ref(false);
+const resultPinPricingForm = useForm({ product_id: null, price: 0 });
 
 const openPricingDialog = (service: any) => {
     pricingForm.service_id = service.id;
@@ -23,6 +27,18 @@ const openPricingDialog = (service: any) => {
 const submitPricing = () => {
     pricingForm.post(`/admin/customers/${props.customer.id}/pricing`, {
         onSuccess: () => { pricingDialog.value = false; }
+    });
+};
+
+const openResultPinPricingDialog = (product: any) => {
+    resultPinPricingForm.product_id = product.id;
+    resultPinPricingForm.price = props.resultPinPricing?.[product.id]?.price || product.price;
+    resultPinPricingDialog.value = true;
+};
+
+const submitResultPinPricing = () => {
+    resultPinPricingForm.post(`/admin/customers/${props.customer.id}/result-pin-pricing`, {
+        onSuccess: () => { resultPinPricingDialog.value = false; }
     });
 };
 
@@ -112,6 +128,23 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                         </v-table>
                     </v-card-text>
                 </v-card>
+
+                <v-card class="mt-4">
+                    <v-card-title>Result PIN Pricing</v-card-title>
+                    <v-card-text>
+                        <v-table density="comfortable">
+                            <thead><tr><th>Product</th><th>General Price</th><th>Customer Price</th><th></th></tr></thead>
+                            <tbody>
+                                <tr v-for="product in resultPinProducts" :key="product.id">
+                                    <td>{{ product.name }}</td>
+                                    <td>{{ formatCurrency(product.price) }}</td>
+                                    <td><v-chip v-if="resultPinPricing?.[product.id]" color="primary" size="small">{{ formatCurrency(resultPinPricing[product.id].price) }}</v-chip><span v-else class="text-grey">General</span></td>
+                                    <td><v-btn size="small" variant="text" @click="openResultPinPricingDialog(product)">Set Price</v-btn></td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+                    </v-card-text>
+                </v-card>
             </v-col>
         </v-row>
 
@@ -123,6 +156,16 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                     <v-text-field v-model="pricingForm.price" label="Price (NGN)" type="number" variant="outlined" />
                 </v-card-text>
                 <v-card-actions><v-spacer /><v-btn variant="text" @click="pricingDialog = false">Cancel</v-btn><v-btn color="primary" :loading="pricingForm.processing" @click="submitPricing">Save</v-btn></v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="resultPinPricingDialog" max-width="400">
+            <v-card>
+                <v-card-title>Set Result PIN Price</v-card-title>
+                <v-card-text>
+                    <v-text-field v-model="resultPinPricingForm.price" label="Price (NGN)" type="number" variant="outlined" />
+                </v-card-text>
+                <v-card-actions><v-spacer /><v-btn variant="text" @click="resultPinPricingDialog = false">Cancel</v-btn><v-btn color="primary" :loading="resultPinPricingForm.processing" @click="submitResultPinPricing">Save</v-btn></v-card-actions>
             </v-card>
         </v-dialog>
     </AdminLayout>

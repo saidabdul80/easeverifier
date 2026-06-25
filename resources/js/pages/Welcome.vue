@@ -14,13 +14,20 @@ interface Post {
     views: number;
 }
 
+interface ResultPinProduct {
+    id: number;
+    name: string;
+    board?: string | null;
+    price: number | string;
+}
+
 const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
     name: 'EaseVerifier',
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
-    description: 'Identity verification API for Nigerian businesses - verify NIN, BVN, and CAC records instantly',
+    description: 'Identity verification API for Nigerian businesses - verify NIN, BVN, CAC and Result PINs records instantly',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'NGN' },
     aggregateRating: { '@type': 'AggregateRating', ratingValue: '4.8', ratingCount: '500' },
     provider: {
@@ -61,10 +68,12 @@ const props = withDefaults(
     defineProps<{
         canRegister: boolean;
         hottestPosts?: Post[];
+        resultPinProducts?: ResultPinProduct[];
     }>(),
     {
         canRegister: true,
         hottestPosts: () => [],
+        resultPinProducts: () => [],
     },
 );
 
@@ -72,12 +81,7 @@ const servicesList = [
     { icon: 'mdi-card-account-details', title: 'NIN', description: 'Fast identity checks for onboarding.', accent: 'service-nin' },
     { icon: 'mdi-bank', title: 'BVN', description: 'Bank-grade verification for financial flows.', accent: 'service-bvn' },
     { icon: 'mdi-domain', title: 'CAC', description: 'Business record checks for company validation.', accent: 'service-cac' },
-];
-
-const quickStats = [
-    { value: '100K+', label: 'Checks run' },
-    { value: '60+', label: 'Teams onboarded' },
-    { value: '<1s', label: 'Average response' },
+    { icon: 'mdi-card-account-details-star-outline', title: 'Result PINs', description: 'Buy exam checker PINs without creating an account.', accent: 'service-pin', href: '/result-pins' },
 ];
 
 const workflow = [
@@ -88,6 +92,52 @@ const workflow = [
 
 const featuredPost = computed(() => props.hottestPosts[0] ?? null);
 const secondaryPosts = computed(() => props.hottestPosts.slice(1, 3));
+const fallbackPinProducts = [
+    { id: 0, name: 'WAEC', board: 'waec', price: null },
+    { id: 0, name: 'NECO', board: 'neco', price: null },
+    { id: 0, name: 'NABTEB', board: 'nabteb', price: null },
+    { id: 0, name: 'NBAIS', board: 'nbais', price: null },
+];
+
+const formatPinBoardLabel = (product: Pick<ResultPinProduct, 'name' | 'board'>) => {
+    const source = (product.board || product.name).toLowerCase();
+    const knownBoards = ['waec', 'neco', 'nabteb', 'nbais'];
+    const matchedBoard = knownBoards.find((board) => source.includes(board));
+
+    if (matchedBoard) {
+        return matchedBoard.toUpperCase();
+    }
+
+    return product.name
+        .replace(/scratch\s*card|result\s*checker|pin|token/gi, '')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .join(' ')
+        .toUpperCase();
+};
+
+const pinBoardCards = computed(() =>
+    (props.resultPinProducts.length ? props.resultPinProducts : fallbackPinProducts).map((product) => ({
+        id: product.id,
+        label: formatPinBoardLabel(product),
+        price: product.price,
+        href: product.id ? `/result-pins?product=${product.id}` : '/result-pins',
+    })),
+);
+
+const formatCurrency = (amount: number | string | null) => {
+    if (amount === null) {
+        return 'Available';
+    }
+
+    return new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: 'NGN',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(Number(amount) || 0);
+};
 
 const getCategoryIcon = (category: string): string => {
     const icons: Record<string, string> = {
@@ -124,7 +174,7 @@ const formatDate = (date: string) =>
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:url" content="https://verify.ashlabtech.ng/" />
         <meta name="twitter:title" content="NIN, BVN & CAC Verification API | EaseVerifier" />
-        <meta name="twitter:description" content="Instant identity verification API for Nigerian businesses. Verify NIN, BVN, CAC in milliseconds." />
+        <meta name="twitter:description" content="Instant identity verification API for Nigerian businesses. Verify NIN, BVN, CAC and Result PINs in milliseconds." />
         <meta name="twitter:image" content="https://verify.ashlabtech.ng/images/twitter-card.png" />
         <link rel="preconnect" href="https://rsms.me/" />
         <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
@@ -138,63 +188,66 @@ const formatDate = (date: string) =>
                 <div class="hero-glow hero-glow-a" />
                 <div class="hero-glow hero-glow-b" />
                 <v-container class="hero-content">
-                    <v-row align="center" class="ga-0">
-                        <v-col cols="12" md="7">
+                    <v-row align="center" class="ga-0 hero-row">
+                        <v-col cols="12" lg="7">
                             <div class="hero-badge">
                                 <v-icon size="16">mdi-lightning-bolt</v-icon>
-                                API-first identity checks
+                                NIN API verification + result PINs
                             </div>
                             <h1 class="hero-title">
-                                Verify <span style="font-size: 3rem;">NIN, BVN, CAC</span><br>
-                                without slowing the user down.
+                                Verify NIN API.<br>
+                                Buy <span>result PINs.</span>
                             </h1>
                             <p class="hero-copy">
-                                Fast checks, clean onboarding, simple pricing.
+                                NIN, BVN and CAC checks for teams, plus quick exam PIN purchase for everyone.
                             </p>
 
-                            <div class="d-flex flex-wrap ga-3 mb-8">
-                                <Link v-if="canRegister" :href="register()">
+                            <div class="d-flex flex-wrap ga-3">
+                                <Link href="/result-pins">
                                     <v-btn color="secondary" size="x-large" class="cta-primary">
-                                        Start Free Trial
+                                        Buy Result PINs
                                     </v-btn>
                                 </Link>
-                                <Link :href="documentation()">
-                                    <v-btn variant="outlined" color="white" size="x-large" class="cta-secondary">View Docs</v-btn>
+                                <Link v-if="canRegister" :href="register()">
+                                    <v-btn variant="outlined" color="white" size="x-large" class="cta-secondary">
+                                        Create Account
+                                    </v-btn>
                                 </Link>
                             </div>
 
-                            <div class="stats-strip">
-                                <div v-for="stat in quickStats" :key="stat.label" class="stat-pill">
-                                    <div class="stat-value">{{ stat.value }}</div>
-                                    <div class="stat-label">{{ stat.label }}</div>
-                                </div>
-                            </div>
                         </v-col>
 
-                        <v-col cols="12" md="5">
+                        <v-col cols="12" lg="5">
                             <div class="hero-panel">
-                                <div class="hero-panel-top">
-                                    <div class="panel-dot red" />
-                                    <div class="panel-dot amber" />
-                                    <div class="panel-dot green" />
-                                </div>
-                                <div class="hero-panel-body">
-                                    <div class="request-chip">POST /api/v1/verify/nin</div>
-                                    <div class="code-card">
-                                        <div class="code-line"><span class="code-key">status</span>: <span class="code-value">"verified"</span></div>
-                                        <div class="code-line"><span class="code-key">match</span>: <span class="code-value">true</span></div>
-                                        <div class="code-line"><span class="code-key">latency</span>: <span class="code-value">"0.7s"</span></div>
-                                    </div>
-                                    <div class="trust-grid">
-                                        <div class="trust-card">
-                                            <div class="trust-number">99.9%</div>
-                                            <div class="trust-label">Uptime</div>
+                                <div class="pin-showcase">
+                                    <div class="pin-showcase-head">
+                                        <div>
+                                            <span>No dashboard required</span>
+                                            <strong>PIN purchase</strong>
                                         </div>
-                                        <div class="trust-card">
-                                            <div class="trust-number">Live</div>
-                                            <div class="trust-label">Wallet billing</div>
-                                        </div>
+                                        <v-icon color="secondary" size="34">mdi-ticket-confirmation</v-icon>
                                     </div>
+
+                                    <div class="pin-board-row">
+                                        <Link
+                                            v-for="product in pinBoardCards"
+                                            :key="`${product.id}-${product.label}`"
+                                            :href="product.href"
+                                            class="pin-board-card"
+                                        >
+                                            <span class="pin-board-name">{{ product.label }}</span>
+                                            <span class="pin-board-price">{{ formatCurrency(product.price) }}</span>
+                                        </Link>
+                                    </div>
+
+                                    <div class="pin-delivery-note">
+                                        <v-icon color="secondary" size="20">mdi-email-fast-outline</v-icon>
+                                        <span>Delivered to your email after payment.</span>
+                                    </div>
+
+                                    <Link href="/result-pins" class="text-decoration-none">
+                                        <v-btn color="secondary" block size="large" class="cta-primary mt-4">Buy PIN Now</v-btn>
+                                    </Link>
                                 </div>
                             </div>
                         </v-col>
@@ -206,12 +259,12 @@ const formatDate = (date: string) =>
                 <v-container>
                     <div class="section-head">
                         <div class="section-kicker">Core Services</div>
-                        <h2 class="section-title">Three checks. One clean flow.</h2>
+                        <h2 class="section-title">Verification and PINs, one flow.</h2>
                     </div>
 
                     <v-row>
-                        <v-col v-for="service in servicesList" :key="service.title" cols="12" md="4">
-                            <Link :href="servicesPage()" class="text-decoration-none">
+                        <v-col v-for="service in servicesList" :key="service.title" cols="12" sm="6" md="3">
+                            <Link :href="service.href || servicesPage()" class="text-decoration-none">
                                 <v-card class="service-card" hover>
                                     <v-card-text class="pa-6">
                                         <div class="service-icon" :class="service.accent">
@@ -382,6 +435,10 @@ const formatDate = (date: string) =>
     z-index: 1;
 }
 
+.hero-row {
+    row-gap: 2rem;
+}
+
 .hero-glow {
     position: absolute;
     border-radius: 999px;
@@ -422,10 +479,10 @@ const formatDate = (date: string) =>
 .hero-title {
     margin: 0 0 1rem;
     color: #fff;
-    font-size: clamp(2.7rem, 6vw, 4.8rem);
+    font-size: clamp(2.5rem, 5.4vw, 4.55rem);
     line-height: 0.98;
     letter-spacing: -0.05em;
-    max-width: 11ch;
+    max-width: 13ch;
 }
 
 .hero-title span {
@@ -446,109 +503,123 @@ const formatDate = (date: string) =>
     font-weight: 700;
 }
 
-.stats-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-}
-
-.stat-pill {
-    min-width: 140px;
-    padding: 1rem 1.1rem;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 22px;
-    background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(12px);
-}
-
-.stat-value {
-    color: #fff;
-    font-size: 1.25rem;
-    font-weight: 700;
-}
-
-.stat-label {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.82rem;
-}
-
 .hero-panel {
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 30px;
-    background: rgba(8, 26, 15, 0.44);
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(244, 199, 76, 0.22);
+    border-radius: 36px;
+    background:
+        radial-gradient(circle at 92% 8%, rgba(244, 199, 76, 0.24), transparent 30%),
+        linear-gradient(145deg, rgba(13, 60, 31, 0.78), rgba(4, 39, 19, 0.92));
     backdrop-filter: blur(18px);
-    box-shadow: 0 32px 70px rgba(3, 18, 9, 0.28);
+    box-shadow: 0 34px 80px rgba(3, 18, 9, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.hero-panel-top {
+.pin-showcase {
+    padding: 1.35rem;
+}
+
+.pin-showcase-head {
     display: flex;
-    gap: 0.45rem;
-    padding: 1rem 1.1rem 0;
-}
-
-.panel-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-}
-
-.red { background: #ff6b6b; }
-.amber { background: #f4c74c; }
-.green { background: #51cf66; }
-
-.hero-panel-body {
-    padding: 1.2rem;
-}
-
-.request-chip {
-    display: inline-block;
-    padding: 0.5rem 0.8rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
     margin-bottom: 1rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    color: #dcefe2;
-    font-size: 0.82rem;
 }
 
-.code-card {
-    padding: 1.2rem;
-    margin-bottom: 1rem;
-    border-radius: 24px;
-    background: #082413;
+.pin-showcase-head .v-icon {
+    flex: 0 0 auto;
+    margin-top: 0.25rem;
 }
 
-.code-line + .code-line {
-    margin-top: 0.75rem;
+.pin-showcase-head span {
+    display: block;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
 }
 
-.code-key {
-    color: #9fe0b7;
-}
-
-.code-value {
-    color: #fff1a0;
-}
-
-.trust-grid {
-    display: grid;
-    gap: 0.9rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.trust-card {
-    padding: 1rem;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.08);
-}
-
-.trust-number {
+.pin-showcase-head strong {
+    display: block;
     color: #fff;
-    font-weight: 700;
+    font-size: clamp(1.45rem, 2.8vw, 1.9rem);
+    line-height: 1.02;
+    letter-spacing: -0.03em;
 }
 
-.trust-label {
-    color: rgba(255, 255, 255, 0.66);
-    font-size: 0.82rem;
+.pin-board-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+    max-height: 226px;
+    padding-right: 0.2rem;
+    margin-bottom: 1rem;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(244, 199, 76, 0.4) transparent;
+}
+
+.pin-board-row::-webkit-scrollbar {
+    width: 4px;
+}
+
+.pin-board-row::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(244, 199, 76, 0.4);
+}
+
+.pin-board-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    min-width: 0;
+    min-height: 66px;
+    padding: 0.78rem 0.85rem;
+    border: 1px solid rgba(244, 199, 76, 0.12);
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.085);
+    text-decoration: none;
+    transition: transform 0.22s ease, background 0.22s ease, border-color 0.22s ease;
+}
+
+.pin-board-card:hover {
+    border-color: rgba(244, 199, 76, 0.35);
+    background: rgba(255, 255, 255, 0.13);
+    transform: translateY(-2px);
+}
+
+.pin-board-name {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.74rem;
+    font-weight: 800;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pin-board-price {
+    flex: 0 0 auto;
+    color: #f4c74c;
+    font-size: 1.02rem;
+    font-weight: 900;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.pin-delivery-note {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 18px;
+    background: rgba(244, 199, 76, 0.12);
+    color: rgba(255, 255, 255, 0.84);
+    font-size: 0.86rem;
+    font-weight: 800;
 }
 
 .section-shell {
@@ -607,6 +678,7 @@ const formatDate = (date: string) =>
 .service-nin { background: linear-gradient(135deg, #1a7d42, #26a269); }
 .service-bvn { background: linear-gradient(135deg, #d18f10, #f4c74c); }
 .service-cac { background: linear-gradient(135deg, #145c9e, #2f85de); }
+.service-pin { background: linear-gradient(135deg, #53389e, #8b5cf6); }
 
 .workflow-card {
     display: flex;
@@ -708,6 +780,49 @@ const formatDate = (date: string) =>
     .cta-band {
         flex-direction: column;
         align-items: flex-start;
+    }
+}
+
+@media (min-width: 960px) and (max-width: 1279px) {
+    .hero-title {
+        max-width: 14ch;
+    }
+
+    .hero-copy {
+        max-width: 38rem;
+    }
+
+    .hero-panel {
+        max-width: 620px;
+        margin: 1.5rem auto 0;
+    }
+}
+
+@media (max-width: 600px) {
+    .hero-title {
+        font-size: clamp(2.35rem, 13vw, 3.4rem);
+    }
+
+    .hero-copy {
+        font-size: 0.98rem;
+    }
+
+    .pin-showcase {
+        padding: 1rem;
+    }
+
+    .pin-board-row {
+        max-height: 230px;
+    }
+
+    .pin-board-card {
+        min-height: 58px;
+        padding: 0.68rem;
+    }
+
+    .pin-delivery-note {
+        align-items: flex-start;
+        font-size: 0.8rem;
     }
 }
 </style>

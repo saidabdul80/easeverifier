@@ -6,9 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
+use App\Services\ResultVerify\ResultFactory;
+use App\Services\ResultVerify\ResultGates\NbaisResult;
+use App\Services\ResultVerify\ResultVerificationEngine;
 use App\Services\Verification\VerificationEngine;
 use App\Support\CsvExport;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -16,14 +20,20 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class VerificationController extends Controller
 {
     public function __construct(
-        protected VerificationEngine $verificationEngine
+        protected VerificationEngine $verificationEngine,
+        protected ResultVerificationEngine $resultVerificationEngine,
+        protected ResultFactory $resultFactory,
     ) {}
 
     public function index(Request $request)
     {
-        $services = VerificationService::active()->ordered()->get()
+        $services = VerificationService::active()
+            ->where('slug', 'not like', '%-result-form')
+            ->ordered()
+            ->get()
             ->map(function ($service) use ($request) {
                 $service->price = $request->user()->getPriceForService($service);
+                $this->applyResultBoardDisplayName($service);
                 return $service;
             });
 
@@ -38,6 +48,9 @@ class VerificationController extends Controller
             return redirect()->route('customer.verification.index')
                 ->with('error', 'This service is not available.');
         }
+
+        $isResultBoard = $this->isResultBoardFetchService($service);
+        $this->applyResultBoardDisplayName($service);
 
         $price = $request->user()->getPriceForService($service);
         $walletBalance = $request->user()->wallet?->total_balance ?? 0;
@@ -58,11 +71,18 @@ class VerificationController extends Controller
             'price' => $price,
             'walletBalance' => $walletBalance,
             'branches' => $branches,
+            'isResultBoard' => $isResultBoard,
+            'resultBoard' => $isResultBoard ? $this->boardFromService($service) : null,
+            'formEndpoint' => $isResultBoard ? route('customer.verification.result-form', $service, false) : null,
         ]);
     }
 
     public function verify(Request $request, VerificationService $service)
     {
+        if ($this->isResultBoardFetchService($service)) {
+            return $this->verifyResultBoard($request, $service);
+        }
+
         $validated = $request->validate([
             'search_parameter' => 'required|string|max:255',
             'branch_id' => 'nullable|integer',
@@ -121,6 +141,56 @@ class VerificationController extends Controller
         }
 
         return back()->withErrors(['search_parameter' => $result->getErrorMessage() ?? 'Verification failed. Please try again.']);
+    }
+
+    public function resultFormFields(VerificationService $service): JsonResponse
+    {
+        abort_unless($service->is_active && $this->isResultBoardFetchService($service), 404);
+
+        $board = $this->boardFromService($service);
+        $fields = $this->resultFactory->create($board)->formFields();
+
+        if ($board === 'nbais') {
+            $fields = collect($fields)
+                ->map(function (array $field) use ($service) {
+                    if (($field['name'] ?? null) === 'sub_cat') {
+                        $field['options_endpoint'] = route('customer.verification.result-schools', $service, false);
+                    }
+
+                    return $field;
+                })
+                ->all();
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'board' => strtoupper($board),
+                'fields' => $fields,
+            ],
+        ]);
+    }
+
+    public function resultSchools(Request $request, VerificationService $service, NbaisResult $nbaisResult): JsonResponse
+    {
+        abort_unless($service->is_active && $this->boardFromService($service) === 'nbais', 404);
+
+        $validated = $request->validate([
+            'parent_cat' => 'required|string|max:10',
+        ]);
+
+        try {
+            return response()->json([
+                'success' => true,
+                'data' => $nbaisResult->fetchSchools($validated['parent_cat']),
+            ]);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'error' => $exception->getMessage(),
+                'error_code' => 'SCHOOL_LOOKUP_FAILED',
+            ], 400);
+        }
     }
 
     public function history(Request $request)
@@ -249,5 +319,94 @@ class VerificationController extends Controller
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
             ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
             ->when($request->filled('date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('date_to')));
+    }
+
+    private function verifyResultBoard(Request $request, VerificationService $service)
+    {
+        $validated = $request->validate([
+            'branch_id' => 'nullable|integer',
+        ]);
+
+        $branch = null;
+
+        if (! empty($validated['branch_id'])) {
+            $branch = $request->user()->branches()
+                ->where('is_active', true)
+                ->whereKey($validated['branch_id'])
+                ->with('wallet')
+                ->firstOrFail();
+        }
+
+        if (!$service->is_active) {
+            return back()->withErrors(['result' => 'This service is not available.']);
+        }
+
+        $price = $request->user()->getPriceForService($service);
+        $walletBalance = $branch?->wallet?->total_balance ?? $request->user()->wallet?->total_balance ?? 0;
+
+        if ($walletBalance < $price) {
+            return back()->withErrors(['result' => 'Insufficient wallet balance. Please fund your wallet.']);
+        }
+
+        $params = $request->except(['_token', 'branch_id']);
+        $board = $this->boardFromService($service);
+
+        $result = $this->resultVerificationEngine->verify(
+            user: $request->user(),
+            board: $board,
+            params: $params,
+            source: 'web',
+            ipAddress: $request->ip(),
+            branch: $branch,
+        );
+
+        if ($result->isSuccessful()) {
+            $verification = VerificationRequest::query()
+                ->where('user_id', $request->user()->id)
+                ->where('verification_service_id', $service->id)
+                ->latest('id')
+                ->first();
+
+            return Inertia::render('Customer/Verification/Result', [
+                'service' => tap($service, fn (VerificationService $service) => $this->applyResultBoardDisplayName($service)),
+                'result' => $result->toArray(),
+                'searchParameter' => $verification?->search_parameter ?? $this->resultSearchParameter($board, $params),
+                'verification' => $verification,
+            ]);
+        }
+
+        return back()->withErrors(['result' => $result->getErrorMessage() ?? 'Result verification failed. Please try again.']);
+    }
+
+    private function isResultBoardFetchService(VerificationService $service): bool
+    {
+        return (bool) preg_match('/^[a-z0-9-]+-result-fetch$/', $service->slug);
+    }
+
+    private function boardFromService(VerificationService $service): string
+    {
+        return preg_replace('/-result-fetch$/', '', $service->slug);
+    }
+
+    private function applyResultBoardDisplayName(VerificationService $service): void
+    {
+        if (!$this->isResultBoardFetchService($service)) {
+            return;
+        }
+
+        $board = strtoupper($this->boardFromService($service));
+        $service->name = "{$board} Result Verification";
+        $service->description = "Check {$board} result using the board result checker details.";
+    }
+
+    private function resultSearchParameter(string $board, array $params): string
+    {
+        return match ($board) {
+            'waec' => trim((string) ($params['txtExamNumber'] ?? $params['ExamNumber'] ?? '')),
+            'neco' => trim((string) ($params['reg_no'] ?? $params['exam_number'] ?? '')),
+            'nbais' => trim((string) ($params['exam_no'] ?? $params['exam_number'] ?? '')),
+            'nabteb' => trim((string) ($params['candid'] ?? $params['candidate_number'] ?? '')),
+            default => '',
+        };
     }
 }

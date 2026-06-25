@@ -41,4 +41,14 @@ return [
         'base_url' => env('PAYSTACK_BASE_URL', 'https://api.paystack.co'),
     ],
 
+    'nabteb' => [
+        'latest_year' => env('NABTEB_LATEST_YEAR', 2025),
+    ],
+
+    'naija_result_pins' => [
+        'base_url' => env('NAIJA_RESULT_PINS_BASE_URL', 'https://www.naijaresultpins.com/api/v1'),
+        'token' => env('NAIJA_RESULT_PINS_TOKEN'),
+        'timeout' => env('NAIJA_RESULT_PINS_TIMEOUT', 45),
+    ],
+
 ];

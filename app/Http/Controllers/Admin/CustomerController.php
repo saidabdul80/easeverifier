@@ -7,6 +7,8 @@ use App\Models\Customer;
 use App\Models\User;
 use App\Models\VerificationService;
 use App\Models\CustomerServicePricing;
+use App\Models\CustomerResultPinPricing;
+use App\Models\ResultPinProduct;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -116,12 +118,17 @@ class CustomerController extends Controller
         $services = VerificationService::active()->get();
         $customPricing = $customer->customPricing()->with('verificationService')->get()
             ->keyBy('verification_service_id');
+        $resultPinProducts = ResultPinProduct::active()->ordered()->get();
+        $resultPinPricing = $customer->resultPinPricing()->with('product')->get()
+            ->keyBy('result_pin_product_id');
 
         return Inertia::render('Admin/Customers/Show', [
             'customer' => $customer,
             'verificationStats' => $verificationStats,
             'services' => $services,
             'customPricing' => $customPricing,
+            'resultPinProducts' => $resultPinProducts,
+            'resultPinPricing' => $resultPinPricing,
         ]);
     }
 
@@ -200,5 +207,23 @@ class CustomerController extends Controller
         );
 
         return back()->with('success', 'Pricing updated successfully.');
+    }
+
+    public function updateResultPinPricing(Request $request, User $customer)
+    {
+        $validated = $request->validate([
+            'product_id' => 'required|exists:result_pin_products,id',
+            'price' => 'required|numeric|min:0',
+        ]);
+
+        CustomerResultPinPricing::updateOrCreate(
+            [
+                'user_id' => $customer->id,
+                'result_pin_product_id' => $validated['product_id'],
+            ],
+            ['price' => $validated['price'], 'is_active' => true],
+        );
+
+        return back()->with('success', 'Result PIN pricing updated successfully.');
     }
 }

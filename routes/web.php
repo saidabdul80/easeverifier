@@ -14,11 +14,14 @@ use App\Http\Controllers\Admin\TransactionController as AdminTransactionControll
 use App\Http\Controllers\Admin\VerificationController as AdminVerificationController;
 use App\Http\Controllers\Admin\BlogController as AdminBlogController;
 use App\Http\Controllers\Admin\CampaignEmailController as AdminCampaignEmailController;
+use App\Http\Controllers\Admin\ResultPinController as AdminResultPinController;
 use App\Http\Controllers\Auth\EmailOtpVerificationController;
 use App\Http\Controllers\BlogController;
+use App\Http\Controllers\PublicResultPinController;
 
 use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
 use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
+use App\Http\Controllers\Customer\ResultPinController as CustomerResultPinController;
 use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
 use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
 use App\Http\Controllers\Customer\ApiKeyController;
@@ -48,6 +51,9 @@ Route::get('/', function () {
             ->orderByDesc('views')
             ->limit(3)
             ->get(),
+        'resultPinProducts' => \App\Models\ResultPinProduct::active()
+            ->ordered()
+            ->get(['id', 'name', 'board', 'price']),
     ]);
 })->name('home');
 
@@ -69,6 +75,13 @@ Route::get('/pricing', function () {
         'services' => $services,
     ]);
 })->name('pricing');
+
+Route::get('/result-pins', [PublicResultPinController::class, 'index'])->name('public.result-pins.index');
+Route::post('/result-pins/purchase', [PublicResultPinController::class, 'purchase'])->name('public.result-pins.purchase');
+Route::get('/result-pins/callback', [PublicResultPinController::class, 'callback'])->name('public.result-pins.callback');
+Route::get('/result-pins/login', [PublicResultPinController::class, 'login'])->name('public.result-pins.login');
+Route::post('/result-pins/login', [PublicResultPinController::class, 'loginWithEmail'])->name('public.result-pins.login.store');
+Route::get('/result-pins/orders/{order:reference}', [PublicResultPinController::class, 'show'])->name('public.result-pins.show');
 
 Route::get('/documentation', function () {
     return Inertia::render('Documentation');
@@ -119,6 +132,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     // Customers
     Route::resource('customers', AdminCustomerController::class);
     Route::post('customers/{customer}/pricing', [AdminCustomerController::class, 'updatePricing'])->name('customers.pricing');
+    Route::post('customers/{customer}/result-pin-pricing', [AdminCustomerController::class, 'updateResultPinPricing'])->name('customers.result-pin-pricing');
 
     // Services
     Route::resource('services', AdminServiceController::class);
@@ -153,6 +167,12 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::get('campaign-emails', [AdminCampaignEmailController::class, 'index'])->name('campaign-emails.index');
     Route::get('campaign-emails/create', [AdminCampaignEmailController::class, 'create'])->name('campaign-emails.create');
     Route::post('campaign-emails', [AdminCampaignEmailController::class, 'store'])->name('campaign-emails.store');
+
+    // Result PINs
+    Route::get('result-pins', [AdminResultPinController::class, 'index'])->name('result-pins.index');
+    Route::post('result-pins/sync', [AdminResultPinController::class, 'sync'])->name('result-pins.sync');
+    Route::post('result-pins/purchase', [AdminResultPinController::class, 'purchase'])->name('result-pins.purchase');
+    Route::put('result-pins/products/{product}', [AdminResultPinController::class, 'updateProductPrice'])->name('result-pins.products.update');
 });
 
 // Customer Routes
@@ -161,6 +181,8 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
 
     // Verification
     Route::get('verify', [CustomerVerificationController::class, 'index'])->name('verification.index');
+    Route::get('verify/{service}/form-fields', [CustomerVerificationController::class, 'resultFormFields'])->name('verification.result-form');
+    Route::get('verify/{service}/schools', [CustomerVerificationController::class, 'resultSchools'])->name('verification.result-schools');
     Route::get('verify/{service}', [CustomerVerificationController::class, 'show'])->name('verification.show');
     Route::post('verify/{service}', [CustomerVerificationController::class, 'verify'])->name('verification.verify');
     Route::get('history', [CustomerVerificationController::class, 'history'])->name('verification.history');
@@ -168,6 +190,11 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::get('history/{verification}', [CustomerVerificationController::class, 'showResult'])->name('verification.result');
     Route::get('verification/{verification}', [CustomerVerificationController::class, 'showResult'])->name('verification.show-result');
     Route::get('verification/{verification}/download', [CustomerVerificationController::class, 'download'])->name('verification.download');
+
+    // Result PINs
+    Route::get('result-pins', [CustomerResultPinController::class, 'index'])->name('result-pins.index');
+    Route::post('result-pins/purchase', [CustomerResultPinController::class, 'purchase'])->name('result-pins.purchase');
+    Route::get('result-pins/{order}', [CustomerResultPinController::class, 'show'])->name('result-pins.show');
 
     // Wallet
     Route::get('wallet', [CustomerWalletController::class, 'index'])->name('wallet.index');

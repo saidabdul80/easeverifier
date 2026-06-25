@@ -20,7 +20,9 @@ class Transaction extends Model
         'category',
         'amount',
         'balance_before',
+        'bonus_balance_before',
         'balance_after',
+        'bonus_balance_after',
         'description',
         'metadata',
         'status',
@@ -31,7 +33,9 @@ class Transaction extends Model
         return [
             'amount' => 'decimal:2',
             'balance_before' => 'decimal:2',
+            'bonus_balance_before' => 'decimal:2',
             'balance_after' => 'decimal:2',
+            'bonus_balance_after' => 'decimal:2',
             'metadata' => 'array',
         ];
     }
@@ -114,4 +118,3 @@ class Transaction extends Model
         return $this->wallet->refundTransaction($this, $description);
     }
 }
-

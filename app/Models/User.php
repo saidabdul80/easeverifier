@@ -113,6 +113,16 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(Transaction::class);
     }
 
+    public function resultPinOrders(): HasMany
+    {
+        return $this->hasMany(ResultPinOrder::class);
+    }
+
+    public function resultPinPricing(): HasMany
+    {
+        return $this->hasMany(CustomerResultPinPricing::class);
+    }
+
     /**
      * Get all verification requests for the user.
      */

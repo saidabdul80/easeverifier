@@ -16,6 +16,7 @@ const navItems = [
     { title: 'Dashboard', icon: 'mdi-view-dashboard', route: '/admin' },
     { title: 'Customers', icon: 'mdi-account-group', route: '/admin/customers' },
     { title: 'Services', icon: 'mdi-cog-outline', route: '/admin/services' },
+    { title: 'Result PINs', icon: 'mdi-card-account-details-star-outline', route: '/admin/result-pins' },
     { title: 'Blog', icon: 'mdi-post', route: '/admin/blog' },
     { title: 'Campaign Emails', icon: 'mdi-email-multiple-outline', route: '/admin/campaign-emails' },
     { title: 'Wallets', icon: 'mdi-wallet', route: '/admin/wallets' },

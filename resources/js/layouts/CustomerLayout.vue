@@ -17,6 +17,7 @@ const rail = ref(false);
 const navItems = [
     { title: 'Dashboard', icon: 'mdi-view-dashboard', route: '/customer' },
     { title: 'Verify', icon: 'mdi-shield-check', route: '/customer/verify' },
+    { title: 'Result PINs', icon: 'mdi-card-account-details-star-outline', route: '/customer/result-pins' },
     { title: 'History', icon: 'mdi-history', route: '/customer/history' },
     { title: 'Wallet', icon: 'mdi-wallet', route: '/customer/wallet' },
     { title: 'Branches', icon: 'mdi-source-branch', route: '/customer/branches' },

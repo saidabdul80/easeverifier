@@ -104,6 +104,95 @@ class VerificationServicesSeeder extends Seeder
             'is_active' => false,
             'sort_order' => 5,
         ]);
+
+        $resultServices = [
+            [
+                'name' => 'WAEC Result Form',
+                'slug' => 'waec-result-form',
+                'description' => 'Retrieve WAEC result checker form metadata and supported input fields.',
+                'icon' => 'mdi-form-select',
+                'default_price' => 0.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 20,
+            ],
+            [
+                'name' => 'WAEC Result Fetch',
+                'slug' => 'waec-result-fetch',
+                'description' => 'Fetch and parse WAEC candidate result details from supplied checker credentials.',
+                'icon' => 'mdi-certificate',
+                'default_price' => 100.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 21,
+            ],
+            [
+                'name' => 'NECO Result Form',
+                'slug' => 'neco-result-form',
+                'description' => 'Retrieve NECO result checker form metadata and supported input fields.',
+                'icon' => 'mdi-form-select',
+                'default_price' => 0.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 22,
+            ],
+            [
+                'name' => 'NECO Result Fetch',
+                'slug' => 'neco-result-fetch',
+                'description' => 'Fetch and parse NECO candidate result details from supplied checker credentials.',
+                'icon' => 'mdi-certificate',
+                'default_price' => 100.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 23,
+            ],
+            [
+                'name' => 'NBAIS Result Form',
+                'slug' => 'nbais-result-form',
+                'description' => 'Retrieve NBAIS result checker form metadata and supported input fields.',
+                'icon' => 'mdi-form-select',
+                'default_price' => 0.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 24,
+            ],
+            [
+                'name' => 'NBAIS Result Fetch',
+                'slug' => 'nbais-result-fetch',
+                'description' => 'Fetch and parse NBAIS candidate result details from supplied examination details.',
+                'icon' => 'mdi-certificate',
+                'default_price' => 100.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 25,
+            ],
+            [
+                'name' => 'NABTEB Result Form',
+                'slug' => 'nabteb-result-form',
+                'description' => 'Retrieve NABTEB eWorld result checker form metadata and supported input fields.',
+                'icon' => 'mdi-form-select',
+                'default_price' => 0.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 26,
+            ],
+            [
+                'name' => 'NABTEB Result Fetch',
+                'slug' => 'nabteb-result-fetch',
+                'description' => 'Fetch and parse NABTEB eWorld result details from supplied checker credentials.',
+                'icon' => 'mdi-certificate',
+                'default_price' => 100.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 27,
+            ],
+        ];
+
+        foreach ($resultServices as $service) {
+            VerificationService::updateOrCreate(
+                ['slug' => $service['slug']],
+                $service,
+            );
+        }
     }
 }
-

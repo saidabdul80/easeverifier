@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 const props = defineProps<{
     user: { name: string; email: string };
@@ -9,19 +9,40 @@ const props = defineProps<{
     price: number;
     walletBalance: number;
     branches?: Array<{ id: number; name: string; code: string; wallet_balance: number }>;
+    isResultBoard?: boolean;
+    resultBoard?: string | null;
+    formEndpoint?: string | null;
 }>();
 
 const form = useForm({ search_parameter: '', branch_id: null as number | null });
+const resultForm = useForm<Record<string, any>>({ branch_id: null });
 const loading = ref(false);
+const loadingFields = ref(false);
+const resultFields = ref<any[]>([]);
+const fieldOptions = ref<Record<string, any[]>>({});
+const fieldLoadError = ref<string | null>(null);
+const resultSubmitError = ref<string | null>(null);
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 
+const chargeBranchId = computed({
+    get: () => props.isResultBoard ? resultForm.branch_id : form.branch_id,
+    set: (value) => {
+        if (props.isResultBoard) {
+            resultForm.branch_id = value;
+            return;
+        }
+
+        form.branch_id = value;
+    },
+});
+
 const activeWalletBalance = computed(() => {
-    if (!form.branch_id) {
+    if (!chargeBranchId.value) {
         return props.walletBalance;
     }
 
-    return props.branches?.find((branch) => branch.id === form.branch_id)?.wallet_balance || 0;
+    return props.branches?.find((branch) => branch.id === chargeBranchId.value)?.wallet_balance || 0;
 });
 
 const canVerify = () => activeWalletBalance.value >= props.price;
@@ -37,9 +58,118 @@ const getPlaceholder = () => {
     return placeholders[props.service.slug] || 'Enter search parameter';
 };
 
+const normalizeOptions = (options?: any[]) => (options || []).map((option) => ({
+    title: option.title ?? option.label ?? option.name ?? option.value ?? option.id,
+    value: option.value ?? option.id ?? option.name ?? option.label,
+}));
+
+const optionsForField = (field: any) => normalizeOptions(fieldOptions.value[field.name] || field.options);
+
+const resultFormIsComplete = computed(() => {
+    if (!props.isResultBoard || !resultFields.value.length) {
+        return false;
+    }
+
+    return resultFields.value.every((field) => {
+        if (!field.required) {
+            return true;
+        }
+
+        const value = resultForm[field.name];
+        return value !== null && value !== undefined && String(value).trim() !== '';
+    });
+});
+
+const resultFormError = computed(() => resultSubmitError.value || (resultForm.errors as Record<string, string>).result);
+
+const fieldError = (field: any) => (resultForm.errors as Record<string, string>)[field.name];
+
+const loadDependentOptions = async (field: any) => {
+    if (!field.options_endpoint || !field.depends_on) return;
+
+    const parentValue = resultForm[field.depends_on];
+    resultForm[field.name] = '';
+    fieldOptions.value[field.name] = [];
+
+    if (!parentValue) return;
+
+    const params = new URLSearchParams({ [field.depends_on]: String(parentValue) });
+    const response = await fetch(`${field.options_endpoint}?${params.toString()}`, {
+        headers: { Accept: 'application/json' },
+    });
+    const payload = await response.json();
+
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.error || 'Unable to load options.');
+    }
+
+    fieldOptions.value[field.name] = payload.data || [];
+};
+
+const loadResultFields = async () => {
+    if (!props.isResultBoard || !props.formEndpoint) return;
+
+    loadingFields.value = true;
+    fieldLoadError.value = null;
+
+    try {
+        const response = await fetch(props.formEndpoint, {
+            headers: { Accept: 'application/json' },
+        });
+        const payload = await response.json();
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.error || 'Unable to load result fields.');
+        }
+
+        resultFields.value = payload.data.fields || [];
+
+        resultFields.value.forEach((field) => {
+            if (resultForm[field.name] === undefined) {
+                resultForm[field.name] = '';
+            }
+        });
+    } catch (error) {
+        fieldLoadError.value = error instanceof Error ? error.message : 'Unable to load result fields.';
+    } finally {
+        loadingFields.value = false;
+    }
+};
+
+const resultPayload = () => {
+    const payload: Record<string, any> = {
+        branch_id: resultForm.branch_id,
+    };
+
+    resultFields.value.forEach((field) => {
+        payload[field.name] = resultForm[field.name];
+    });
+
+    return payload;
+};
+
 const submit = () => {
     if (!canVerify()) return;
     loading.value = true;
+
+    if (props.isResultBoard) {
+        resultSubmitError.value = null;
+
+        resultForm
+            .transform(() => resultPayload())
+            .post(`/customer/verify/${props.service.id}`, {
+                preserveScroll: true,
+                onFinish: () => loading.value = false,
+                onSuccess: () => resultSubmitError.value = null,
+                onError: (errors) => {
+                    resultSubmitError.value = (errors.result || Object.values(errors)[0] || 'Result verification failed. Please try again.') as string;
+                    console.error('Form errors:', errors);
+                },
+            });
+
+        return;
+    }
+
     form.post(`/customer/verify/${props.service.id}`, {
         preserveScroll: true,
         onFinish: () => loading.value = false,
@@ -48,6 +178,23 @@ const submit = () => {
         },
     });
 };
+
+onMounted(loadResultFields);
+
+watch(
+    () => resultFields.value.map((field) => field.depends_on ? resultForm[field.depends_on] : null),
+    async () => {
+        for (const field of resultFields.value) {
+            if (field.depends_on && field.options_endpoint) {
+                try {
+                    await loadDependentOptions(field);
+                } catch (error) {
+                    fieldLoadError.value = error instanceof Error ? error.message : 'Unable to load options.';
+                }
+            }
+        }
+    },
+);
 </script>
 
 <template>
@@ -80,7 +227,50 @@ const submit = () => {
                         </v-alert>
 
                         <v-form @submit.prevent="submit">
+                            <template v-if="isResultBoard">
+                                <v-alert v-if="fieldLoadError" type="error" variant="tonal" class="mb-4">
+                                    {{ fieldLoadError }}
+                                </v-alert>
+
+                                <v-alert v-if="resultFormError" type="error" variant="tonal" class="mb-4">
+                                    {{ resultFormError }}
+                                </v-alert>
+
+                                <v-progress-linear v-if="loadingFields" indeterminate color="primary" class="mb-4" />
+
+                                <template v-else>
+                                    <template v-for="field in resultFields" :key="field.name">
+                                        <v-autocomplete
+                                            v-if="field.type === 'select'"
+                                            v-model="resultForm[field.name]"
+                                            :items="optionsForField(field)"
+                                            item-title="title"
+                                            item-value="value"
+                                            :label="field.label"
+                                            variant="outlined"
+                                            clearable
+                                            auto-select-first
+                                            no-data-text="No matching option found"
+                                            :disabled="!!field.depends_on && !resultForm[field.depends_on]"
+                                            :error-messages="fieldError(field)"
+                                            class="mb-4"
+                                        />
+
+                                        <v-text-field
+                                            v-else
+                                            v-model="resultForm[field.name]"
+                                            :label="field.label"
+                                            :type="field.type || 'text'"
+                                            variant="outlined"
+                                            :error-messages="fieldError(field)"
+                                            class="mb-4"
+                                        />
+                                    </template>
+                                </template>
+                            </template>
+
                             <v-text-field
+                                v-else
                                 v-model="form.search_parameter"
                                 :label="service.name + ' Number'"
                                 :placeholder="getPlaceholder()"
@@ -90,12 +280,13 @@ const submit = () => {
                                 class="mb-4"
                             />
 
-                            <v-select
+                            <v-autocomplete
                                 v-if="branches?.length"
-                                v-model="form.branch_id"
+                                v-model="chargeBranchId"
                                 :items="[{ title: 'Primary account wallet', value: null }, ...branches.map(branch => ({ title: `${branch.name} (${formatCurrency(branch.wallet_balance)})`, value: branch.id }))]"
                                 label="Charge wallet"
                                 variant="outlined"
+                                auto-select-first
                                 class="mb-4"
                             />
 
@@ -108,11 +299,11 @@ const submit = () => {
                                 color="primary"
                                 size="large"
                                 block
-                                :loading="loading || form.processing"
-                                :disabled="!canVerify() || !form.search_parameter"
+                                :loading="loading || form.processing || resultForm.processing"
+                                :disabled="!canVerify() || (isResultBoard ? !resultFormIsComplete : !form.search_parameter) || loadingFields"
                             >
                                 <v-icon start>mdi-shield-search</v-icon>
-                                Verify Now
+                                {{ isResultBoard ? 'Check Result' : 'Verify Now' }}
                             </v-btn>
                         </v-form>
                     </v-card-text>
