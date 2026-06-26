@@ -77,10 +77,12 @@ Route::get('/pricing', function () {
 })->name('pricing');
 
 Route::get('/result-pins', [PublicResultPinController::class, 'index'])->name('public.result-pins.index');
+Route::get('/result-pins/kit/{referralCode}/{email?}', [PublicResultPinController::class, 'kit'])->name('public.result-pins.kit');
 Route::post('/result-pins/purchase', [PublicResultPinController::class, 'purchase'])->name('public.result-pins.purchase');
 Route::get('/result-pins/callback', [PublicResultPinController::class, 'callback'])->name('public.result-pins.callback');
 Route::get('/result-pins/login', [PublicResultPinController::class, 'login'])->name('public.result-pins.login');
 Route::post('/result-pins/login', [PublicResultPinController::class, 'loginWithEmail'])->name('public.result-pins.login.store');
+Route::get('/result-pins/my-pins', [PublicResultPinController::class, 'orders'])->name('public.result-pins.orders');
 Route::get('/result-pins/orders/{order:reference}', [PublicResultPinController::class, 'show'])->name('public.result-pins.show');
 
 Route::get('/documentation', function () {
@@ -133,6 +135,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::resource('customers', AdminCustomerController::class);
     Route::post('customers/{customer}/pricing', [AdminCustomerController::class, 'updatePricing'])->name('customers.pricing');
     Route::post('customers/{customer}/result-pin-pricing', [AdminCustomerController::class, 'updateResultPinPricing'])->name('customers.result-pin-pricing');
+    Route::post('customers/{customer}/result-fetch-access', [AdminCustomerController::class, 'updateResultFetchAccess'])->name('customers.result-fetch-access');
 
     // Services
     Route::resource('services', AdminServiceController::class);

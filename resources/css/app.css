@@ -89,6 +89,20 @@
     }
 }
 
+#nprogress {
+    pointer-events: none;
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    z-index: 99999;
+}
+
+#nprogress .bar {
+    height: 3px;
+    background: linear-gradient(90deg, #f4c74c, #21c47b);
+    box-shadow: 0 0 14px rgba(244, 199, 76, 0.6);
+}
+
 :root {
     --background: hsl(0 0% 100%);
     --foreground: hsl(0 0% 3.9%);

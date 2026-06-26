@@ -110,6 +110,7 @@ class ResultVerificationController extends Controller
         return match ($errorCode) {
             'UNSUPPORTED_RESULT_BOARD' => 404,
             'VALIDATION_ERROR' => 422,
+            'RESULT_FETCH_DISABLED' => 403,
             'INSUFFICIENT_FUNDS' => 402,
             default => 400,
         };

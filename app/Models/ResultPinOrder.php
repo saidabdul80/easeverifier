@@ -16,11 +16,15 @@ class ResultPinOrder extends Model
         'branch_id',
         'result_pin_product_id',
         'transaction_id',
+        'referred_by_user_id',
+        'referral_bonus_transaction_id',
         'reference',
         'channel',
+        'referral_code',
         'quantity',
         'unit_price',
         'total_amount',
+        'referral_bonus_amount',
         'provider_amount',
         'provider',
         'provider_reference',
@@ -40,6 +44,7 @@ class ResultPinOrder extends Model
             'quantity' => 'integer',
             'unit_price' => 'decimal:2',
             'total_amount' => 'decimal:2',
+            'referral_bonus_amount' => 'decimal:2',
             'provider_amount' => 'decimal:2',
             'pins' => 'array',
             'provider_response' => 'array',
@@ -70,6 +75,16 @@ class ResultPinOrder extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
+    }
+
+    public function referrer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'referred_by_user_id');
+    }
+
+    public function referralBonusTransaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class, 'referral_bonus_transaction_id');
     }
 
     public function markCompleted(array $providerResponse, array $pins): void

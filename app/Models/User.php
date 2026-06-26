@@ -168,6 +168,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $customPrice ? $customPrice->price : $service->default_price;
     }
 
+    public function hasResultFetchAccess(): bool
+    {
+        return $this->customer?->hasResultFetchAccess() ?? true;
+    }
+
     public function sendEmailVerificationNotification(): void
     {
         $otp = $this->generateEmailVerificationOtp();

@@ -67,6 +67,10 @@ class ResultVerificationEngine
             return VerificationResult::failure($exception->getMessage(), 'UNSUPPORTED_RESULT_BOARD');
         }
 
+        if (! $this->userCanAccessResultFetch($user)) {
+            return VerificationResult::failure('Result board verification is not enabled for this account.', 'RESULT_FETCH_DISABLED');
+        }
+
         $service = $this->serviceForBoardAction($board, 'form');
         if (!$service || !$service->is_active) {
             return VerificationResult::failure('Result form service is not available', 'SERVICE_UNAVAILABLE');
@@ -124,6 +128,10 @@ class ResultVerificationEngine
             $resultGate = $this->factory->create($board);
         } catch (InvalidArgumentException $exception) {
             return VerificationResult::failure($exception->getMessage(), 'UNSUPPORTED_RESULT_BOARD');
+        }
+
+        if (! $this->userCanAccessResultFetch($user)) {
+            return VerificationResult::failure('Result board verification is not enabled for this account.', 'RESULT_FETCH_DISABLED');
         }
 
         $missingFields = $this->missingRequiredFields($resultGate, $params);
@@ -358,6 +366,11 @@ class ResultVerificationEngine
         }
 
         return $missing;
+    }
+
+    protected function userCanAccessResultFetch(User $user): bool
+    {
+        return $user->hasResultFetchAccess();
     }
 
     protected function searchParameter(string $board, array $params): string

@@ -45,6 +45,8 @@ class Customer extends Model
         'api_secret',
         'webhook_url',
         'api_enabled',
+        'result_fetch_enabled',
+        'referral_code',
         'rate_limit',
         'allowed_ips',
         'metadata',
@@ -54,6 +56,7 @@ class Customer extends Model
     {
         return [
             'api_enabled' => 'boolean',
+            'result_fetch_enabled' => 'boolean',
             'rate_limit' => 'integer',
             'allowed_ips' => 'array',
             'metadata' => 'array',
@@ -65,6 +68,12 @@ class Customer extends Model
      */
     protected static function booted(): void
     {
+        static::creating(function (Customer $customer) {
+            if (blank($customer->referral_code)) {
+                $customer->referral_code = static::generateReferralCode();
+            }
+        });
+
         static::created(function (Customer $customer) {
             // Create wallet for new customer
             $customer->user->wallet()->create([
@@ -146,6 +155,31 @@ class Customer extends Model
     public function hasApiAccess(): bool
     {
         return $this->api_enabled && $this->api_key !== null;
+    }
+
+    public function hasResultFetchAccess(): bool
+    {
+        return $this->result_fetch_enabled !== false;
+    }
+
+    public static function generateReferralCode(): string
+    {
+        do {
+            $code = 'EVR-' . strtoupper(Str::random(8));
+        } while (static::where('referral_code', $code)->exists());
+
+        return $code;
+    }
+
+    public function referralLink(?string $email = null): string
+    {
+        $path = '/result-pins/kit/' . $this->referral_code;
+
+        if ($email) {
+            $path .= '/' . rawurlencode($email);
+        }
+
+        return url($path);
     }
 
     /**

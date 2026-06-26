@@ -17,6 +17,9 @@ const pricingDialog = ref(false);
 const pricingForm = useForm({ service_id: null, price: 0 });
 const resultPinPricingDialog = ref(false);
 const resultPinPricingForm = useForm({ product_id: null, price: 0 });
+const resultFetchAccessForm = useForm({
+    enabled: props.customer.customer?.result_fetch_enabled ?? true,
+});
 
 const openPricingDialog = (service: any) => {
     pricingForm.service_id = service.id;
@@ -39,6 +42,12 @@ const openResultPinPricingDialog = (product: any) => {
 const submitResultPinPricing = () => {
     resultPinPricingForm.post(`/admin/customers/${props.customer.id}/result-pin-pricing`, {
         onSuccess: () => { resultPinPricingDialog.value = false; }
+    });
+};
+
+const submitResultFetchAccess = () => {
+    resultFetchAccessForm.post(`/admin/customers/${props.customer.id}/result-fetch-access`, {
+        preserveScroll: true,
     });
 };
 
@@ -85,6 +94,30 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                         <p class="text-overline opacity-80">Wallet Balance</p>
                         <p class="text-h4 font-weight-bold mb-2">{{ formatCurrency(customer.wallet?.balance) }}</p>
                         <p class="text-caption opacity-80">Bonus: {{ formatCurrency(customer.wallet?.bonus_balance) }}</p>
+                    </v-card-text>
+                </v-card>
+
+                <v-card class="mt-4">
+                    <v-card-title>Feature Access</v-card-title>
+                    <v-card-text>
+                        <div class="d-flex align-start ga-3">
+                            <v-icon color="primary" size="28">mdi-certificate-outline</v-icon>
+                            <div class="flex-grow-1">
+                                <div class="font-weight-bold">Result Board Fetch</div>
+                                <p class="text-body-2 text-grey mb-3">
+                                    Controls whether this customer can see and use WAEC, NECO, NABTEB, and NBAIS result fetch services.
+                                </p>
+                                <v-switch
+                                    v-model="resultFetchAccessForm.enabled"
+                                    color="primary"
+                                    inset
+                                    hide-details
+                                    :label="resultFetchAccessForm.enabled ? 'Enabled' : 'Disabled'"
+                                    :disabled="resultFetchAccessForm.processing"
+                                    @change="submitResultFetchAccess"
+                                />
+                            </div>
+                        </div>
                     </v-card-text>
                 </v-card>
             </v-col>

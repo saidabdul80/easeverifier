@@ -226,4 +226,22 @@ class CustomerController extends Controller
 
         return back()->with('success', 'Result PIN pricing updated successfully.');
     }
+
+    public function updateResultFetchAccess(Request $request, User $customer)
+    {
+        $validated = $request->validate([
+            'enabled' => 'required|boolean',
+        ]);
+
+        $profile = $customer->customer()->firstOrNew(['user_id' => $customer->id]);
+        $profile->result_fetch_enabled = $validated['enabled'];
+
+        if (!$profile->account_type) {
+            $profile->account_type = 'individual';
+        }
+
+        $profile->save();
+
+        return back()->with('success', 'Result board fetch access updated successfully.');
+    }
 }

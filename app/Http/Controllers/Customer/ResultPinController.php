@@ -20,6 +20,14 @@ class ResultPinController extends Controller
     {
         $this->purchaseService->syncProviderProductsSafely();
 
+        $customer = $request->user()->customer;
+        if ($customer && blank($customer->referral_code)) {
+            $customer->forceFill(['referral_code' => \App\Models\Customer::generateReferralCode()])->save();
+        }
+
+        $this->purchaseService->creditPendingReferralBonusesForUser($request->user());
+        $request->user()->load('wallet');
+
         return Inertia::render('Customer/ResultPins/Index', [
             'products' => ResultPinProduct::active()
                 ->ordered()
@@ -33,6 +41,17 @@ class ResultPinController extends Controller
                 ->latest()
                 ->paginate(15),
             'walletBalance' => $request->user()->wallet?->total_balance ?? 0,
+            'referral' => [
+                'code' => $customer?->referral_code,
+                'link' => $customer?->referralLink(),
+                'bonus_amount' => ResultPinPurchaseService::REFERRAL_BONUS_AMOUNT,
+                'completed_orders' => ResultPinOrder::where('referred_by_user_id', $request->user()->id)
+                    ->where('status', 'completed')
+                    ->count(),
+                'total_earned' => (float) ResultPinOrder::where('referred_by_user_id', $request->user()->id)
+                    ->where('status', 'completed')
+                    ->sum('referral_bonus_amount'),
+            ],
         ]);
     }
 

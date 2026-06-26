@@ -31,6 +31,39 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
     currency: 'NGN',
     minimumFractionDigits: 0,
 }).format(amount || 0);
+
+const downloadPins = () => {
+    if (!props.order.pins?.length) {
+        return;
+    }
+
+    const lines = [
+        'EaseVerifier Result PINs',
+        `Product: ${props.order.product?.name || '-'}`,
+        `Order reference: ${props.order.reference}`,
+        `Buyer email: ${props.order.buyer_email || '-'}`,
+        `Buyer phone: ${props.order.buyer_phone || '-'}`,
+        `Amount paid: ${formatCurrency(Number(props.order.total_amount || 0))}`,
+        '',
+        ...props.order.pins.flatMap((pin: any, index: number) => [
+            `PIN ${index + 1}`,
+            `PIN: ${pin.pin || '-'}`,
+            `Serial Number: ${pin.serial_no || '-'}`,
+            '',
+        ]),
+    ];
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+
+    anchor.href = url;
+    anchor.download = `${props.order.reference}-pins.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+};
 </script>
 
 <template>
@@ -46,7 +79,7 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
                     <span class="text-h6 font-weight-bold brand-text">EaseVerifier</span>
                 </Link>
                 <v-spacer />
-                <v-btn variant="text" color="primary" href="/result-pins/login">My PINs</v-btn>
+                <v-btn variant="text" color="primary" href="/result-pins/my-pins">My PINs</v-btn>
                 <v-btn variant="outlined" color="secondary" href="/result-pins">Buy More</v-btn>
             </v-container>
         </v-app-bar>
@@ -59,7 +92,7 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
                     </v-icon>
                     <div>
                         <p class="success-kicker">{{ order.status === 'completed' ? 'Payment confirmed' : 'Order status' }}</p>
-                        <h1>{{ order.status === 'completed' ? 'Your result PINs are ready.' : order.product?.name }}</h1>
+                        <h1>{{ order.status === 'completed' ? 'Your result PINs' : order.product?.name }}</h1>
                         <span>Order reference: {{ order.reference }}</span>
                     </div>
                     <v-spacer />
@@ -79,9 +112,20 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
                             <div class="section-heading">
                                 <div>
                                     <p>Your purchased PINs</p>
-                                    <h2>Use these details on the result checker portal.</h2>
+                                    <h3>{{ order.product?.name }}</h3>
                                 </div>
-                                <v-chip color="secondary" variant="flat">{{ order.quantity }} PIN{{ Number(order.quantity) === 1 ? '' : 's' }}</v-chip>
+                                <div class="section-actions">
+                                    <v-chip color="secondary" variant="flat">{{ order.quantity }} PIN{{ Number(order.quantity) === 1 ? '' : 's' }}</v-chip>
+                                    <v-btn
+                                        v-if="order.pins?.length"
+                                        color="primary"
+                                        variant="tonal"
+                                        prepend-icon="mdi-download"
+                                        @click="downloadPins"
+                                    >
+                                        Download TXT
+                                    </v-btn>
+                                </div>
                             </div>
 
                             <div v-if="order.pins?.length" class="pins-grid">
@@ -112,7 +156,6 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
                     <v-col cols="12" lg="4">
                         <aside class="summary-card">
                             <p class="summary-kicker">Order summary</p>
-                            <h3>{{ order.product?.name }}</h3>
                             <div class="summary-list">
                                 <div>
                                     <span>Email</span>
@@ -212,6 +255,20 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
     margin-bottom: 1.1rem;
 }
 
+.section-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.65rem;
+}
+
+.section-actions :deep(.v-btn) {
+    border-radius: 999px;
+    font-weight: 800;
+    text-transform: none;
+}
+
 .section-heading h2 {
     max-width: 28rem;
     margin: 0;
@@ -229,11 +286,10 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 
 .pin-card {
     padding: 1rem;
+    border: 1px solid rgba(22, 120, 62, 0.12);
     border-radius: 26px;
-    background:
-        radial-gradient(circle at 100% 0%, rgba(244, 199, 76, 0.22), transparent 34%),
-        linear-gradient(145deg, #0f3e20, #082716);
-    color: #fff;
+    background: #f5f9f2;
+    color: #102319;
 }
 
 .pin-card-top {
@@ -244,7 +300,7 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 }
 
 .pin-card-top span {
-    color: rgba(255, 255, 255, 0.68);
+    color: rgba(16, 35, 25, 0.62);
     font-size: 0.74rem;
     font-weight: 900;
     letter-spacing: 0.12em;
@@ -252,11 +308,14 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 }
 
 .credential-block {
-    display: grid;
-    gap: 0.45rem;
-    padding: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(22, 120, 62, 0.1);
     border-radius: 20px;
-    background: rgba(255, 255, 255, 0.08);
+    background: #fff;
 }
 
 .credential-block + .credential-block {
@@ -264,7 +323,9 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 }
 
 .credential-block small {
-    color: rgba(255, 255, 255, 0.58);
+    display: block;
+    margin-bottom: 0.2rem;
+    color: rgba(16, 35, 25, 0.62);
     font-weight: 900;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -272,9 +333,15 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 
 .credential-block strong {
     overflow-wrap: anywhere;
-    color: #f4c74c;
-    font-size: 1.35rem;
+    color: #0f3e20;
+    font-size: clamp(1.15rem, 2vw, 1.55rem);
     letter-spacing: 0.02em;
+}
+
+.credential-block :deep(.v-btn) {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    font-weight: 800;
 }
 
 .summary-card {
@@ -322,6 +389,11 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 @media (max-width: 600px) {
     .success-hero,
     .section-heading {
+        flex-direction: column;
+    }
+
+    .credential-block {
+        align-items: stretch;
         flex-direction: column;
     }
 }

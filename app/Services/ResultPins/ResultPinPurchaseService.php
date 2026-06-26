@@ -14,6 +14,8 @@ use Throwable;
 
 class ResultPinPurchaseService
 {
+    public const REFERRAL_BONUS_AMOUNT = 50.0;
+
     public function __construct(
         protected NaijaResultPinsClient $provider,
     ) {}
@@ -196,6 +198,81 @@ class ResultPinPurchaseService
     public function fulfillPaidGuestOrder(ResultPinOrder $order): ResultPinOrder
     {
         return $this->fulfillPaidProviderOrder($order);
+    }
+
+    public function creditReferralBonus(ResultPinOrder $order): ?Transaction
+    {
+        if (
+            $order->channel !== 'public' ||
+            $order->status !== 'completed' ||
+            !$order->referred_by_user_id ||
+            $order->referral_bonus_transaction_id
+        ) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($order) {
+            $lockedOrder = ResultPinOrder::where('id', $order->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedOrder->referral_bonus_transaction_id || $lockedOrder->status !== 'completed') {
+                return $lockedOrder->referralBonusTransaction;
+            }
+
+            $referrer = User::with('wallet')->find($lockedOrder->referred_by_user_id);
+            $wallet = $referrer?->wallet;
+
+            if (!$wallet) {
+                return null;
+            }
+
+            $transaction = $wallet->credit(
+                self::REFERRAL_BONUS_AMOUNT,
+                'bonus',
+                'Result PIN referral bonus for order ' . $lockedOrder->reference,
+                [
+                    'service' => 'result_pin_referral',
+                    'order_id' => $lockedOrder->id,
+                    'order_reference' => $lockedOrder->reference,
+                    'buyer_email' => $lockedOrder->buyer_email,
+                    'referral_code' => $lockedOrder->referral_code,
+                ],
+            );
+
+            $lockedOrder->update([
+                'referral_bonus_amount' => self::REFERRAL_BONUS_AMOUNT,
+                'referral_bonus_transaction_id' => $transaction->id,
+            ]);
+
+            return $transaction;
+        });
+    }
+
+    public function creditPendingReferralBonusesForUser(User $user): int
+    {
+        $credited = 0;
+
+        ResultPinOrder::query()
+            ->where('channel', 'public')
+            ->where('status', 'completed')
+            ->where('referred_by_user_id', $user->id)
+            ->whereNull('referral_bonus_transaction_id')
+            ->orderBy('id')
+            ->get()
+            ->each(function (ResultPinOrder $order) use (&$credited) {
+                try {
+                    if ($this->creditReferralBonus($order)) {
+                        $credited++;
+                    }
+                } catch (Throwable $exception) {
+                    Log::warning('Pending result PIN referral bonus repair failed.', [
+                        'order_id' => $order->id,
+                        'order_reference' => $order->reference,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            });
+
+        return $credited;
     }
 
     public function fulfillPaidProviderOrder(ResultPinOrder $order): ResultPinOrder

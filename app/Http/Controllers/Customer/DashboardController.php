@@ -99,7 +99,11 @@ class DashboardController extends Controller
             ->take(5)
             ->get();
 
-        $services = VerificationService::active()->ordered()->get()
+        $services = VerificationService::active()
+            ->where('slug', 'not like', '%-result-form')
+            ->when(! $user->hasResultFetchAccess(), fn ($query) => $query->where('slug', 'not like', '%-result-fetch'))
+            ->ordered()
+            ->get()
             ->map(function ($service) use ($user) {
                 $service->price = $user->getPriceForService($service);
                 return $service;

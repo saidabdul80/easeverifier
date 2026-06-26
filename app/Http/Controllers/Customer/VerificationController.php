@@ -29,6 +29,7 @@ class VerificationController extends Controller
     {
         $services = VerificationService::active()
             ->where('slug', 'not like', '%-result-form')
+            ->when(! $request->user()->hasResultFetchAccess(), fn (Builder $query) => $query->where('slug', 'not like', '%-result-fetch'))
             ->ordered()
             ->get()
             ->map(function ($service) use ($request) {
@@ -50,6 +51,11 @@ class VerificationController extends Controller
         }
 
         $isResultBoard = $this->isResultBoardFetchService($service);
+        if ($isResultBoard && ! $request->user()->hasResultFetchAccess()) {
+            return redirect()->route('customer.verification.index')
+                ->with('error', 'Result board verification is not enabled for your account.');
+        }
+
         $this->applyResultBoardDisplayName($service);
 
         $price = $request->user()->getPriceForService($service);
@@ -146,6 +152,7 @@ class VerificationController extends Controller
     public function resultFormFields(VerificationService $service): JsonResponse
     {
         abort_unless($service->is_active && $this->isResultBoardFetchService($service), 404);
+        abort_unless(request()->user()?->hasResultFetchAccess(), 403);
 
         $board = $this->boardFromService($service);
         $fields = $this->resultFactory->create($board)->formFields();
@@ -174,6 +181,7 @@ class VerificationController extends Controller
     public function resultSchools(Request $request, VerificationService $service, NbaisResult $nbaisResult): JsonResponse
     {
         abort_unless($service->is_active && $this->boardFromService($service) === 'nbais', 404);
+        abort_unless($request->user()->hasResultFetchAccess(), 403);
 
         $validated = $request->validate([
             'parent_cat' => 'required|string|max:10',
@@ -323,6 +331,10 @@ class VerificationController extends Controller
 
     private function verifyResultBoard(Request $request, VerificationService $service)
     {
+        if (! $request->user()->hasResultFetchAccess()) {
+            return back()->withErrors(['result' => 'Result board verification is not enabled for your account.']);
+        }
+
         $validated = $request->validate([
             'branch_id' => 'nullable|integer',
         ]);
