@@ -217,7 +217,7 @@ const copyToClipboard = async (text: string) => {
                     </v-card-title>
                     <v-card-text>
                         <p class="text-body-2 text-grey mb-4">Learn how to integrate EaseVerifier API into your application.</p>
-                        <v-btn variant="outlined" href="/documentation" target="_blank">View Documentation</v-btn>
+                        <v-btn variant="outlined" href="/customer/api/documentation">View Documentation</v-btn>
                     </v-card-text>
                 </v-card>
             </v-col>
