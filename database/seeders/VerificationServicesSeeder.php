@@ -147,6 +147,26 @@ class VerificationServicesSeeder extends Seeder
                 'sort_order' => 23,
             ],
             [
+                'name' => 'NECO e-Verify Result Form',
+                'slug' => 'neco-everify-result-form',
+                'description' => 'Retrieve NECO e-Verify result verification form metadata and supported input fields.',
+                'icon' => 'mdi-form-select',
+                'default_price' => 0.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 24,
+            ],
+            [
+                'name' => 'NECO e-Verify Result Fetch',
+                'slug' => 'neco-everify-result-fetch',
+                'description' => 'Fetch and parse NECO e-Verify candidate result details using verification token and payment reference.',
+                'icon' => 'mdi-certificate-search',
+                'default_price' => 100.00,
+                'cost_price' => 0.00,
+                'is_active' => true,
+                'sort_order' => 25,
+            ],
+            [
                 'name' => 'NBAIS Result Form',
                 'slug' => 'nbais-result-form',
                 'description' => 'Retrieve NBAIS result checker form metadata and supported input fields.',
@@ -154,7 +174,7 @@ class VerificationServicesSeeder extends Seeder
                 'default_price' => 0.00,
                 'cost_price' => 0.00,
                 'is_active' => true,
-                'sort_order' => 24,
+                'sort_order' => 26,
             ],
             [
                 'name' => 'NBAIS Result Fetch',
@@ -164,7 +184,7 @@ class VerificationServicesSeeder extends Seeder
                 'default_price' => 100.00,
                 'cost_price' => 0.00,
                 'is_active' => true,
-                'sort_order' => 25,
+                'sort_order' => 27,
             ],
             [
                 'name' => 'NABTEB Result Form',
@@ -174,7 +194,7 @@ class VerificationServicesSeeder extends Seeder
                 'default_price' => 0.00,
                 'cost_price' => 0.00,
                 'is_active' => true,
-                'sort_order' => 26,
+                'sort_order' => 28,
             ],
             [
                 'name' => 'NABTEB Result Fetch',
@@ -184,7 +204,7 @@ class VerificationServicesSeeder extends Seeder
                 'default_price' => 100.00,
                 'cost_price' => 0.00,
                 'is_active' => true,
-                'sort_order' => 27,
+                'sort_order' => 29,
             ],
         ];
 

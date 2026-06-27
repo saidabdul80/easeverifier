@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Services\ResultVerify\ResultGates\NECOResult;
+use App\Services\ResultVerify\ResultGates\NecoEVerify;
 use App\Services\ResultVerify\ResultGates\NabtebResult;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
 use App\Services\ResultVerify\ResultGates\WAECResult;
@@ -351,6 +352,62 @@ it('maps html error pages for WAEC and NECO into structured errors', function ()
         ->and($neco['status'])->toBe('error')
         ->and($neco['code'])->toBe('INVALID_PIN')
         ->and($neco['message'])->toBe('Invalid token supplied.');
+});
+
+it('parses NECO e-Verify successful JSON into candidate and subject details', function () {
+    $json = <<<'JSON'
+{
+    "status": "200",
+    "message": "Result verification successful.",
+    "details": {
+        "trackingId": "5c597e41-1264-4412-92da-cedcec838891",
+        "candidateNo": "30231645GF",
+        "candidateName": "ISHAQ KHADIJAT ALIYU",
+        "sex": "FEMALE",
+        "passport": "",
+        "schoolNumber": "0050114",
+        "school": "NADAWA INTERNATIONAL COLLEGE, MARABA GUMAU",
+        "receiptNumber": "311479699568",
+        "dateOfBirth": "",
+        "requestingInstitution": "API",
+        "stateOfOrigin": "",
+        "requestedBy": "Online Service",
+        "requestTimeStamp": "2026-06-27T00:00:00+01:00",
+        "numberOfSubjects": 9,
+        "examYear": "2013",
+        "examType": "SSCE Internal",
+        "results": [
+            {"code": "101", "subject": "English Language", "grade": "C5"},
+            {"code": "501", "subject": "Mathematics", "grade": "C5"},
+            {"code": "104", "subject": "Hausa Language", "grade": "C6"},
+            {"code": "203", "subject": "Islamic Studies", "grade": "C6"},
+            {"code": "302", "subject": "Economics", "grade": "C6"},
+            {"code": "502", "subject": "Biology", "grade": "C6"},
+            {"code": "503", "subject": "Chemistry", "grade": "C5"},
+            {"code": "505", "subject": "Physics", "grade": "D7"},
+            {"code": "701", "subject": "Agricultural Science", "grade": "C6"}
+        ]
+    }
+}
+JSON;
+
+    $parsed = app(NecoEVerify::class)->parseResult($json);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['candidate_name'])->toBe('ISHAQ KHADIJAT ALIYU')
+        ->and($parsed['candidate']['exam_number'])->toBe('30231645GF')
+        ->and($parsed['candidate']['exam_year'])->toBe('2013')
+        ->and($parsed['candidate']['exam_type'])->toBe('SSCE Internal')
+        ->and($parsed['candidate']['centre'])->toBe('NADAWA INTERNATIONAL COLLEGE, MARABA GUMAU')
+        ->and($parsed['candidate']['tracking_id'])->toBe('5c597e41-1264-4412-92da-cedcec838891')
+        ->and($parsed['subjects'])->toHaveCount(9)
+        ->and($parsed['subjects'][0])->toMatchArray([
+            'code' => '101',
+            'subject' => 'English Language',
+            'grade' => 'C5',
+            'score' => null,
+        ])
+        ->and($parsed['result']['raw']['numberOfSubjects'])->toBe(9);
 });
 
 it('defines NABTEB eWorld form fields from the live checker flow', function () {

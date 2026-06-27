@@ -4,7 +4,6 @@ import CustomerLayout from '@/layouts/CustomerLayout.vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 const props = defineProps<{
-    user: { name: string; email: string };
     service: any;
     price: number;
     walletBalance: number;

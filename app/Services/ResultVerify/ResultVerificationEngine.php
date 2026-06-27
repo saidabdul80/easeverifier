@@ -378,6 +378,7 @@ class ResultVerificationEngine
         return match (strtolower($board)) {
             'waec' => trim((string) ($params['txtExamNumber'] ?? $params['ExamNumber'] ?? '')),
             'neco' => trim((string) ($params['reg_no'] ?? $params['exam_number'] ?? '')),
+            'neco-everify', 'neco_everify', 'necoeverify' => trim((string) ($params['examno'] ?? $params['exam_number'] ?? '')),
             'nbais' => trim((string) ($params['exam_no'] ?? $params['exam_number'] ?? '')),
             'nabteb' => trim((string) ($params['candid'] ?? $params['candidate_number'] ?? '')),
             default => trim((string) ($params['exam_number'] ?? $params['reg_no'] ?? $params['txtExamNumber'] ?? '')),
@@ -386,7 +387,7 @@ class ResultVerificationEngine
 
     protected function sanitizeParams(array $params): array
     {
-        $sensitiveKeys = ['pin', 'txtpin', 'token', 'txtcardserialno', 'serial', 'card_serial', 'cardserialno'];
+        $sensitiveKeys = ['pin', 'txtpin', 'token', 'bearer_token', 'api_token', 'payref', 'payment_reference', 'txtcardserialno', 'serial', 'card_serial', 'cardserialno'];
 
         return collect($params)
             ->reject(fn ($value, string $key) => in_array($key, ['api_key', 'branch'], true))

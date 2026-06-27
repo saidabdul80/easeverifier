@@ -53,4 +53,10 @@ return [
         'timeout' => env('NAIJA_RESULT_PINS_TIMEOUT', 45),
     ],
 
+    'neco_everify' => [
+        'base_url' => env('NECO_EVERIFY_BASE_URL', 'https://everify.neco.gov.ng/api_core'),
+        'bearer_token' => env('NECO_EVERIFY_BEARER_TOKEN'),
+        'timeout' => env('NECO_EVERIFY_TIMEOUT', 20),
+    ],
+
 ];

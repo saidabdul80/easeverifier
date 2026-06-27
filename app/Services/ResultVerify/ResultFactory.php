@@ -3,6 +3,7 @@
 namespace App\Services\ResultVerify;
 
 use App\Services\ResultVerify\ResultGates\NabtebResult;
+use App\Services\ResultVerify\ResultGates\NecoEVerify;
 use App\Services\ResultVerify\ResultGates\NECOResult;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
 use App\Services\ResultVerify\ResultGates\WAECResult;
@@ -13,6 +14,9 @@ class ResultFactory
     protected array $boards = [
         'nabteb' => NabtebResult::class,
         'neco'   => NECOResult::class,
+        'neco-everify' => NecoEVerify::class,
+        'neco_everify' => NecoEVerify::class,
+        'necoeverify' => NecoEVerify::class,
         'nbais'  => NbaisResult::class,
         'waec'   => WAECResult::class,
     ];
