@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\ResultPinController as AdminResultPinController;
 use App\Http\Controllers\Auth\EmailOtpVerificationController;
 use App\Http\Controllers\BlogController;
 use App\Http\Controllers\PublicResultPinController;
+use App\Http\Controllers\PublicPaygoVerificationController;
 
 use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
 use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
 use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
 use App\Http\Controllers\Customer\ApiKeyController;
 use App\Http\Controllers\Customer\BranchController as CustomerBranchController;
+use App\Http\Controllers\Customer\PaygoServiceController;
 use App\Http\Controllers\Customer\PaymentController;
 use App\Http\Controllers\SitemapController;
 
@@ -84,6 +86,9 @@ Route::get('/result-pins/login', [PublicResultPinController::class, 'login'])->n
 Route::post('/result-pins/login', [PublicResultPinController::class, 'loginWithEmail'])->name('public.result-pins.login.store');
 Route::get('/result-pins/my-pins', [PublicResultPinController::class, 'orders'])->name('public.result-pins.orders');
 Route::get('/result-pins/orders/{order:reference}', [PublicResultPinController::class, 'show'])->name('public.result-pins.show');
+
+Route::match(['get', 'post'], '/paygo/{publicSlug}/initiate/{nin?}', [PublicPaygoVerificationController::class, 'initiate'])->name('paygo.initiate');
+Route::get('/paygo/callback', [PublicPaygoVerificationController::class, 'callback'])->name('paygo.callback');
 
 Route::get('/documentation', function () {
     return Inertia::render('Documentation');
@@ -222,6 +227,17 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::delete('api/keys/{apiKey}', [ApiKeyController::class, 'destroy'])->name('api.destroy');
     Route::get('api/documentation', [ApiKeyController::class, 'documentation'])->name('api.documentation');
     Route::post('api/webhook', [ApiKeyController::class, 'updateWebhook'])->name('api.webhook');
+
+    // Pay-on-the-go verification services
+    Route::get('paygo-services', [PaygoServiceController::class, 'index'])->name('paygo.index');
+    Route::get('paygo-analytics', fn () => redirect()->route('customer.paygo.index'))->name('paygo.analytics');
+    Route::get('paygo-transactions', fn () => redirect()->route('customer.paygo.index'))->name('paygo.transactions');
+    Route::post('paygo-services', [PaygoServiceController::class, 'store'])->name('paygo.store');
+    Route::get('paygo-services/{paygoService}/transactions', [PaygoServiceController::class, 'serviceTransactions'])->name('paygo.service-transactions');
+    Route::put('paygo-services/{paygoService}', [PaygoServiceController::class, 'update'])->name('paygo.update');
+    Route::post('paygo-services/{paygoService}/toggle', [PaygoServiceController::class, 'toggle'])->name('paygo.toggle');
+    Route::delete('paygo-services/{paygoService}', [PaygoServiceController::class, 'destroy'])->name('paygo.destroy');
+    Route::post('paygo-wallet/withdraw', [PaygoServiceController::class, 'withdraw'])->name('paygo.withdraw');
 
     // Branches
     Route::get('branches', [CustomerBranchController::class, 'index'])->name('branches.index');

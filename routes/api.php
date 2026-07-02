@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\VerificationController;
 use App\Http\Controllers\Api\ResultVerificationController;
 use App\Http\Controllers\Api\ResultPinController;
+use App\Http\Controllers\PublicPaygoVerificationController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -24,6 +25,8 @@ Route::get('/', function () {
         'documentation' => url('/customer/api/documentation'),
     ]);
 });
+
+Route::match(['get', 'post'], 'paygo/{publicSlug}/verify/{nin?}', [PublicPaygoVerificationController::class, 'verify']);
 
 // Protected API Routes (API Key authentication)
 Route::middleware('api.auth')->prefix('v1')->group(function () {

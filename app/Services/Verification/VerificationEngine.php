@@ -45,11 +45,13 @@ class VerificationEngine
         string $source = 'web',
         ?string $ipAddress = null,
         ?Branch $branch = null,
+        bool $chargeWallet = true,
+        ?float $amountCharged = null,
     ): VerificationResult {
         $branch ??= $this->activeBranch;
 
         // Determine if we should charge (test mode = free if test provider available)
-        $shouldCharge = true;
+        $shouldCharge = $chargeWallet;
         $usedTestProvider = false;
         $useMockTestResponse = false;
 
@@ -81,7 +83,8 @@ class VerificationEngine
         }
 
         // Get the price for this service
-        $price = $user->getPriceForService($service);
+        $price = $amountCharged ?? $user->getPriceForService($service);
+        $recordedAmount = $shouldCharge ? $price : ($chargeWallet ? 0 : $price);
 
         Log::info('VerificationEngine::verify charging', [
             'shouldCharge' => $shouldCharge,
@@ -97,7 +100,7 @@ class VerificationEngine
 
         try {
             // Use DB transaction with locking to prevent race conditions
-            $result = DB::transaction(function () use ($user, $service, $searchParameter, $shouldCharge, $price, $source, $ipAddress, $branch, $targetWallet, &$verificationRequest, &$transaction, &$wallet) {
+            $result = DB::transaction(function () use ($user, $service, $searchParameter, $shouldCharge, $price, $recordedAmount, $source, $ipAddress, $branch, $targetWallet, &$verificationRequest, &$transaction, &$wallet) {
                 // Get wallet with lock INSIDE the transaction
                 $wallet = \App\Models\Wallet::query()
                     ->whereKey($targetWallet?->id)
@@ -122,7 +125,7 @@ class VerificationEngine
                     'verification_service_id' => $service->id,
                     'reference' => VerificationRequest::generateReference(),
                     'search_parameter' => $searchParameter,
-                    'amount_charged' => $shouldCharge ? $price : 0,
+                    'amount_charged' => $recordedAmount,
                     'status' => 'processing',
                     'source' => $source,
                     'ip_address' => $ipAddress,

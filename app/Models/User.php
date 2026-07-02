@@ -105,6 +105,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(Wallet::class);
     }
 
+    public function paygoWallet(): HasOne
+    {
+        return $this->hasOne(PaygoWallet::class);
+    }
+
     /**
      * Get all transactions for the user.
      */
@@ -165,7 +170,7 @@ class User extends Authenticatable implements MustVerifyEmail
             ->where('is_active', true)
             ->first();
 
-        return $customPrice ? $customPrice->price : $service->default_price;
+        return (float) ($customPrice ? $customPrice->price : ($service->default_price ?? 0));
     }
 
     public function hasResultFetchAccess(): bool

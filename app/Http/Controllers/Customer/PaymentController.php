@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\DedicatedVirtualAccount;
+use App\Models\PaygoVerificationIntent;
 use App\Models\Transaction;
+use App\Services\Paygo\PaygoVerificationService;
 use App\Services\PaystackService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -325,7 +327,31 @@ class PaymentController extends Controller
             ->first();
 
         if (!$transaction) {
+            if (PaygoVerificationIntent::where('reference', $reference)->whereIn('status', ['pending', 'failed'])->exists()) {
+                app(PaygoVerificationService::class)->completePayment($reference, [
+                    'amount' => $amount,
+                    'reference' => $reference,
+                    'paid_at' => $data['paid_at'] ?? now(),
+                    'channel' => $data['channel'] ?? null,
+                ]);
+
+                Log::info('PayGo charge success processed without normal wallet transaction', ['reference' => $reference, 'amount' => $amount]);
+                return;
+            }
+
             Log::warning('Transaction not found for webhook', ['reference' => $reference]);
+            return;
+        }
+
+        if (($transaction->metadata['payment_context'] ?? null) === 'paygo_verification') {
+            app(PaygoVerificationService::class)->completePayment($reference, [
+                'amount' => $amount,
+                'reference' => $reference,
+                'paid_at' => $data['paid_at'] ?? now(),
+                'channel' => $data['channel'] ?? null,
+            ]);
+
+            Log::info('PayGo charge success processed', ['reference' => $reference, 'amount' => $amount]);
             return;
         }
 
@@ -446,4 +472,3 @@ class PaymentController extends Controller
         ]);
     }
 }
-
