@@ -70,6 +70,7 @@ const formatDate = (date: string) =>
         <meta property="og:title" content="Blog - EaseVerifier" />
         <meta property="og:description" content="Expert insights on identity verification, KYC compliance, and fraud prevention for Nigerian businesses." />
         <meta property="og:type" content="blog" />
+        <meta name="google-adsense-account" content="ca-pub-5615909705062666">
         <link rel="canonical" href="https://verify.ashlabtech.ng/blog" />
     </Head>
 
