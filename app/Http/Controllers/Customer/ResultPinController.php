@@ -95,7 +95,7 @@ class ResultPinController extends Controller
                 $query->where('reference', $order);
 
                 if (ctype_digit($order)) {
-                    $query->orWhereKey((int) $order);
+                    $query->orWhere('id', (int) $order);
                 }
             })
             ->firstOrFail();
