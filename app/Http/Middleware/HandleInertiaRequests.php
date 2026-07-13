@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Lab404\Impersonate\Services\ImpersonateManager;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -40,6 +41,10 @@ class HandleInertiaRequests extends Middleware
 
         $user = $request->user();
         $wallet = $user?->wallet;
+        $impersonateManager = app(ImpersonateManager::class);
+        $impersonator = $impersonateManager->isImpersonating()
+            ? $impersonateManager->getImpersonator()
+            : null;
 
         return [
             ...parent::share($request),
@@ -53,6 +58,15 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
                 'isAdmin' => $user?->hasRole('admin') ?? false,
                 'isCustomer' => $user?->hasRole('customer') ?? false,
+                'impersonation' => [
+                    'active' => $impersonateManager->isImpersonating(),
+                    'impersonator' => $impersonator ? [
+                        'id' => $impersonator->id,
+                        'name' => $impersonator->name,
+                        'email' => $impersonator->email,
+                    ] : null,
+                    'leaveUrl' => route('impersonate.leave'),
+                ],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'flash' => [

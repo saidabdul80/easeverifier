@@ -3,6 +3,14 @@ import type { LucideIcon } from 'lucide-vue-next';
 
 export interface Auth {
     user: User;
+    wallet?: { balance: number; bonus_balance: number } | null;
+    isAdmin?: boolean;
+    isCustomer?: boolean;
+    impersonation?: {
+        active: boolean;
+        impersonator: Pick<User, 'id' | 'name' | 'email'> | null;
+        leaveUrl: string;
+    };
 }
 
 export interface BreadcrumbItem {

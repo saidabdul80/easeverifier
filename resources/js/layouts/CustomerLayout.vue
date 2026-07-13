@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, router } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { logout as logoutRoute } from '@/routes';
 import { useDisplay } from 'vuetify';
@@ -10,9 +10,11 @@ const props = defineProps<{
 }>();
 
 const { mdAndUp, smAndDown } = useDisplay();
+const page = usePage();
 
 const drawer = ref(mdAndUp.value);
 const rail = ref(false);
+const impersonation = computed(() => page.props.auth.impersonation);
 
 const navItems = [
     { title: 'Dashboard', icon: 'mdi-view-dashboard', route: '/customer' },
@@ -28,6 +30,12 @@ const navItems = [
 
 const logout = () => {
     router.post(logoutRoute() as unknown as string);
+};
+
+const leaveImpersonation = () => {
+    if (impersonation.value?.leaveUrl) {
+        router.visit(impersonation.value.leaveUrl);
+    }
 };
 
 const initials = computed(() => {
@@ -132,6 +140,29 @@ watch(mdAndUp, (isDesktop) => {
         </v-app-bar>
 
         <v-main class="bg-grey-lighten-4">
+            <v-alert
+                v-if="impersonation?.active"
+                color="warning"
+                variant="flat"
+                density="comfortable"
+                class="rounded-0"
+            >
+                <div class="d-flex flex-column flex-sm-row align-sm-center ga-3">
+                    <div class="flex-grow-1">
+                        <strong>Impersonating {{ user?.name }}</strong>
+                        <span class="ml-sm-2">as {{ impersonation.impersonator?.name }}</span>
+                    </div>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        size="small"
+                        prepend-icon="mdi-account-arrow-left"
+                        @click="leaveImpersonation"
+                    >
+                        Return to Admin
+                    </v-btn>
+                </div>
+            </v-alert>
             <v-container fluid class="pa-4 pa-md-6">
                 <slot />
             </v-container>

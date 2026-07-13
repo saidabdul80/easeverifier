@@ -132,6 +132,10 @@ Route::middleware(['auth', 'throttle:6,1'])->group(function () {
     Route::post('email/verify-otp', [EmailOtpVerificationController::class, 'store'])->name('verification.otp.verify');
 });
 
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::impersonate();
+});
+
 // Admin Routes
 Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');

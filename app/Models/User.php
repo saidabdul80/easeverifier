@@ -13,12 +13,13 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Lab404\Impersonate\Models\Impersonate;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, MustVerifyEmailTrait, Notifiable, HasRoles;
+    use HasFactory, Impersonate, MustVerifyEmailTrait, Notifiable, HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -77,6 +78,16 @@ class User extends Authenticatable implements MustVerifyEmail
      * Check if user is customer.
      */
     public function isCustomer(): bool
+    {
+        return $this->hasRole('customer');
+    }
+
+    public function canImpersonate(): bool
+    {
+        return $this->hasRole('admin');
+    }
+
+    public function canBeImpersonated(): bool
     {
         return $this->hasRole('customer');
     }

@@ -51,6 +51,8 @@ const submitResultFetchAccess = () => {
     });
 };
 
+const impersonateUrl = `/impersonate/take/${props.customer.id}`;
+
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 </script>
 
@@ -64,6 +66,7 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                 <p class="text-body-2 text-grey">{{ customer.email }}</p>
             </div>
             <v-spacer />
+            <v-btn color="primary" class="mr-2" :href="impersonateUrl" prepend-icon="mdi-account-switch">Impersonate</v-btn>
             <v-btn variant="outlined" class="mr-2" :href="`/admin/customers/${customer.id}/edit`" prepend-icon="mdi-pencil">Edit</v-btn>
             <v-chip :color="customer.is_active ? 'success' : 'error'" size="large">{{ customer.is_active ? 'Active' : 'Inactive' }}</v-chip>
         </div>

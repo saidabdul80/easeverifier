@@ -42,6 +42,8 @@ const submitCredit = () => {
     });
 };
 
+const impersonateUrl = (customer: any) => `/impersonate/take/${customer.id}`;
+
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 
 const headers = [
@@ -96,6 +98,7 @@ const headers = [
                         <v-btn icon variant="text" size="small" :href="`/admin/customers/${item.id}`"><v-icon>mdi-eye</v-icon></v-btn>
                         <v-btn icon variant="text" size="small" :href="`/admin/customers/${item.id}/edit`"><v-icon>mdi-pencil</v-icon></v-btn>
                         <v-btn icon variant="text" size="small" color="success" @click="openCreditDialog(item)"><v-icon>mdi-wallet-plus</v-icon></v-btn>
+                        <v-btn icon variant="text" size="small" color="primary" :href="impersonateUrl(item)"><v-icon>mdi-account-switch</v-icon></v-btn>
                     </template>
                     <template #bottom></template>
                 </v-data-table>
@@ -137,4 +140,3 @@ const headers = [
         </v-dialog>
     </AdminLayout>
 </template>
-
