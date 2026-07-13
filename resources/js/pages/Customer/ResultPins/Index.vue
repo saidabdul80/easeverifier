@@ -171,7 +171,7 @@ onMounted(() => {
                                 <td>{{ order.quantity }}</td>
                                 <td><v-chip size="small" :color="order.status === 'completed' ? 'success' : order.status === 'failed' ? 'error' : 'warning'">{{ order.status }}</v-chip></td>
                                 <td class="text-right">{{ formatCurrency(order.total_amount) }}</td>
-                                <td class="text-right"><v-btn size="small" variant="text" :href="`/customer/result-pins/${order.id}`">View</v-btn></td>
+                                <td class="text-right"><v-btn size="small" variant="text" :href="`/customer/result-pins/${order.reference}`">View</v-btn></td>
                             </tr>
                         </tbody>
                     </v-table>

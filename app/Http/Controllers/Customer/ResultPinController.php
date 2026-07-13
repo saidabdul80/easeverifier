@@ -37,7 +37,10 @@ class ResultPinController extends Controller
                     'default_price' => (float) $product->price,
                 ])),
             'orders' => ResultPinOrder::with('product')
-                ->where('user_id', $request->user()->id)
+                ->where(function ($query) use ($request) {
+                    $query->where('user_id', $request->user()->id)
+                        ->orWhere('referred_by_user_id', $request->user()->id);
+                })
                 ->latest()
                 ->paginate(15),
             'walletBalance' => $request->user()->wallet?->total_balance ?? 0,
@@ -74,19 +77,31 @@ class ResultPinController extends Controller
                 channel: 'customer',
             );
 
-            return redirect()->route('customer.result-pins.show', $order)
+            return redirect()->route('customer.result-pins.show', $order->reference)
                 ->with('success', 'Result PINs purchased successfully.');
         } catch (Throwable $exception) {
             return back()->with('error', $exception->getMessage());
         }
     }
 
-    public function show(Request $request, ResultPinOrder $order)
+    public function show(Request $request, string $order)
     {
-        abort_unless($order->user_id === $request->user()->id, 404);
+        $order = ResultPinOrder::with('product')
+            ->where(function ($query) use ($request) {
+                $query->where('user_id', $request->user()->id)
+                    ->orWhere('referred_by_user_id', $request->user()->id);
+            })
+            ->where(function ($query) use ($order) {
+                $query->where('reference', $order);
+
+                if (ctype_digit($order)) {
+                    $query->orWhereKey((int) $order);
+                }
+            })
+            ->firstOrFail();
 
         return Inertia::render('Customer/ResultPins/Show', [
-            'order' => $order->load('product'),
+            'order' => $order,
         ]);
     }
 }

@@ -6,10 +6,13 @@ use App\Models\CustomerResultPinPricing;
 use App\Models\ResultPinOrder;
 use App\Models\ResultPinProduct;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
 
 function createResultPinProduct(float $price = 1000): ResultPinProduct
 {
@@ -248,6 +251,87 @@ it('refunds wallet debit when provider result pin purchase fails', function () {
 
     expect($user->wallet->fresh()->balance)->toBe('5000.00')
         ->and(ResultPinOrder::first()->status)->toBe('failed');
+});
+
+it('shows a customer result pin order by id or reference for the owning customer', function () {
+    $product = createResultPinProduct(1000);
+    $user = createPinCustomer(5000);
+    $order = ResultPinOrder::create([
+        'user_id' => $user->id,
+        'result_pin_product_id' => $product->id,
+        'reference' => ResultPinOrder::generateReference(),
+        'channel' => 'customer',
+        'quantity' => 1,
+        'unit_price' => 1000,
+        'total_amount' => 1000,
+        'status' => 'completed',
+        'buyer_name' => $user->name,
+        'buyer_email' => $user->email,
+        'pins' => [
+            ['pin' => '111122223333', 'serial_no' => 'WRN000000001'],
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->get("/customer/result-pins/{$order->id}")
+        ->assertOk();
+
+    $this->actingAs($user)
+        ->get("/customer/result-pins/{$order->reference}")
+        ->assertOk();
+});
+
+it('shows a referred result pin order to the referring customer', function () {
+    $product = createResultPinProduct(1000);
+    $referrer = createPinCustomer(5000);
+    $order = ResultPinOrder::create([
+        'user_id' => null,
+        'referred_by_user_id' => $referrer->id,
+        'result_pin_product_id' => $product->id,
+        'reference' => ResultPinOrder::generateReference(),
+        'channel' => 'public',
+        'referral_code' => $referrer->customer->referral_code,
+        'quantity' => 1,
+        'unit_price' => 1000,
+        'total_amount' => 1000,
+        'referral_bonus_amount' => 50,
+        'status' => 'completed',
+        'buyer_name' => 'Student Buyer',
+        'buyer_email' => 'student@example.com',
+        'pins' => [
+            ['pin' => '111122223333', 'serial_no' => 'WRN000000001'],
+        ],
+    ]);
+
+    $this->actingAs($referrer)
+        ->get("/customer/result-pins/{$order->id}")
+        ->assertOk();
+
+    $this->actingAs($referrer)
+        ->get("/customer/result-pins/{$order->reference}")
+        ->assertOk();
+});
+
+it('does not show another customers result pin order', function () {
+    $product = createResultPinProduct(1000);
+    $owner = createPinCustomer(5000);
+    $otherCustomer = createPinCustomer(5000);
+    $order = ResultPinOrder::create([
+        'user_id' => $owner->id,
+        'result_pin_product_id' => $product->id,
+        'reference' => ResultPinOrder::generateReference(),
+        'channel' => 'customer',
+        'quantity' => 1,
+        'unit_price' => 1000,
+        'total_amount' => 1000,
+        'status' => 'completed',
+        'buyer_name' => $owner->name,
+        'buyer_email' => $owner->email,
+    ]);
+
+    $this->actingAs($otherCustomer)
+        ->get("/customer/result-pins/{$order->id}")
+        ->assertNotFound();
 });
 
 it('creates a guest public pin order, verifies payment, purchases pins and shows the order', function () {
