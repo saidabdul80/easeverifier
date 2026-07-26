@@ -6,11 +6,28 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ServiceProvider extends Model
 {
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::saved(function (self $provider): void {
+            Cache::forget("service_providers:{$provider->verification_service_id}");
+
+            $originalServiceId = $provider->getOriginal('verification_service_id');
+            if ($originalServiceId && (int) $originalServiceId !== (int) $provider->verification_service_id) {
+                Cache::forget("service_providers:{$originalServiceId}");
+            }
+        });
+
+        static::deleted(function (self $provider): void {
+            Cache::forget("service_providers:{$provider->verification_service_id}");
+        });
+    }
 
     protected $fillable = [
         'verification_service_id',
@@ -95,17 +112,15 @@ class ServiceProvider extends Model
      */
     public function buildAuthHeaders(): array
     {
+        $authConfig = $this->normalizedAuthConfig();
         $headers = [];
 
         switch ($this->auth_type) {
             case 'bearer':
-                if(is_array($this->auth_config)){
-                        $token = $this->auth_config['token'];
-                }else{
-                    $token = '';
-                }
-                if(empty($token)){
-                   abort(400, 'Bearer token is required');
+                $token = $authConfig['token'] ?? '';
+
+                if (empty($token)) {
+                    abort(400, 'Bearer token is required');
                 }
 
                 $headers['Authorization'] = 'Bearer ' . $token;
@@ -113,28 +128,34 @@ class ServiceProvider extends Model
                 break;
 
             case 'api_key_header':
-                $headerName = $this->auth_config['header_name'] ?? 'X-API-Key';
+                $headerName = $authConfig['header_name'] ?? 'X-API-Key';
                 // Support both 'header_value' (from form) and 'api_key' (legacy)
-                $apiKey = $this->auth_config['header_value'] ?? $this->auth_config['api_key'] ?? '';
+                $apiKey = $authConfig['header_value'] ?? $authConfig['api_key'] ?? '';
                 if (!empty($apiKey)) {
                     $headers[$headerName] = $apiKey;
                 }
                 break;
 
             case 'basic':
-                $username = $this->auth_config['username'] ?? '';
-                $password = $this->auth_config['password'] ?? '';
+                $username = $authConfig['username'] ?? '';
+                $password = $authConfig['password'] ?? '';
                 $headers['Authorization'] = 'Basic ' . base64_encode($username . ':' . $password);
                 break;
 
             case 'custom':
                 // Custom headers from auth_config
-                foreach ($this->auth_config['headers'] ?? [] as $key => $value) {
+                foreach ($authConfig['headers'] ?? [] as $key => $value) {
                     $headers[$key] = $value;
                 }
                 break;
         }
-        Log::info('buildAuthHeaders: ', $headers);
+
+        Log::info('buildAuthHeaders', [
+            'provider_id' => $this->id,
+            'auth_type' => $this->auth_type,
+            'header_names' => array_keys($headers),
+        ]);
+
         return $headers;
     }
 
@@ -143,6 +164,7 @@ class ServiceProvider extends Model
      */
     public function buildRequestBody(string $searchParameter): array
     {
+        $authConfig = $this->normalizedAuthConfig();
         $body = $this->request_body_template ?? [];
 
         // Replace placeholder with actual search parameter
@@ -154,12 +176,45 @@ class ServiceProvider extends Model
 
         // Add API key to body if auth type requires it
         if ($this->auth_type === 'api_key_body') {
-            $keyName = $this->auth_config['key_name'] ?? 'api_key';
+            $keyName = $authConfig['key_name'] ?? 'api_key';
             // Support both 'key_value' (from form) and 'api_key' (legacy)
-            $body[$keyName] = $this->auth_config['key_value'] ?? $this->auth_config['api_key'] ?? '';
+            $body[$keyName] = $authConfig['key_value'] ?? $authConfig['api_key'] ?? '';
         }
 
         return $body;
+    }
+
+    /**
+     * Normalize auth config so runtime can handle both legacy and UI-saved shapes.
+     */
+    public function normalizedAuthConfig(): array
+    {
+        $config = is_array($this->auth_config) ? $this->auth_config : [];
+
+        if ($this->auth_type !== 'custom') {
+            return $config;
+        }
+
+        if (isset($config['headers']) && is_array($config['headers'])) {
+            return $config;
+        }
+
+        $customHeaders = $config['custom_headers'] ?? null;
+
+        if (is_array($customHeaders)) {
+            $config['headers'] = $customHeaders;
+            return $config;
+        }
+
+        if (is_string($customHeaders) && trim($customHeaders) !== '') {
+            $decoded = json_decode($customHeaders, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $config['headers'] = $decoded;
+            }
+        }
+
+        return $config;
     }
 
     /**
@@ -170,4 +225,3 @@ class ServiceProvider extends Model
         return $query->where('is_active', true);
     }
 }
-

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ServiceProvider;
 use App\Models\VerificationService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class ProviderController extends Controller
@@ -44,6 +45,7 @@ class ProviderController extends Controller
             'environment' => 'required|in:live,test',
         ]);
 
+        $validated['auth_config'] = $this->normalizeAuthConfig($validated['auth_type'], $validated['auth_config'] ?? []);
         $validated['verification_service_id'] = $service->id;
 
         ServiceProvider::create($validated);
@@ -55,6 +57,7 @@ class ProviderController extends Controller
     public function edit(ServiceProvider $provider)
     {
         $provider->load('verificationService');
+        $provider->auth_config = $this->authConfigForEdit($provider);
 
         return Inertia::render('Admin/Providers/Edit', [
             'provider' => $provider,
@@ -89,6 +92,7 @@ class ProviderController extends Controller
             'environment' => 'required|in:live,test',
         ]);
 
+        $validated['auth_config'] = $this->normalizeAuthConfig($validated['auth_type'], $validated['auth_config'] ?? []);
         $provider->update($validated);
 
         return redirect()->route('admin.services.show', $provider->verification_service_id)
@@ -110,5 +114,57 @@ class ProviderController extends Controller
 
         return back()->with('success', 'Provider status updated.');
     }
-}
 
+    private function normalizeAuthConfig(string $authType, array $authConfig): array
+    {
+        if ($authType !== 'custom') {
+            return $authConfig;
+        }
+
+        $customHeaders = $authConfig['custom_headers'] ?? null;
+        $headers = $authConfig['headers'] ?? null;
+
+        if ($customHeaders === null || (is_string($customHeaders) && trim($customHeaders) === '')) {
+            if (is_array($headers)) {
+                return ['headers' => $headers];
+            }
+
+            return ['headers' => []];
+        }
+
+        if (is_array($customHeaders)) {
+            return ['headers' => $customHeaders];
+        }
+
+        if (! is_string($customHeaders)) {
+            throw ValidationException::withMessages([
+                'auth_config.custom_headers' => 'Custom headers must be a valid JSON object.',
+            ]);
+        }
+
+        $decoded = json_decode($customHeaders, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
+            throw ValidationException::withMessages([
+                'auth_config.custom_headers' => 'Custom headers must be a valid JSON object.',
+            ]);
+        }
+
+        return ['headers' => $decoded];
+    }
+
+    private function authConfigForEdit(ServiceProvider $provider): array
+    {
+        $authConfig = $provider->normalizedAuthConfig();
+
+        if ($provider->auth_type !== 'custom') {
+            return $authConfig;
+        }
+
+        $authConfig['custom_headers'] = empty($authConfig['headers'] ?? [])
+            ? ''
+            : json_encode($authConfig['headers'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        return $authConfig;
+    }
+}

@@ -11,25 +11,32 @@ class VerificationResult
         public ?string $errorCode = null,
         public ?int $responseTime = null,
         public ?int $providerUsed = null,
+        public bool $sandbox = false,
     ) {}
 
     /**
      * Create a successful result.
      */
-    public static function success(array $data, int $responseTime = null, int $providerUsed = null): self
+    public static function success(
+        array $data,
+        ?int $responseTime = null,
+        ?int $providerUsed = null,
+        bool $sandbox = false
+    ): self
     {
         return new self(
             success: true,
             data: $data,
             responseTime: $responseTime,
             providerUsed: $providerUsed,
+            sandbox: $sandbox,
         );
     }
 
     /**
      * Create a failed result.
      */
-    public static function failure(string $message, string $code = null, int $responseTime = null): self
+    public static function failure(string $message, ?string $code = null, ?int $responseTime = null): self
     {
         return new self(
             success: false,
@@ -77,4 +84,3 @@ class VerificationResult
         ];
     }
 }
-

@@ -326,7 +326,6 @@ class VerificationEngine
             if ($result->isSuccessful()) {
                 $isSandbox = $provider->environment === 'test';
                 $data = $result->getData();
-                $data['_sandbox'] = $isSandbox;
 
                 $verificationRequest->update([
                     'service_provider_id' => $provider->id,
@@ -335,7 +334,7 @@ class VerificationEngine
                     'completed_at' => now(),
                 ]);
                 //Log::info('Verification successful: ' , [$result]);
-                return VerificationResult::success($data, $result->responseTime, $provider->id);
+                return VerificationResult::success($data, $result->responseTime, $provider->id, $isSandbox);
             }
         }
 
@@ -420,10 +419,10 @@ class VerificationEngine
                 if(isset($datajson['response_code']) && $datajson['response_code'] == '00'){
                     $datajson = ["data"=>$datajson];
                     $mappedData = $this->mapResponse($datajson, $provider->response_mapping ?? []);
-                    return VerificationResult::success($mappedData, $responseTime, $provider->id);
+                    return VerificationResult::success($mappedData, $responseTime, $provider->id, $provider->environment === 'test');
                 }
                 $mappedData = $this->mapResponse($response->json(), $provider->response_mapping ?? []);
-                return VerificationResult::success($mappedData, $responseTime, $provider->id);
+                return VerificationResult::success($mappedData, $responseTime, $provider->id, $provider->environment === 'test');
             }
             $message = $response->json()['message'] ?? 'Unknown error';
             return VerificationResult::failure(
@@ -478,9 +477,7 @@ class VerificationEngine
             ],
         };
 
-        $mockData['_sandbox'] = true;
-
-        return VerificationResult::success($mockData, 50, null); // 50ms mock response time
+        return VerificationResult::success($mockData, 50, null, true); // 50ms mock response time
     }
 
     /**
@@ -493,9 +490,6 @@ class VerificationEngine
         foreach ($mapping as $ourKey => $providerPath) {
             $mapped[$ourKey] = Arr::get($response, $providerPath);
         }
-
-        // Include raw response as well
-        $mapped['_raw'] = $response;
 
         return $mapped;
     }

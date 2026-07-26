@@ -81,10 +81,11 @@ class VerificationController extends Controller
             ->where('search_parameter', $validated['nin'])
             ->where('status', 'completed')
             ->whereNotNull('response_data')
+            ->with('serviceProvider:id,updated_at,environment')
             ->latest()
             ->first();
 
-        if ($existingVerification) {
+        if ($existingVerification?->canReuseResponseData()) {
             Log::info('Returning cached verification result',[
                 'reference' => $existingVerification->reference,
             ]);
@@ -96,9 +97,7 @@ class VerificationController extends Controller
                 'data' => $data,
                 'response_time' => 0,
                 'message' => 'NIN Verified Successfully',
-                'sandbox' => $data['_sandbox'] ?? false,
-                'cached' => true,
-                'cached_reference' => $existingVerification->reference,
+                'sandbox' => $existingVerification->serviceProvider?->environment === 'test',
             ]);
         }
 
@@ -122,7 +121,7 @@ class VerificationController extends Controller
                 'data' => $data,
                 'response_time' => $result->responseTime,
                 'message'=>'NIN Verified Successfully',
-                'sandbox' => $data['_sandbox'] ?? false,
+                'sandbox' => $result->sandbox,
             ]);
         }
 

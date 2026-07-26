@@ -197,22 +197,21 @@ class PaygoVerificationService
                 ->where('search_parameter', $nin)
                 ->where('status', 'completed')
                 ->whereNotNull('response_data')
+                ->with('serviceProvider:id,updated_at')
                 ->latest()
                 ->first();
         }
 
-        if ($existingVerification) {
+        if ($existingVerification?->canReuseResponseData()) {
             $intent = $this->recordVerificationAttempt($intent, $existingVerification, [
                 'verification_status' => 'cached',
-                'cached_reference' => $existingVerification->reference,
+                'verification_reference' => $existingVerification->reference,
             ]);
 
             return [
                 'success' => true,
                 'data' => $existingVerification->response_data,
                 'response_time' => 0,
-                'cached' => true,
-                'cached_reference' => $existingVerification->reference,
                 'attempts_remaining' => max(0, self::MAX_VERIFICATION_ATTEMPTS - $intent->verification_attempts),
             ];
         }
@@ -244,7 +243,6 @@ class PaygoVerificationService
                 'success' => true,
                 'data' => $result->getData(),
                 'response_time' => $result->responseTime,
-                'cached' => false,
                 'attempts_remaining' => max(0, self::MAX_VERIFICATION_ATTEMPTS - $intent->verification_attempts),
             ];
         }

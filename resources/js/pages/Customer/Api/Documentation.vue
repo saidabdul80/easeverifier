@@ -110,8 +110,7 @@ const successResponse = `{
   "status": 200,
   "data": {
     "first_name": "John",
-    "last_name": "Doe",
-    "_sandbox": false
+    "last_name": "Doe"
   },
   "response_time": 1240,
   "message": "NIN Verified Successfully",

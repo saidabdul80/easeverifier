@@ -181,10 +181,13 @@ it('allows three successful calls for one paid nin and caches after the first', 
     $response
         ->assertOk()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('data.first_name', 'Ada');
+        ->assertJsonPath('data.first_name', 'Ada')
+        ->assertJsonMissingPath('data._raw')
+        ->assertJsonMissingPath('data._sandbox')
+        ->assertJsonMissingPath('cached')
+        ->assertJsonMissingPath('cached_reference');
 
-    $response->assertJsonPath('cached', false)
-        ->assertJsonPath('attempts_remaining', 2);
+    $response->assertJsonPath('attempts_remaining', 2);
 
     expect($intent->fresh()->status)->toBe('paid')
         ->and($intent->fresh()->verification_attempts)->toBe(1)
@@ -197,7 +200,8 @@ it('allows three successful calls for one paid nin and caches after the first', 
 
     $secondResponse
         ->assertOk()
-        ->assertJsonPath('cached', true)
+        ->assertJsonMissingPath('cached')
+        ->assertJsonMissingPath('cached_reference')
         ->assertJsonPath('attempts_remaining', 1);
 
     expect($intent->fresh()->status)->toBe('paid')
@@ -210,7 +214,8 @@ it('allows three successful calls for one paid nin and caches after the first', 
 
     $thirdResponse
         ->assertOk()
-        ->assertJsonPath('cached', true)
+        ->assertJsonMissingPath('cached')
+        ->assertJsonMissingPath('cached_reference')
         ->assertJsonPath('attempts_remaining', 0);
 
     expect($intent->fresh()->status)->toBe('used')

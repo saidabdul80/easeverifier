@@ -265,8 +265,6 @@ class PublicPaygoVerificationController extends Controller
                 'data' => $result['data'],
                 'response_time' => $result['response_time'],
                 'message' => 'NIN Verified Successfully',
-                'cached' => $result['cached'] ?? false,
-                'cached_reference' => $result['cached_reference'] ?? null,
                 'attempts_remaining' => $result['attempts_remaining'] ?? null,
             ]);
         }

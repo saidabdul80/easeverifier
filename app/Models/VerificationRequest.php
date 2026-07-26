@@ -142,4 +142,28 @@ class VerificationRequest extends Model
     {
         return $this->status === 'completed';
     }
+
+    /**
+     * Determine whether this stored response is still safe to reuse.
+     */
+    public function canReuseResponseData(): bool
+    {
+        if ($this->status !== 'completed' || empty($this->response_data) || ! $this->completed_at) {
+            return false;
+        }
+
+        if (! $this->service_provider_id) {
+            return false;
+        }
+
+        $provider = $this->relationLoaded('serviceProvider')
+            ? $this->serviceProvider
+            : $this->serviceProvider()->first();
+
+        if (! $provider) {
+            return false;
+        }
+
+        return ! $provider->updated_at || $provider->updated_at->lte($this->completed_at);
+    }
 }
