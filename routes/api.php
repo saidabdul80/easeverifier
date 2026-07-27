@@ -27,6 +27,7 @@ Route::get('/', function () {
 });
 
 Route::match(['get', 'post'], 'paygo/{publicSlug}/verify/{nin?}', [PublicPaygoVerificationController::class, 'verify']);
+Route::get('paygo/results/{reference}', [PublicPaygoVerificationController::class, 'pullResult'])->middleware('throttle:30,1');
 
 // Protected API Routes (API Key authentication)
 Route::middleware('api.auth')->prefix('v1')->group(function () {

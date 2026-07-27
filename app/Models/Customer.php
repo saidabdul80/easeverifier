@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Str;
 
@@ -46,6 +45,7 @@ class Customer extends Model
         'webhook_url',
         'api_enabled',
         'result_fetch_enabled',
+        'paygo_result_reference_fetch_limit',
         'referral_code',
         'rate_limit',
         'allowed_ips',
@@ -57,6 +57,7 @@ class Customer extends Model
         return [
             'api_enabled' => 'boolean',
             'result_fetch_enabled' => 'boolean',
+            'paygo_result_reference_fetch_limit' => 'integer',
             'rate_limit' => 'integer',
             'allowed_ips' => 'array',
             'metadata' => 'array',
@@ -128,7 +129,7 @@ class Customer extends Model
      */
     public function generateApiCredentials(): array
     {
-        $this->api_key = 'ev_live_' . Str::random(32);
+        $this->api_key = 'ev_live_'.Str::random(32);
         $this->api_secret = hash('sha256', Str::random(64));
         $this->save();
 
@@ -162,10 +163,15 @@ class Customer extends Model
         return $this->result_fetch_enabled !== false;
     }
 
+    public function paygoResultReferenceFetchLimit(): int
+    {
+        return max(1, (int) ($this->paygo_result_reference_fetch_limit ?: 3));
+    }
+
     public static function generateReferralCode(): string
     {
         do {
-            $code = 'EVR-' . strtoupper(Str::random(8));
+            $code = 'EVR-'.strtoupper(Str::random(8));
         } while (static::where('referral_code', $code)->exists());
 
         return $code;
@@ -173,10 +179,10 @@ class Customer extends Model
 
     public function referralLink(?string $email = null): string
     {
-        $path = '/result-pins/kit/' . $this->referral_code;
+        $path = '/result-pins/kit/'.$this->referral_code;
 
         if ($email) {
-            $path .= '/' . rawurlencode($email);
+            $path .= '/'.rawurlencode($email);
         }
 
         return url($path);
@@ -218,7 +224,6 @@ class Customer extends Model
         return $query->where('api_enabled', true)->whereNotNull('api_key');
     }
 
-
     /**
      * Get dedicated virtual accounts through the user.
      */
@@ -243,5 +248,4 @@ class Customer extends Model
             ->where('active', true)
             ->first();
     }
-
 }

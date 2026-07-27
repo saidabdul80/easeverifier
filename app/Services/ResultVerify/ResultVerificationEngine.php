@@ -72,7 +72,7 @@ class ResultVerificationEngine
         }
 
         $service = $this->serviceForBoardAction($board, 'form');
-        if (!$service || !$service->is_active) {
+        if (! $service || ! $service->is_active) {
             return VerificationResult::failure('Result form service is not available', 'SERVICE_UNAVAILABLE');
         }
 
@@ -92,7 +92,7 @@ class ResultVerificationEngine
             board: $board,
             searchParameter: strtoupper($board).'-FORM',
             requestData: ['board' => $board, 'action' => 'form'],
-            shouldCharge: !$this->isTestMode,
+            shouldCharge: ! $this->isTestMode,
             source: $source,
             ipAddress: $ipAddress,
             verificationRequest: $request,
@@ -104,7 +104,7 @@ class ResultVerificationEngine
             return VerificationResult::failure('Insufficient wallet balance', 'INSUFFICIENT_FUNDS');
         }
 
-        if (!$request) {
+        if (! $request) {
             return VerificationResult::failure('Failed to create result form request', 'INTERNAL_ERROR');
         }
 
@@ -120,6 +120,8 @@ class ResultVerificationEngine
         string $source = 'api',
         ?string $ipAddress = null,
         ?Branch $branch = null,
+        bool $chargeWallet = true,
+        ?float $amountCharged = null,
     ): VerificationResult {
         $branch ??= $this->activeBranch;
         $board = strtolower($board);
@@ -143,7 +145,7 @@ class ResultVerificationEngine
         }
 
         $service = $this->serviceForBoardAction($board, 'fetch');
-        if (!$service || !$service->is_active) {
+        if (! $service || ! $service->is_active) {
             return VerificationResult::failure('Result fetch service is not available', 'SERVICE_UNAVAILABLE');
         }
 
@@ -152,7 +154,9 @@ class ResultVerificationEngine
             return VerificationResult::failure('Examination number is required', 'VALIDATION_ERROR');
         }
 
-        $shouldCharge = !$this->isTestMode;
+        $price = $amountCharged ?? (float) $user->getPriceForService($service);
+        $shouldCharge = $chargeWallet && ! $this->isTestMode;
+        $recordedAmount = $shouldCharge ? $price : ($chargeWallet ? 0 : $price);
         $verificationRequest = null;
         $transaction = null;
         $wallet = null;
@@ -175,6 +179,8 @@ class ResultVerificationEngine
                 verificationRequest: $verificationRequest,
                 transaction: $transaction,
                 wallet: $wallet,
+                amount: $price,
+                recordedAmount: $recordedAmount,
             );
         } catch (Throwable $exception) {
             Log::error('Result verification payment processing failed', [
@@ -189,7 +195,7 @@ class ResultVerificationEngine
             return VerificationResult::failure('Insufficient wallet balance', 'INSUFFICIENT_FUNDS');
         }
 
-        if (!$verificationRequest) {
+        if (! $verificationRequest) {
             return VerificationResult::failure('Failed to create result verification request', 'INTERNAL_ERROR');
         }
 
@@ -271,6 +277,11 @@ class ResultVerificationEngine
         return strtolower($board).'-result-'.strtolower($action);
     }
 
+    public function searchParameterForBoard(string $board, array $params): string
+    {
+        return $this->searchParameter($board, $params);
+    }
+
     protected function createChargedRequest(
         User $user,
         ?Branch $branch,
@@ -284,8 +295,11 @@ class ResultVerificationEngine
         ?VerificationRequest &$verificationRequest,
         ?Transaction &$transaction,
         ?Wallet &$wallet,
+        ?float $amount = null,
+        ?float $recordedAmount = null,
     ): array {
-        $price = (float) $user->getPriceForService($service);
+        $price = $amount ?? (float) $user->getPriceForService($service);
+        $chargedAmount = $recordedAmount ?? ($shouldCharge ? $price : 0);
         $targetWallet = $branch?->wallet ?? $user->wallet;
 
         return DB::transaction(function () use (
@@ -297,6 +311,7 @@ class ResultVerificationEngine
             $requestData,
             $shouldCharge,
             $price,
+            $chargedAmount,
             $source,
             $ipAddress,
             $targetWallet,
@@ -309,7 +324,7 @@ class ResultVerificationEngine
                 ->lockForUpdate()
                 ->first();
 
-            if ($shouldCharge && (!$wallet || !$wallet->hasSufficientFunds($price))) {
+            if ($shouldCharge && (! $wallet || ! $wallet->hasSufficientFunds($price))) {
                 return [
                     'error' => 'INSUFFICIENT_FUNDS',
                     'current_balance' => $wallet?->total_balance ?? 0,
@@ -323,7 +338,7 @@ class ResultVerificationEngine
                 'reference' => VerificationRequest::generateReference(),
                 'search_parameter' => $searchParameter,
                 'request_data' => $requestData,
-                'amount_charged' => $shouldCharge ? $price : 0,
+                'amount_charged' => $chargedAmount,
                 'status' => 'processing',
                 'source' => $source,
                 'ip_address' => $ipAddress,
@@ -353,7 +368,7 @@ class ResultVerificationEngine
         $missing = [];
 
         foreach ($resultGate->formFields() as $field) {
-            if (!($field['required'] ?? false)) {
+            if (! ($field['required'] ?? false)) {
                 continue;
             }
 
@@ -532,7 +547,7 @@ class ResultVerificationEngine
                 ->lockForUpdate()
                 ->exists();
 
-            if (!$existingRefund && $amount > 0) {
+            if (! $existingRefund && $amount > 0) {
                 $wallet->credit(
                     $amount,
                     'refund',

@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useDisplay } from 'vuetify';
 
 interface VerificationService {
-    id: number;
+    id: number | string;
     name: string;
     slug: string;
+    service_type?: 'identity' | 'result';
+    board?: string | null;
     system_price: number;
 }
 
 interface PaygoService {
-    id: number;
+    id: number | string;
     name: string;
     public_slug: string;
     price: number;
@@ -20,13 +22,19 @@ interface PaygoService {
     success_url?: string | null;
     failure_url?: string | null;
     response_mode: 'redirect' | 'json';
+    service_type?: 'identity' | 'result';
+    board?: string | null;
     system_price: number;
     initiate_url: string;
     verify_url: string;
+    result_url?: string | null;
+    result_selector_url?: string | null;
     intents_count: number;
     paid_intents_count: number;
     used_intents_count: number;
-    service: { id: number; name: string; slug: string };
+    service: { id: number | string; name: string; slug: string };
+    is_group?: boolean;
+    grouped_services?: PaygoService[];
 }
 
 interface ServicePaymentIntent {
@@ -36,7 +44,10 @@ interface ServicePaymentIntent {
     earning: number;
     status: string;
     verification_attempts: number;
+    max_fetches?: number;
+    reference_fetches?: number;
     nin_last4?: string | null;
+    lookup_label?: string | null;
     created_at: string;
 }
 
@@ -87,16 +98,55 @@ const servicePaymentIntents = ref<ServicePaymentIntent[]>([]);
 const serviceWalletTransactions = ref<ServiceWalletTransaction[]>([]);
 const transactionTab = ref('payments');
 
-const defaultServiceId = computed(() => props.verificationServices[0]?.id || null);
+const resultVerificationOption = computed(() => props.verificationServices.find((service) => service.id === 'result'));
+const defaultServiceId = computed(() => resultVerificationOption.value?.id || props.verificationServices[0]?.id || null);
 const selectedVerificationService = computed(() => props.verificationServices.find((service) => service.id === form.verification_service_id));
-const activeServices = computed(() => props.paygoServices.filter((service) => service.is_active).length);
+const resultPaygoServices = computed(() => props.paygoServices.filter((service) => service.service_type === 'result'));
+const visiblePaygoServices = computed(() => {
+    const identityServices = props.paygoServices.filter((service) => service.service_type !== 'result');
+
+    if (!resultPaygoServices.value.length) {
+        return identityServices;
+    }
+
+    const activeResultServices = resultPaygoServices.value.filter((service) => service.is_active);
+    const source = activeResultServices[0] || resultPaygoServices.value[0];
+
+    return [
+        ...identityServices,
+        {
+            ...source,
+            id: 'result-group',
+            name: 'Result Verification',
+            public_slug: 'result-verification',
+            is_active: activeResultServices.length > 0,
+            board: null,
+            service_type: 'result',
+            service: {
+                id: 'result',
+                name: 'Result Verification',
+                slug: 'result-verification',
+            },
+            price: Math.max(...resultPaygoServices.value.map((service) => Number(service.price || 0))),
+            system_price: Math.max(...resultPaygoServices.value.map((service) => Number(service.system_price || 0))),
+            intents_count: resultPaygoServices.value.reduce((total, service) => total + service.intents_count, 0),
+            paid_intents_count: resultPaygoServices.value.reduce((total, service) => total + service.paid_intents_count, 0),
+            used_intents_count: resultPaygoServices.value.reduce((total, service) => total + service.used_intents_count, 0),
+            result_url: source.result_selector_url || source.result_url,
+            result_selector_url: source.result_selector_url,
+            is_group: true,
+            grouped_services: resultPaygoServices.value,
+        } as PaygoService,
+    ];
+});
+const activeServices = computed(() => visiblePaygoServices.value.filter((service) => service.is_active).length);
 const paidCount = computed(() => props.paygoServices.reduce((total, service) => total + service.paid_intents_count, 0));
 const usedCount = computed(() => props.paygoServices.reduce((total, service) => total + service.used_intents_count, 0));
-const firstService = computed(() => props.paygoServices[0] || null);
+const firstService = computed(() => visiblePaygoServices.value[0] || null);
 
 const form = useForm({
     name: '',
-    verification_service_id: defaultServiceId.value as number | null,
+    verification_service_id: defaultServiceId.value as number | string | null,
     price: 0,
     success_url: '',
     failure_url: '',
@@ -119,19 +169,31 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 
 const serviceMargin = (service: PaygoService) => Math.max(0, service.price - service.system_price);
 
+const applySelectedServiceDefaults = () => {
+    if (!editingService.value && selectedVerificationService.value?.id === 'result') {
+        form.name = 'Result Verification';
+    }
+
+    if (!editingService.value && selectedVerificationService.value && (!form.price || Number(form.price) <= selectedVerificationService.value.system_price)) {
+        form.price = selectedVerificationService.value.system_price + 1;
+    }
+};
+
 const openCreateDialog = () => {
     editingService.value = null;
     form.reset();
     form.verification_service_id = defaultServiceId.value;
-    form.price = (selectedVerificationService.value?.system_price || 0) + 1;
+    applySelectedServiceDefaults();
     form.is_active = true;
     showFormDialog.value = true;
 };
 
+watch(() => form.verification_service_id, applySelectedServiceDefaults);
+
 const openEditDialog = (service: PaygoService) => {
     editingService.value = service;
     form.name = service.name;
-    form.verification_service_id = service.service.id;
+    form.verification_service_id = service.is_group ? 'result' : service.service.id;
     form.price = service.price;
     form.success_url = service.success_url || '';
     form.failure_url = service.failure_url || '';
@@ -153,17 +215,21 @@ const openTransactionsDialog = async (service: PaygoService) => {
     serviceWalletTransactions.value = [];
 
     try {
-        const response = await fetch(`/customer/paygo-services/${service.id}/transactions`, {
-            headers: {
-                Accept: 'application/json',
-            },
-        });
+        const servicesToLoad = service.grouped_services?.length ? service.grouped_services : [service];
+        const responses = await Promise.all(servicesToLoad.map(async (item) => {
+            const response = await fetch(`/customer/paygo-services/${item.id}/transactions`, {
+                headers: {
+                    Accept: 'application/json',
+                },
+            });
 
-        if (!response.ok) throw new Error('Unable to load PayGo transactions.');
+            if (!response.ok) throw new Error('Unable to load PayGo transactions.');
 
-        const payload = await response.json();
-        servicePaymentIntents.value = payload.payment_intents || [];
-        serviceWalletTransactions.value = payload.wallet_transactions || [];
+            return response.json();
+        }));
+
+        servicePaymentIntents.value = responses.flatMap((payload) => payload.payment_intents || []);
+        serviceWalletTransactions.value = responses.flatMap((payload) => payload.wallet_transactions || []);
     } finally {
         transactionsLoading.value = false;
     }
@@ -178,6 +244,11 @@ const submitForm = () => {
     };
 
     if (editingService.value) {
+        if (editingService.value.is_group) {
+            form.post('/customer/paygo-services', options);
+            return;
+        }
+
         form.put(`/customer/paygo-services/${editingService.value.id}`, options);
         return;
     }
@@ -186,10 +257,12 @@ const submitForm = () => {
 };
 
 const toggleService = (service: PaygoService) => {
+    if (service.is_group) return;
     router.post(`/customer/paygo-services/${service.id}/toggle`, {}, { preserveScroll: true });
 };
 
 const deleteService = (service: PaygoService) => {
+    if (service.is_group) return;
     if (!confirm('Delete this PayGo service? Existing initiate links will stop working.')) return;
     router.delete(`/customer/paygo-services/${service.id}`, { preserveScroll: true });
 };
@@ -217,7 +290,7 @@ const statusColor = (status: string) => {
 
 const formatDate = (date?: string | null) => date ? new Date(date).toLocaleString() : '-';
 
-const initiateExample = (service: PaygoService) => `${service.initiate_url}/12345678901`;
+const initiateExample = (service: PaygoService) => service.service_type === 'result' ? (service.result_url || service.initiate_url) : `${service.initiate_url}/12345678901`;
 const verifyGetExample = (service: PaygoService) => `${service.verify_url}/12345678901`;
 const verifyPostBody = `{
   "nin": "12345678901",
@@ -237,10 +310,10 @@ const verifyPostBody = `{
                 <div class="header-copy">
                     <div class="header-kicker">
                         <v-icon size="18">mdi-cash-fast</v-icon>
-                        PayGo NIN verification
+                        PayGo verification
                     </div>
-                    <h1>Sell prepaid NIN verification from your own link.</h1>
-                    <p>Set a public price above your system price, collect payment first, then verify the paid NIN up to three times.</p>
+                    <h1>Sell prepaid verification from your own link.</h1>
+                    <p>Set a public price above your system price, collect payment first, then run NIN or result verification from a paid reference.</p>
                 </div>
 
                 <div class="header-actions">
@@ -258,7 +331,7 @@ const verifyPostBody = `{
             </section>
 
             <v-alert v-if="!verificationServices.length" type="warning" variant="tonal" class="mb-5">
-                NIN verification is not currently available, so PayGo services cannot be created.
+                No eligible PayGo verification service is currently available.
             </v-alert>
 
             <section class="wallet-strip">
@@ -305,18 +378,18 @@ const verifyPostBody = `{
             <section class="summary-grid">
                 <div class="summary-item">
                     <span>Services</span>
-                    <strong>{{ paygoServices.length }}</strong>
+                    <strong>{{ visiblePaygoServices.length }}</strong>
                     <small>{{ activeServices }} active</small>
                 </div>
                 <div class="summary-item">
-                    <span>Paid NINs</span>
+                    <span>Paid requests</span>
                     <strong>{{ paidCount }}</strong>
                     <small>Ready or already verified</small>
                 </div>
                 <div class="summary-item">
                     <span>Used payments</span>
                     <strong>{{ usedCount }}</strong>
-                    <small>Consumed after 3 result calls</small>
+                    <small>Consumed after configured pulls</small>
                 </div>
             </section>
 
@@ -326,10 +399,10 @@ const verifyPostBody = `{
                         <h2>Services</h2>
                         <p>Manage public payment links and API response mode.</p>
                     </div>
-                    <v-chip variant="tonal" color="primary">{{ paygoServices.length }} total</v-chip>
+                    <v-chip variant="tonal" color="primary">{{ visiblePaygoServices.length }} total</v-chip>
                 </div>
 
-                <div v-if="!paygoServices.length" class="empty-state">
+                <div v-if="!visiblePaygoServices.length" class="empty-state">
                     <v-icon size="44">mdi-link-plus</v-icon>
                     <h3>No PayGo service yet</h3>
                     <p>Create a service to get a public initiate URL and verify endpoint.</p>
@@ -337,7 +410,7 @@ const verifyPostBody = `{
                 </div>
 
                 <div v-else class="service-list">
-                    <article v-for="service in paygoServices" :key="service.id" class="service-row">
+                    <article v-for="service in visiblePaygoServices" :key="service.id" class="service-row">
                         <div class="service-main">
                             <div class="service-avatar">
                                 <v-icon>mdi-card-account-details-outline</v-icon>
@@ -349,7 +422,7 @@ const verifyPostBody = `{
                                         {{ service.is_active ? 'Active' : 'Paused' }}
                                     </v-chip>
                                 </div>
-                                <p>{{ service.service.name }} · {{ service.response_mode === 'json' ? 'JSON response' : 'Redirect/UI response' }}</p>
+                                <p>{{ service.service_type === 'result' ? 'Exam selector page' : (service.response_mode === 'json' ? 'JSON response' : 'Redirect/UI response') }}</p>
                             </div>
                         </div>
 
@@ -380,10 +453,10 @@ const verifyPostBody = `{
                             <v-btn icon size="small" variant="text" title="Edit service" @click="openEditDialog(service)">
                                 <v-icon>mdi-pencil</v-icon>
                             </v-btn>
-                            <v-btn icon size="small" variant="text" :title="service.is_active ? 'Pause service' : 'Activate service'" @click="toggleService(service)">
+                            <v-btn v-if="!service.is_group" icon size="small" variant="text" :title="service.is_active ? 'Pause service' : 'Activate service'" @click="toggleService(service)">
                                 <v-icon>{{ service.is_active ? 'mdi-pause' : 'mdi-play' }}</v-icon>
                             </v-btn>
-                            <v-btn icon size="small" variant="text" color="error" title="Delete service" @click="deleteService(service)">
+                            <v-btn v-if="!service.is_group" icon size="small" variant="text" color="error" title="Delete service" @click="deleteService(service)">
                                 <v-icon>mdi-delete-outline</v-icon>
                             </v-btn>
                         </div>
@@ -398,7 +471,7 @@ const verifyPostBody = `{
                     </div>
                     <div>
                         <h2>PayGo integration guide</h2>
-                        <p>Redirect to payment, wait for paid status, then verify the NIN. Three result calls are allowed.</p>
+                        <p>Redirect to payment, wait for paid status, then return the verification result from the paid reference.</p>
                     </div>
                 </div>
 
@@ -412,7 +485,7 @@ const verifyPostBody = `{
                         <div class="step-number">1</div>
                         <div class="step-body">
                             <h3>Send the buyer to payment</h3>
-                            <p>Pass the NIN in the URL path, query string, or request body.</p>
+                            <p>Use the result page URL for result checks, or pass the NIN in the URL path for NIN checks.</p>
                             <div class="code-row">
                                 <code>{{ firstService ? initiateExample(firstService) : '/paygo/{slug}/initiate/12345678901' }}</code>
                                 <v-btn icon variant="outlined" size="small" title="Copy initiate example" @click="copyToClipboard(firstService ? initiateExample(firstService) : '/paygo/{slug}/initiate/12345678901')">
@@ -426,7 +499,7 @@ const verifyPostBody = `{
                         <div class="step-number">2</div>
                         <div class="step-body">
                             <h3>Payment succeeds</h3>
-                            <p>The NIN now has a paid verification available.</p>
+                            <p>The request now has a paid verification reference.</p>
                             <span class="paid-pill"><v-icon size="18">mdi-check-circle-outline</v-icon>status = paid</span>
                         </div>
                     </div>
@@ -434,8 +507,8 @@ const verifyPostBody = `{
                     <div class="guide-step">
                         <div class="step-number">3</div>
                         <div class="step-body">
-                            <h3>Verify the paid NIN</h3>
-                            <p>Call the verify endpoint with only the NIN. Works with GET or POST.</p>
+                            <h3>Fetch the paid verification</h3>
+                            <p>NIN links use the verify endpoint. Result links show the result page and expose a limited open pull endpoint.</p>
                             <div class="code-row">
                                 <code>{{ firstService ? verifyGetExample(firstService) : '/api/paygo/{slug}/verify/12345678901' }}</code>
                                 <v-btn icon variant="outlined" size="small" title="Copy verify example" @click="copyToClipboard(firstService ? verifyGetExample(firstService) : '/api/paygo/{slug}/verify/12345678901')">
@@ -454,7 +527,7 @@ const verifyPostBody = `{
 
                 <div class="guide-warning">
                     <v-icon>mdi-alert-outline</v-icon>
-                    <span>A paid NIN can be verified up to 3 times. The first successful call goes through the NIN service; calls 2 and 3 return stored successful data.</span>
+                    <span>NIN links keep the existing 3-call behavior. Result reference pulls use the admin-configured limit snapshotted on the payment.</span>
                 </div>
             </section>
 
@@ -463,9 +536,9 @@ const verifyPostBody = `{
         <v-dialog v-model="showLinksDialog" max-width="720">
             <v-card class="dialog-card">
                 <v-card-title>{{ selectedLinksService?.name }} URLs</v-card-title>
-                <v-card-subtitle>Copy the public initiate URL or the paid NIN verify endpoint.</v-card-subtitle>
+                <v-card-subtitle>Copy the public payment, result page, or verify endpoint URL.</v-card-subtitle>
                 <v-card-text v-if="selectedLinksService" class="link-dialog-body">
-                    <div class="modal-link-row">
+                    <div v-if="selectedLinksService.service_type !== 'result'" class="modal-link-row">
                         <div>
                             <span>Initiate payment</span>
                             <code>{{ selectedLinksService.initiate_url }}</code>
@@ -474,7 +547,7 @@ const verifyPostBody = `{
                             <v-icon>mdi-content-copy</v-icon>
                         </v-btn>
                     </div>
-                    <div class="modal-link-row">
+                    <div v-if="selectedLinksService.service_type !== 'result'" class="modal-link-row">
                         <div>
                             <span>Verify paid NIN</span>
                             <code>{{ selectedLinksService.verify_url }}</code>
@@ -483,7 +556,25 @@ const verifyPostBody = `{
                             <v-icon>mdi-content-copy</v-icon>
                         </v-btn>
                     </div>
-                    <div class="modal-link-note">
+                    <div v-if="selectedLinksService.service_type === 'result' && selectedLinksService.result_selector_url" class="modal-link-row">
+                        <div>
+                            <span>Exam selector page</span>
+                            <code>{{ selectedLinksService.result_selector_url }}</code>
+                        </div>
+                        <v-btn icon variant="outlined" title="Copy selector URL" @click="copyToClipboard(selectedLinksService.result_selector_url || '')">
+                            <v-icon>mdi-content-copy</v-icon>
+                        </v-btn>
+                    </div>
+                    <div v-if="selectedLinksService.service_type === 'result' && !selectedLinksService.result_selector_url" class="modal-link-row">
+                        <div>
+                            <span>Result page</span>
+                            <code>{{ selectedLinksService.result_url }}</code>
+                        </div>
+                        <v-btn icon variant="outlined" title="Copy result page URL" @click="copyToClipboard(selectedLinksService.result_url || '')">
+                            <v-icon>mdi-content-copy</v-icon>
+                        </v-btn>
+                    </div>
+                    <div v-if="selectedLinksService.service_type !== 'result'" class="modal-link-note">
                         Add the NIN to the path, for example <code>/12345678901</code>. The verify endpoint works with GET or POST.
                     </div>
                 </v-card-text>
@@ -522,7 +613,7 @@ const verifyPostBody = `{
                                             <th>Amount</th>
                                             <th>System Price</th>
                                             <th>Earning</th>
-                                            <th>NIN</th>
+                                            <th>Lookup</th>
                                             <th>Attempts</th>
                                             <th>Status</th>
                                             <th>Date</th>
@@ -534,8 +625,8 @@ const verifyPostBody = `{
                                             <td>{{ formatCurrency(intent.amount) }}</td>
                                             <td>{{ formatCurrency(intent.system_price) }}</td>
                                             <td class="text-success font-weight-bold">{{ formatCurrency(intent.earning) }}</td>
-                                            <td>{{ intent.nin_last4 ? `****${intent.nin_last4}` : '-' }}</td>
-                                            <td>{{ intent.verification_attempts }}/3</td>
+                                            <td>{{ intent.lookup_label || (intent.nin_last4 ? `****${intent.nin_last4}` : '-') }}</td>
+                                            <td>{{ intent.reference_fetches ?? intent.verification_attempts }}/{{ intent.max_fetches || 3 }}</td>
                                             <td><v-chip size="small" variant="tonal" :color="statusColor(intent.status)">{{ intent.status }}</v-chip></td>
                                             <td>{{ formatDate(intent.created_at) }}</td>
                                         </tr>

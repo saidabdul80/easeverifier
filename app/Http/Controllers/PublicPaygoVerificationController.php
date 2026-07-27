@@ -3,8 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\CustomerPaygoService;
+use App\Models\PaygoVerificationIntent;
+use App\Models\User;
 use App\Services\Paygo\PaygoVerificationService;
 use App\Services\PaystackService;
+use App\Services\ResultVerify\ResultFactory;
+use App\Services\ResultVerify\ResultGates\NbaisResult;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -17,6 +21,7 @@ class PublicPaygoVerificationController extends Controller
     public function __construct(
         protected PaygoVerificationService $paygo,
         protected PaystackService $paystack,
+        protected ResultFactory $resultFactory,
     ) {}
 
     public function initiate(Request $request, string $publicSlug, ?string $nin = null)
@@ -134,6 +139,172 @@ class PublicPaygoVerificationController extends Controller
         return inertia()->location($payment['authorization_url']);
     }
 
+    public function resultCustomer(Request $request, string $referralCode): Response
+    {
+        $user = User::query()
+            ->whereHas('customer', fn ($query) => $query->where('referral_code', $referralCode))
+            ->with('customer')
+            ->firstOrFail();
+
+        $services = $this->publicResultServicesForUser($user);
+        $selectedService = null;
+        $fields = [];
+
+        if ($request->filled('service')) {
+            $selectedService = $services
+                ->firstWhere('public_slug', $request->string('service')->value());
+
+            if ($selectedService) {
+                $fields = $this->resultFields($selectedService);
+            }
+        }
+
+        return $this->renderResultForm($user, $services, $selectedService, $fields);
+    }
+
+    public function resultService(Request $request, string $publicSlug)
+    {
+        $paygoService = CustomerPaygoService::with(['user.customer', 'verificationService'])
+            ->where('public_slug', $publicSlug)
+            ->firstOrFail();
+
+        abort_unless($paygoService->is_active && $paygoService->isResultVerification(), 404);
+        abort_unless($paygoService->user?->hasResultFetchAccess(), 403);
+
+        $services = $this->publicResultServicesForUser($paygoService->user);
+        $fields = $this->resultFields($paygoService);
+
+        if ($request->isMethod('get')) {
+            return $this->renderResultForm($paygoService->user, $services, $paygoService, $fields);
+        }
+
+        $validated = $this->validateResultPayload($request, $fields);
+        $params = collect($fields)
+            ->mapWithKeys(fn (array $field) => [
+                (string) $field['name'] => $validated[(string) $field['name']] ?? null,
+            ])
+            ->filter(fn ($value) => filled($value))
+            ->toArray();
+
+        try {
+            $intent = $this->paygo->createIntent($paygoService, [
+                'params' => $params,
+                'email' => $validated['email'] ?? null,
+                'phone' => $validated['phone'] ?? null,
+            ], $request->ip());
+        } catch (RuntimeException $exception) {
+            return back()->withErrors(['result' => $exception->getMessage()])->withInput();
+        }
+
+        $payment = $this->paystack->initializeTransaction(
+            email: $validated['email'] ?? $paygoService->user->email,
+            amountInKobo: (int) ((float) $intent->amount * 100),
+            reference: $intent->reference,
+            callbackUrl: route('paygo.callback'),
+        );
+
+        if (! $payment['success']) {
+            $intent->update([
+                'status' => 'failed',
+                'metadata' => array_merge($intent->metadata ?? [], [
+                    'payment_status' => 'initialize_failed',
+                    'payment_error' => $payment['message'] ?? null,
+                ]),
+            ]);
+
+            return back()->withErrors(['result' => $payment['message'] ?? 'Payment gateway initialization failed.'])->withInput();
+        }
+
+        return inertia()->location($payment['authorization_url']);
+    }
+
+    public function resultPaid(Request $request, string $reference): Response
+    {
+        try {
+            $intent = $this->paygo->displayResultByReference($reference);
+
+            if ($intent->status === 'paid' && $intent->verificationRequest?->status !== 'completed') {
+                $this->paygo->fetchResultForPaidIntent($intent, $request->ip());
+                $intent = $this->paygo->displayResultByReference($reference);
+            }
+        } catch (RuntimeException $exception) {
+            abort(404, $exception->getMessage());
+        }
+
+        return Inertia::render('Public/Paygo/ResultPaid', [
+            'paygoService' => $this->publicResultServicePayload($intent->paygoService),
+            'intent' => [
+                'reference' => $intent->reference,
+                'status' => $intent->status,
+                'lookup_label' => $intent->lookup_label,
+                'paid_at' => $intent->paid_at,
+                'fetches_used' => $intent->reference_fetches,
+                'fetches_allowed' => $intent->max_fetches_snapshot,
+                'fetches_remaining' => max(0, (int) $intent->max_fetches_snapshot - (int) $intent->reference_fetches),
+                'pull_url' => url('/api/paygo/results/'.$intent->reference),
+            ],
+            'verification' => $intent->verificationRequest,
+            'result' => [
+                'success' => $intent->verificationRequest?->status === 'completed',
+                'data' => $intent->verificationRequest?->response_data,
+                'error' => $intent->metadata['error_message'] ?? $intent->verificationRequest?->error_message,
+            ],
+        ]);
+    }
+
+    public function resultSchools(Request $request, string $publicSlug, NbaisResult $nbaisResult): JsonResponse
+    {
+        $paygoService = CustomerPaygoService::with('verificationService')
+            ->where('public_slug', $publicSlug)
+            ->firstOrFail();
+
+        abort_unless($paygoService->is_active && $paygoService->resultBoard() === 'nbais', 404);
+
+        $validated = $request->validate([
+            'parent_cat' => 'required|string|max:10',
+        ]);
+
+        try {
+            return response()->json([
+                'success' => true,
+                'data' => $nbaisResult->fetchSchools($validated['parent_cat']),
+            ]);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'error' => $exception->getMessage(),
+                'error_code' => 'SCHOOL_LOOKUP_FAILED',
+            ], 400);
+        }
+    }
+
+    public function pullResult(string $reference): JsonResponse
+    {
+        try {
+            $result = $this->paygo->pullResultByReference($reference);
+        } catch (RuntimeException $exception) {
+            $status = str_contains(strtolower($exception->getMessage()), 'limit') ? 429 : 400;
+
+            return response()->json([
+                'success' => false,
+                'error' => $exception->getMessage(),
+                'error_code' => $status === 429 ? 'PULL_LIMIT_EXCEEDED' : 'RESULT_REFERENCE_INVALID',
+            ], $status);
+        }
+
+        /** @var PaygoVerificationIntent $intent */
+        $intent = $result['intent'];
+
+        return response()->json([
+            'success' => true,
+            'status' => 200,
+            'reference' => $intent->reference,
+            'lookup_label' => $intent->lookup_label,
+            'data' => $result['data'],
+            'fetches_remaining' => $result['fetches_remaining'],
+        ]);
+    }
+
     protected function shouldRespondWithJson(Request $request, CustomerPaygoService $paygoService): bool
     {
         $responseMode = strtolower((string) ($request->query('response') ?: $request->query('format')));
@@ -147,6 +318,107 @@ class PublicPaygoVerificationController extends Controller
         }
 
         return $request->expectsJson() || ($paygoService->response_mode ?? 'redirect') === 'json';
+    }
+
+    protected function publicResultServicesForUser(User $user)
+    {
+        if (! $user->hasResultFetchAccess()) {
+            return collect();
+        }
+
+        CustomerPaygoService::syncResultBoardSetForUser($user);
+
+        return CustomerPaygoService::query()
+            ->where('user_id', $user->id)
+            ->where('is_active', true)
+            ->with(['user.customer', 'verificationService'])
+            ->whereHas('verificationService', function ($query) {
+                $query
+                    ->where('is_active', true)
+                    ->where('slug', 'like', '%-result-fetch');
+            })
+            ->orderedByResultBoard()
+            ->get();
+    }
+
+    protected function renderResultForm(User $user, $services, ?CustomerPaygoService $selectedService, array $fields): Response
+    {
+        return Inertia::render('Public/Paygo/ResultInitiate', [
+            'customer' => [
+                'name' => $user->customer?->company_name ?: $user->name,
+                'selector_url' => $user->customer?->referral_code
+                    ? route('paygo.results.customer', $user->customer->referral_code)
+                    : null,
+            ],
+            'services' => $services
+                ->map(fn (CustomerPaygoService $service) => $this->publicResultServicePayload($service))
+                ->values(),
+            'paygoService' => $selectedService ? $this->publicResultServicePayload($selectedService) : null,
+            'fields' => $fields,
+            'prefill' => [
+                'email' => request()->string('email')->value(),
+                'phone' => request()->string('phone')->value(),
+            ],
+        ]);
+    }
+
+    protected function publicResultServicePayload(CustomerPaygoService $service): array
+    {
+        return [
+            'id' => $service->id,
+            'name' => $service->name,
+            'public_slug' => $service->public_slug,
+            'price' => (float) $service->price,
+            'service_name' => $service->verificationService?->name,
+            'board' => strtoupper((string) $service->resultBoard()),
+            'customer_name' => $service->user?->customer?->company_name ?: $service->user?->name,
+            'result_url' => $service->resultUrl(),
+            'selector_url' => $service->resultSelectorUrl(),
+        ];
+    }
+
+    protected function resultFields(CustomerPaygoService $paygoService): array
+    {
+        $board = $paygoService->resultBoard();
+        abort_unless($board, 404);
+
+        $fields = $this->resultFactory->create($board)->formFields();
+
+        if ($board === 'nbais') {
+            $fields = collect($fields)
+                ->map(function (array $field) use ($paygoService) {
+                    if (($field['name'] ?? null) === 'sub_cat') {
+                        $field['options_endpoint'] = route('paygo.results.schools', $paygoService->public_slug);
+                    }
+
+                    return $field;
+                })
+                ->all();
+        }
+
+        return $fields;
+    }
+
+    protected function validateResultPayload(Request $request, array $fields): array
+    {
+        $rules = [
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:30',
+        ];
+
+        foreach ($fields as $field) {
+            $name = (string) ($field['name'] ?? '');
+
+            if ($name === '') {
+                continue;
+            }
+
+            $rules[$name] = ($field['required'] ?? false)
+                ? 'required|string|max:500'
+                : 'nullable|string|max:500';
+        }
+
+        return $request->validate($rules);
     }
 
     protected function alreadyPaid(CustomerPaygoService $paygoService, \App\Models\PaygoVerificationIntent $intent): Response
@@ -207,6 +479,20 @@ class PublicPaygoVerificationController extends Controller
             $intent = $this->paygo->completePayment($reference, $payment);
         } catch (RuntimeException $exception) {
             return $this->redirectAfterPayment($intent, false, $exception->getMessage());
+        }
+
+        if ($intent->isResultFlow()) {
+            try {
+                $this->paygo->fetchResultForPaidIntent($intent, $request->ip());
+            } catch (RuntimeException $exception) {
+                return redirect()
+                    ->route('paygo.results.paid', $intent->reference)
+                    ->with('error', $exception->getMessage());
+            }
+
+            return redirect()
+                ->route('paygo.results.paid', $intent->reference)
+                ->with('success', 'Payment successful. Your result reference is '.$intent->reference.'.');
         }
 
         return $this->redirectAfterPayment($intent, true, 'Payment successful. Your verification reference is '.$intent->reference.'.');

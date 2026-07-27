@@ -5,12 +5,15 @@ use App\Models\CustomerServicePricing;
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
-use App\Services\ResultVerify\ResultGates\NECOResult;
-use App\Services\ResultVerify\ResultGates\NecoEVerify;
 use App\Services\ResultVerify\ResultGates\NabtebResult;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
+use App\Services\ResultVerify\ResultGates\NecoEVerify;
+use App\Services\ResultVerify\ResultGates\NECOResult;
 use App\Services\ResultVerify\ResultGates\WAECResult;
 use App\Services\ResultVerify\ResultInterface;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
 
 function createResultApiUser(float $balance = 100): User
 {
@@ -28,15 +31,17 @@ function createResultApiUser(float $balance = 100): User
 
 function createResultService(string $slug, float $price): VerificationService
 {
-    return VerificationService::create([
-        'name' => ucwords(str_replace('-', ' ', $slug)),
-        'slug' => $slug,
-        'description' => 'Result verification test service',
-        'default_price' => $price,
-        'cost_price' => 0,
-        'is_active' => true,
-        'sort_order' => 1,
-    ]);
+    return VerificationService::updateOrCreate(
+        ['slug' => $slug],
+        [
+            'name' => ucwords(str_replace('-', ' ', $slug)),
+            'description' => 'Result verification test service',
+            'default_price' => $price,
+            'cost_price' => 0,
+            'is_active' => true,
+            'sort_order' => 1,
+        ],
+    );
 }
 
 it('charges the configured customer price when loading WAEC form metadata', function () {
@@ -83,7 +88,8 @@ it('charges the fetch service independently from the form service', function () 
         'is_active' => true,
     ]);
 
-    app()->instance(WAECResult::class, new class implements ResultInterface {
+    app()->instance(WAECResult::class, new class implements ResultInterface
+    {
         public function formFields(): array
         {
             return [
@@ -245,7 +251,8 @@ it('charges NBAIS fetch separately and returns candidate plus result data', func
         'is_active' => true,
     ]);
 
-    app()->instance(NbaisResult::class, new class extends NbaisResult {
+    app()->instance(NbaisResult::class, new class extends NbaisResult
+    {
         public function fetchResult(array $params): string
         {
             return '<html>NBAIS result</html>';
@@ -528,7 +535,8 @@ it('charges NABTEB fetch separately and returns candidate plus result data', fun
         'is_active' => true,
     ]);
 
-    app()->instance(NabtebResult::class, new class extends NabtebResult {
+    app()->instance(NabtebResult::class, new class extends NabtebResult
+    {
         public function fetchResult(array $params): string
         {
             return '<html>NABTEB result</html>';

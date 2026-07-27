@@ -17,9 +17,11 @@ class PaygoServiceController extends Controller
 {
     public function index(Request $request)
     {
+        CustomerPaygoService::syncResultBoardSetForUser($request->user());
+
         $services = CustomerPaygoService::query()
             ->where('user_id', $request->user()->id)
-            ->with(['verificationService:id,name,slug,default_price'])
+            ->with(['user.customer', 'verificationService:id,name,slug,default_price'])
             ->withCount([
                 'intents',
                 'intents as paid_intents_count' => fn ($query) => $query->whereIn('status', ['paid', 'verifying', 'used']),
@@ -37,25 +39,20 @@ class PaygoServiceController extends Controller
                 'failure_url' => $service->failure_url,
                 'response_mode' => $service->response_mode ?? 'redirect',
                 'service' => $service->verificationService,
+                'service_type' => $service->isResultVerification() ? 'result' : 'identity',
+                'board' => $service->isResultVerification() ? strtoupper((string) $service->resultBoard()) : null,
                 'system_price' => (float) $request->user()->getPriceForService($service->verificationService),
                 'initiate_url' => $service->initiateUrl(),
                 'verify_url' => $service->verifyUrl(),
+                'result_url' => $service->isResultVerification() ? $service->resultUrl() : null,
+                'result_selector_url' => $service->isResultVerification() ? $service->resultSelectorUrl() : null,
                 'intents_count' => $service->intents_count,
                 'paid_intents_count' => $service->paid_intents_count,
                 'used_intents_count' => $service->used_intents_count,
                 'created_at' => $service->created_at,
             ]);
 
-        $verificationServices = VerificationService::active()
-            ->where('slug', 'nin')
-            ->ordered()
-            ->get()
-            ->map(fn (VerificationService $service) => [
-                'id' => $service->id,
-                'name' => $service->name,
-                'slug' => $service->slug,
-                'system_price' => (float) $request->user()->getPriceForService($service),
-            ]);
+        $verificationServices = $this->paygoVerificationServiceOptions($request);
 
         $paygoWallet = PaygoWallet::firstOrCreate(
             ['user_id' => $request->user()->id],
@@ -215,7 +212,10 @@ class PaygoServiceController extends Controller
                     'earning' => max(0, (float) $intent->amount - (float) $intent->system_price_snapshot),
                     'status' => $intent->status,
                     'verification_attempts' => $intent->verification_attempts,
+                    'max_fetches' => $intent->max_fetches_snapshot,
+                    'reference_fetches' => $intent->reference_fetches,
                     'nin_last4' => $intent->metadata['nin_last4'] ?? null,
+                    'lookup_label' => $intent->lookup_label,
                     'paid_at' => $intent->paid_at,
                     'used_at' => $intent->used_at,
                     'created_at' => $intent->created_at,
@@ -240,7 +240,10 @@ class PaygoServiceController extends Controller
                     'earning' => max(0, (float) $intent->amount - (float) $intent->system_price_snapshot),
                     'status' => $intent->status,
                     'verification_attempts' => $intent->verification_attempts,
+                    'max_fetches' => $intent->max_fetches_snapshot,
+                    'reference_fetches' => $intent->reference_fetches,
                     'nin_last4' => $intent->metadata['nin_last4'] ?? null,
+                    'lookup_label' => $intent->lookup_label,
                     'paid_at' => $intent->paid_at,
                     'used_at' => $intent->used_at,
                     'created_at' => $intent->created_at,
@@ -267,6 +270,15 @@ class PaygoServiceController extends Controller
     public function store(Request $request)
     {
         $validated = $this->validatePayload($request);
+
+        if ($validated['verification_service_id'] === 'result') {
+            return $this->storeResultPaygoServices($request, $validated);
+        }
+
+        if (blank($validated['name'] ?? null)) {
+            return back()->withErrors(['name' => 'The service name field is required.']);
+        }
+
         $verificationService = VerificationService::active()->whereKey($validated['verification_service_id'])->firstOrFail();
         $minimum = (float) $request->user()->getPriceForService($verificationService);
 
@@ -295,6 +307,11 @@ class PaygoServiceController extends Controller
         $this->authorizeService($request, $paygoService);
 
         $validated = $this->validatePayload($request, $paygoService);
+
+        if (blank($validated['name'] ?? null)) {
+            return back()->withErrors(['name' => 'The service name field is required.']);
+        }
+
         $verificationService = VerificationService::active()->whereKey($validated['verification_service_id'])->firstOrFail();
         $minimum = (float) $request->user()->getPriceForService($verificationService);
 
@@ -365,11 +382,45 @@ class PaygoServiceController extends Controller
     protected function validatePayload(Request $request, ?CustomerPaygoService $paygoService = null): array
     {
         return $request->validate([
-            'name' => 'required|string|max:120',
+            'name' => 'nullable|string|max:120',
             'verification_service_id' => [
                 'required',
-                'integer',
-                Rule::exists('verification_services', 'id')->where('slug', 'nin'),
+                function (string $attribute, mixed $value, \Closure $fail) use ($request, $paygoService) {
+                    if (! $paygoService && $value === 'result') {
+                        if (! $request->user()->hasResultFetchAccess()) {
+                            $fail('Result verification is not enabled for this account.');
+
+                            return;
+                        }
+
+                        if ($this->activeResultFetchServices()->isEmpty()) {
+                            $fail('No active result verification services are available.');
+                        }
+
+                        return;
+                    }
+
+                    if (! filter_var($value, FILTER_VALIDATE_INT)) {
+                        $fail('Select a valid verification service.');
+
+                        return;
+                    }
+
+                    $exists = VerificationService::active()
+                        ->whereKey((int) $value)
+                        ->where(function ($query) use ($request) {
+                            $query->where('slug', 'nin');
+
+                            if ($request->user()->hasResultFetchAccess()) {
+                                $query->orWhere('slug', 'like', '%-result-fetch');
+                            }
+                        })
+                        ->exists();
+
+                    if (! $exists) {
+                        $fail('Select a valid verification service.');
+                    }
+                },
             ],
             'price' => 'required|numeric|min:1',
             'success_url' => 'nullable|url|max:255',
@@ -382,5 +433,94 @@ class PaygoServiceController extends Controller
     protected function authorizeService(Request $request, CustomerPaygoService $paygoService): void
     {
         abort_unless($paygoService->user_id === $request->user()->id, 403);
+    }
+
+    protected function isResultBoardFetchService(VerificationService $service): bool
+    {
+        return (bool) preg_match('/^[a-z0-9-]+-result-fetch$/', $service->slug);
+    }
+
+    protected function boardFromService(VerificationService $service): string
+    {
+        return preg_replace('/-result-fetch$/', '', $service->slug);
+    }
+
+    protected function activeResultFetchServices()
+    {
+        return VerificationService::active()
+            ->where('slug', 'like', '%-result-fetch')
+            ->ordered()
+            ->get();
+    }
+
+    protected function maxResultSystemPrice(Request $request): float
+    {
+        return (float) $this->activeResultFetchServices()
+            ->map(fn (VerificationService $service) => (float) $request->user()->getPriceForService($service))
+            ->max();
+    }
+
+    protected function paygoVerificationServiceOptions(Request $request)
+    {
+        $services = VerificationService::active()
+            ->where('slug', 'nin')
+            ->ordered()
+            ->get()
+            ->map(fn (VerificationService $service) => [
+                'id' => $service->id,
+                'name' => $service->name,
+                'slug' => $service->slug,
+                'service_type' => 'identity',
+                'board' => null,
+                'system_price' => (float) $request->user()->getPriceForService($service),
+            ]);
+
+        if ($request->user()->hasResultFetchAccess() && $this->activeResultFetchServices()->isNotEmpty()) {
+            $services->push([
+                'id' => 'result',
+                'name' => 'Result Verification',
+                'slug' => 'result-verification',
+                'service_type' => 'result',
+                'board' => null,
+                'system_price' => $this->maxResultSystemPrice($request),
+            ]);
+        }
+
+        return $services->values();
+    }
+
+    protected function storeResultPaygoServices(Request $request, array $validated)
+    {
+        $minimum = $this->maxResultSystemPrice($request);
+
+        if ((float) $validated['price'] <= $minimum) {
+            return back()->withErrors(['price' => 'The public price must be above your highest result verification system price of NGN '.number_format($minimum, 2).'.']);
+        }
+
+        DB::transaction(function () use ($request, $validated) {
+            foreach ($this->activeResultFetchServices() as $service) {
+                $board = strtoupper($this->boardFromService($service));
+                $paygoService = CustomerPaygoService::firstOrNew([
+                    'user_id' => $request->user()->id,
+                    'verification_service_id' => $service->id,
+                ]);
+
+                if (! $paygoService->exists) {
+                    $paygoService->public_slug = CustomerPaygoService::generatePublicSlug($board.' Result Verification');
+                    $paygoService->verify_secret_hash = hash('sha256', CustomerPaygoService::generateSecret());
+                }
+
+                $paygoService->fill([
+                    'name' => $board.' Result Verification',
+                    'price' => $validated['price'],
+                    'is_active' => true,
+                    'success_url' => $validated['success_url'] ?? null,
+                    'failure_url' => $validated['failure_url'] ?? null,
+                    'response_mode' => $validated['response_mode'] ?? 'redirect',
+                ])->save();
+            }
+        });
+
+        return back()->with('success', 'Result verification PayGo pages created successfully.');
     }
 }

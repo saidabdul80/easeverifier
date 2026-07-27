@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 
 const props = defineProps<{
     user: { name: string; email: string };
@@ -11,6 +11,7 @@ const props = defineProps<{
     customPricing?: any;
     resultPinProducts?: any[];
     resultPinPricing?: any;
+    paygoResultServices?: any[];
 }>();
 
 const pricingDialog = ref(false);
@@ -19,7 +20,27 @@ const resultPinPricingDialog = ref(false);
 const resultPinPricingForm = useForm({ product_id: null, price: 0 });
 const resultFetchAccessForm = useForm({
     enabled: props.customer.customer?.result_fetch_enabled ?? true,
+    paygo_result_reference_fetch_limit: props.customer.customer?.paygo_result_reference_fetch_limit ?? 3,
 });
+
+const buildPaygoResultRows = (services: any[] = []) => services.map((row: any) => ({
+    ...row,
+    form: {
+        name: row.paygo_service?.name || `${String(row.board).toUpperCase()} Result Verification`,
+        price: row.paygo_service?.price ?? row.suggested_price,
+        is_active: row.paygo_service?.is_active ?? false,
+    },
+}));
+const paygoResultRows = ref(buildPaygoResultRows(props.paygoResultServices));
+const savingPaygoServiceId = ref<number | null>(null);
+const paygoResultErrors = ref<Record<number, string>>({});
+
+watch(
+    () => props.paygoResultServices,
+    (services) => {
+        paygoResultRows.value = buildPaygoResultRows(services);
+    },
+);
 
 const openPricingDialog = (service: any) => {
     pricingForm.service_id = service.id;
@@ -49,6 +70,26 @@ const submitResultFetchAccess = () => {
     resultFetchAccessForm.post(`/admin/customers/${props.customer.id}/result-fetch-access`, {
         preserveScroll: true,
     });
+};
+
+const savePaygoResultService = (row: any) => {
+    savingPaygoServiceId.value = row.service_id;
+    paygoResultErrors.value[row.service_id] = '';
+
+    router.post(`/admin/customers/${props.customer.id}/paygo-result-services/${row.service_id}`, row.form, {
+        preserveScroll: true,
+        onError: (errors) => {
+            paygoResultErrors.value[row.service_id] = errors.price || errors.name || 'Unable to save PayGo result page.';
+        },
+        onFinish: () => {
+            savingPaygoServiceId.value = null;
+        },
+    });
+};
+
+const copyToClipboard = async (value?: string) => {
+    if (!value) return;
+    await navigator.clipboard?.writeText(value);
 };
 
 const impersonateUrl = `/impersonate/take/${props.customer.id}`;
@@ -119,6 +160,19 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                                     :disabled="resultFetchAccessForm.processing"
                                     @change="submitResultFetchAccess"
                                 />
+                                <v-text-field
+                                    v-model="resultFetchAccessForm.paygo_result_reference_fetch_limit"
+                                    type="number"
+                                    min="1"
+                                    max="50"
+                                    label="PayGo result reference pulls"
+                                    variant="outlined"
+                                    density="compact"
+                                    class="mt-4"
+                                    :error-messages="resultFetchAccessForm.errors.paygo_result_reference_fetch_limit"
+                                    :disabled="resultFetchAccessForm.processing"
+                                    @change="submitResultFetchAccess"
+                                />
                             </div>
                         </div>
                     </v-card-text>
@@ -159,6 +213,110 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { styl
                                     <td>{{ formatCurrency(service.default_price) }}</td>
                                     <td><v-chip v-if="customPricing?.[service.id]" color="primary" size="small">{{ formatCurrency(customPricing[service.id].price) }}</v-chip><span v-else class="text-grey">Default</span></td>
                                     <td><v-btn size="small" variant="text" @click="openPricingDialog(service)">Set Price</v-btn></td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+                    </v-card-text>
+                </v-card>
+
+                <v-card class="mt-4">
+                    <v-card-title class="d-flex align-center">
+                        PayGo Result Pages
+                        <v-spacer />
+                        <v-chip size="small" color="primary" variant="tonal">{{ paygoResultRows.length }} boards</v-chip>
+                    </v-card-title>
+                    <v-card-text>
+                        <v-alert
+                            v-if="!resultFetchAccessForm.enabled"
+                            type="warning"
+                            variant="tonal"
+                            density="compact"
+                            class="mb-4"
+                        >
+                            Result fetch access is disabled for this customer.
+                        </v-alert>
+                        <v-table density="comfortable">
+                            <thead>
+                                <tr>
+                                    <th>Board</th>
+                                    <th>System Price</th>
+                                    <th>Public Name</th>
+                                    <th>Public Price</th>
+                                    <th>Status</th>
+                                    <th>Links</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="row in paygoResultRows" :key="row.service_id">
+                                    <td>
+                                        <div class="font-weight-medium">{{ String(row.board).toUpperCase() }}</div>
+                                        <div class="text-caption text-grey">{{ row.service_name }}</div>
+                                    </td>
+                                    <td>{{ formatCurrency(row.system_price) }}</td>
+                                    <td style="min-width: 220px">
+                                        <v-text-field
+                                            v-model="row.form.name"
+                                            density="compact"
+                                            variant="outlined"
+                                            hide-details
+                                        />
+                                    </td>
+                                    <td style="width: 150px">
+                                        <v-text-field
+                                            v-model="row.form.price"
+                                            type="number"
+                                            density="compact"
+                                            variant="outlined"
+                                            hide-details
+                                        />
+                                    </td>
+                                    <td>
+                                        <v-switch
+                                            v-model="row.form.is_active"
+                                            color="primary"
+                                            inset
+                                            hide-details
+                                            density="compact"
+                                        />
+                                    </td>
+                                    <td>
+                                        <div v-if="row.paygo_service?.result_url" class="d-flex ga-2">
+                                            <v-btn
+                                                icon
+                                                size="small"
+                                                variant="text"
+                                                title="Copy board page"
+                                                @click="copyToClipboard(row.paygo_service.result_url)"
+                                            >
+                                                <v-icon>mdi-link-variant</v-icon>
+                                            </v-btn>
+                                            <v-btn
+                                                icon
+                                                size="small"
+                                                variant="text"
+                                                title="Open board page"
+                                                :href="row.paygo_service.result_url"
+                                                target="_blank"
+                                            >
+                                                <v-icon>mdi-open-in-new</v-icon>
+                                            </v-btn>
+                                        </div>
+                                        <span v-else class="text-grey text-caption">Not published</span>
+                                    </td>
+                                    <td class="text-right">
+                                        <v-btn
+                                            color="primary"
+                                            size="small"
+                                            :loading="savingPaygoServiceId === row.service_id"
+                                            @click="savePaygoResultService(row)"
+                                        >
+                                            Save
+                                        </v-btn>
+                                        <div v-if="paygoResultErrors[row.service_id]" class="text-error text-caption mt-1">
+                                            {{ paygoResultErrors[row.service_id] }}
+                                        </div>
+                                    </td>
                                 </tr>
                             </tbody>
                         </v-table>

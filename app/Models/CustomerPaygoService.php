@@ -52,6 +52,11 @@ class CustomerPaygoService extends Model
         return $this->hasMany(PaygoVerificationIntent::class);
     }
 
+    public function scopeOrderedByResultBoard($query)
+    {
+        return $query->orderBy('name');
+    }
+
     public static function generatePublicSlug(string $name): string
     {
         $base = Str::slug($name) ?: 'paygo';
@@ -66,6 +71,60 @@ class CustomerPaygoService extends Model
     public static function generateSecret(): string
     {
         return 'pgs_'.Str::random(48);
+    }
+
+    public static function syncResultBoardSetForUser(User $user): void
+    {
+        if (! $user->hasResultFetchAccess()) {
+            return;
+        }
+
+        $resultServices = VerificationService::active()
+            ->where('slug', 'like', '%-result-fetch')
+            ->ordered()
+            ->get();
+
+        if ($resultServices->isEmpty()) {
+            return;
+        }
+
+        $existingServices = static::query()
+            ->with('verificationService')
+            ->where('user_id', $user->id)
+            ->whereHas('verificationService', fn ($query) => $query->where('slug', 'like', '%-result-fetch'))
+            ->get()
+            ->keyBy('verification_service_id');
+
+        if ($existingServices->isEmpty()) {
+            return;
+        }
+
+        $template = $existingServices->firstWhere('is_active', true) ?: $existingServices->first();
+        $publicPrice = max(
+            (float) $template->price,
+            (float) $resultServices->map(fn (VerificationService $service) => $user->getPriceForService($service))->max() + 1,
+        );
+
+        foreach ($resultServices as $service) {
+            if ($existingServices->has($service->id)) {
+                continue;
+            }
+
+            $board = strtoupper(preg_replace('/-result-fetch$/', '', $service->slug));
+
+            static::create([
+                'user_id' => $user->id,
+                'verification_service_id' => $service->id,
+                'name' => $board.' Result Verification',
+                'public_slug' => static::generatePublicSlug($board.' Result Verification'),
+                'verify_secret_hash' => hash('sha256', static::generateSecret()),
+                'price' => $publicPrice,
+                'is_active' => $template->is_active,
+                'success_url' => $template->success_url,
+                'failure_url' => $template->failure_url,
+                'response_mode' => $template->response_mode ?? 'redirect',
+            ]);
+        }
     }
 
     public function rotateSecret(): string
@@ -89,5 +148,31 @@ class CustomerPaygoService extends Model
     public function verifyUrl(): string
     {
         return url('/api/paygo/'.$this->public_slug.'/verify');
+    }
+
+    public function resultUrl(): string
+    {
+        return route('paygo.results.service', $this->public_slug);
+    }
+
+    public function resultSelectorUrl(): ?string
+    {
+        $referralCode = $this->user?->customer?->referral_code;
+
+        return $referralCode ? route('paygo.results.customer', $referralCode) : null;
+    }
+
+    public function isResultVerification(): bool
+    {
+        return (bool) preg_match('/^[a-z0-9-]+-result-fetch$/', (string) $this->verificationService?->slug);
+    }
+
+    public function resultBoard(): ?string
+    {
+        if (! $this->isResultVerification()) {
+            return null;
+        }
+
+        return preg_replace('/-result-fetch$/', '', (string) $this->verificationService->slug);
     }
 }

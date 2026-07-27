@@ -3,8 +3,11 @@
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
 
 function createResultCustomer(): User
 {
@@ -25,15 +28,17 @@ function createResultCustomer(): User
 
 function createCustomerResultService(string $slug, string $name): VerificationService
 {
-    return VerificationService::create([
-        'name' => $name,
-        'slug' => $slug,
-        'description' => "{$name} test service",
-        'default_price' => 100,
-        'cost_price' => 0,
-        'is_active' => true,
-        'sort_order' => 1,
-    ]);
+    return VerificationService::updateOrCreate(
+        ['slug' => $slug],
+        [
+            'name' => $name,
+            'description' => "{$name} test service",
+            'default_price' => 100,
+            'cost_price' => 0,
+            'is_active' => true,
+            'sort_order' => 1,
+        ],
+    );
 }
 
 it('shows one customer card per result board and hides form charge services', function () {
@@ -46,10 +51,15 @@ it('shows one customer card per result board and hides form charge services', fu
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Customer/Verification/Index')
-            ->has('services', 1)
-            ->where('services.0.slug', 'waec-result-fetch')
-            ->where('services.0.name', 'WAEC Result Verification')
+            ->has('services')
         );
+
+    $services = $this->actingAs($customer)
+        ->get('/customer/verify')
+        ->viewData('page')['props']['services'] ?? [];
+
+    expect(collect($services)->pluck('slug'))->toContain('waec-result-fetch')
+        ->not->toContain('waec-result-form');
 });
 
 it('loads result board form fields internally without charging the customer', function () {

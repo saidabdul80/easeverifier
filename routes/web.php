@@ -1,35 +1,33 @@
 <?php
 
+use App\Http\Controllers\Admin\BlogController as AdminBlogController;
+use App\Http\Controllers\Admin\CampaignEmailController as AdminCampaignEmailController;
+use App\Http\Controllers\Admin\CustomerController as AdminCustomerController;
+// Controllers
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\ProviderController as AdminProviderController;
+use App\Http\Controllers\Admin\ResultPinController as AdminResultPinController;
+use App\Http\Controllers\Admin\ServiceController as AdminServiceController;
+use App\Http\Controllers\Admin\TransactionController as AdminTransactionController;
+use App\Http\Controllers\Admin\VerificationController as AdminVerificationController;
+use App\Http\Controllers\Admin\WalletController as AdminWalletController;
+use App\Http\Controllers\Auth\EmailOtpVerificationController;
+use App\Http\Controllers\BlogController;
+use App\Http\Controllers\Customer\ApiKeyController;
+use App\Http\Controllers\Customer\BranchController as CustomerBranchController;
+use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
+use App\Http\Controllers\Customer\PaygoServiceController;
+use App\Http\Controllers\Customer\PaymentController;
+use App\Http\Controllers\Customer\ResultPinController as CustomerResultPinController;
+use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
+use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
+use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
+use App\Http\Controllers\PublicPaygoVerificationController;
+use App\Http\Controllers\PublicResultPinController;
+use App\Http\Controllers\SitemapController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
-
-// Controllers
-use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
-use App\Http\Controllers\Admin\CustomerController as AdminCustomerController;
-use App\Http\Controllers\Admin\ServiceController as AdminServiceController;
-use App\Http\Controllers\Admin\ProviderController as AdminProviderController;
-use App\Http\Controllers\Admin\WalletController as AdminWalletController;
-use App\Http\Controllers\Admin\TransactionController as AdminTransactionController;
-use App\Http\Controllers\Admin\VerificationController as AdminVerificationController;
-use App\Http\Controllers\Admin\BlogController as AdminBlogController;
-use App\Http\Controllers\Admin\CampaignEmailController as AdminCampaignEmailController;
-use App\Http\Controllers\Admin\ResultPinController as AdminResultPinController;
-use App\Http\Controllers\Auth\EmailOtpVerificationController;
-use App\Http\Controllers\BlogController;
-use App\Http\Controllers\PublicResultPinController;
-use App\Http\Controllers\PublicPaygoVerificationController;
-
-use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
-use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
-use App\Http\Controllers\Customer\ResultPinController as CustomerResultPinController;
-use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
-use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
-use App\Http\Controllers\Customer\ApiKeyController;
-use App\Http\Controllers\Customer\BranchController as CustomerBranchController;
-use App\Http\Controllers\Customer\PaygoServiceController;
-use App\Http\Controllers\Customer\PaymentController;
-use App\Http\Controllers\SitemapController;
 
 Route::get('/.well-known/acme-challenge/{token}', function (string $token) {
     $challengePath = public_path(".well-known/acme-challenge/{$token}");
@@ -64,6 +62,7 @@ Route::get('/services', function () {
     $services = \App\Models\VerificationService::where('is_active', true)
         ->orderBy('sort_order')
         ->get();
+
     return Inertia::render('Services', [
         'services' => $services,
     ]);
@@ -73,6 +72,7 @@ Route::get('/pricing', function () {
     $services = \App\Models\VerificationService::where('is_active', true)
         ->orderBy('sort_order')
         ->get();
+
     return Inertia::render('Pricing', [
         'services' => $services,
     ]);
@@ -89,6 +89,10 @@ Route::get('/result-pins/orders/{order:reference}', [PublicResultPinController::
 
 Route::match(['get', 'post'], '/paygo/{publicSlug}/initiate/{nin?}', [PublicPaygoVerificationController::class, 'initiate'])->name('paygo.initiate');
 Route::get('/paygo/callback', [PublicPaygoVerificationController::class, 'callback'])->name('paygo.callback');
+Route::get('/paygo/results/customer/{referralCode}', [PublicPaygoVerificationController::class, 'resultCustomer'])->name('paygo.results.customer');
+Route::get('/paygo/results/paid/{reference}', [PublicPaygoVerificationController::class, 'resultPaid'])->name('paygo.results.paid');
+Route::get('/paygo/results/{publicSlug}/schools', [PublicPaygoVerificationController::class, 'resultSchools'])->name('paygo.results.schools');
+Route::match(['get', 'post'], '/paygo/results/{publicSlug}', [PublicPaygoVerificationController::class, 'resultService'])->name('paygo.results.service');
 
 Route::get('/documentation', function () {
     return Inertia::render('Documentation');
@@ -145,6 +149,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::post('customers/{customer}/pricing', [AdminCustomerController::class, 'updatePricing'])->name('customers.pricing');
     Route::post('customers/{customer}/result-pin-pricing', [AdminCustomerController::class, 'updateResultPinPricing'])->name('customers.result-pin-pricing');
     Route::post('customers/{customer}/result-fetch-access', [AdminCustomerController::class, 'updateResultFetchAccess'])->name('customers.result-fetch-access');
+    Route::post('customers/{customer}/paygo-result-services/{service}', [AdminCustomerController::class, 'updateResultPaygoService'])->name('customers.paygo-result-services.update');
 
     // Services
     Route::resource('services', AdminServiceController::class);
@@ -248,9 +253,9 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::post('branches', [CustomerBranchController::class, 'store'])->name('branches.store');
     Route::put('branches/{branch}', [CustomerBranchController::class, 'update'])->name('branches.update');
     Route::post('branches/transfer', [CustomerBranchController::class, 'transfer'])->name('branches.transfer');
-    
+
     // Dedicated Virtual Accounts
-    Route::post('payment/dedicated-account/create', [PaymentController::class, 'createDedicatedAccount'])->name('payment.dva.create');   
+    Route::post('payment/dedicated-account/create', [PaymentController::class, 'createDedicatedAccount'])->name('payment.dva.create');
     Route::get('payment/dedicated-accounts', [PaymentController::class, 'getDedicatedAccounts'])->name('payment.dva.list');
 
 });
@@ -262,10 +267,10 @@ Route::post('webhook/paystack', [PaymentController::class, 'webhook'])->name('we
 Route::get('update-wallet/{user_id}/{amount}', function ($user_id, $amount) {
     $wallet = \App\Models\Wallet::where('user_id', $user_id)->first();
 
-    if (!$wallet) {
+    if (! $wallet) {
         return response()->json([
             'success' => false,
-            'message' => 'Wallet not found for user ID: ' . $user_id,
+            'message' => 'Wallet not found for user ID: '.$user_id,
         ], 404);
     }
 

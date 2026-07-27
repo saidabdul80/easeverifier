@@ -4,16 +4,17 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\CustomerPaygoService;
+use App\Models\CustomerResultPinPricing;
+use App\Models\CustomerServicePricing;
+use App\Models\ResultPinProduct;
 use App\Models\User;
 use App\Models\VerificationService;
-use App\Models\CustomerServicePricing;
-use App\Models\CustomerResultPinPricing;
-use App\Models\ResultPinProduct;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Inertia\Inertia;
 use Illuminate\Validation\Rule;
+use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
 
 class CustomerController extends Controller
@@ -25,8 +26,8 @@ class CustomerController extends Controller
             ->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%")
-                      ->orWhereHas('customer', fn($c) => $c->where('company_name', 'like', "%{$search}%"));
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhereHas('customer', fn ($c) => $c->where('company_name', 'like', "%{$search}%"));
                 });
             })
             ->when($request->status !== null, function ($query) use ($request) {
@@ -104,7 +105,7 @@ class CustomerController extends Controller
 
     public function show(User $customer)
     {
-        $customer->load(['customer', 'wallet', 'transactions' => fn($q) => $q->latest()->take(20)]);
+        $customer->load(['customer', 'wallet', 'transactions' => fn ($q) => $q->latest()->take(20)]);
 
         $verificationStats = $customer->verificationRequests()
             ->selectRaw('status, COUNT(*) as count')
@@ -121,6 +122,39 @@ class CustomerController extends Controller
         $resultPinProducts = ResultPinProduct::active()->ordered()->get();
         $resultPinPricing = $customer->resultPinPricing()->with('product')->get()
             ->keyBy('result_pin_product_id');
+        $existingResultPaygoServices = CustomerPaygoService::query()
+            ->with('verificationService')
+            ->where('user_id', $customer->id)
+            ->whereHas('verificationService', fn ($query) => $query->where('slug', 'like', '%-result-fetch'))
+            ->get()
+            ->keyBy('verification_service_id');
+        $paygoResultServices = VerificationService::active()
+            ->where('slug', 'like', '%-result-fetch')
+            ->orderBy('name')
+            ->get()
+            ->map(function (VerificationService $service) use ($customer, $existingResultPaygoServices) {
+                $paygoService = $existingResultPaygoServices->get($service->id);
+                $systemPrice = $customer->getPriceForService($service);
+
+                return [
+                    'service_id' => $service->id,
+                    'service_name' => $service->name,
+                    'service_slug' => $service->slug,
+                    'board' => $this->boardFromResultFetchService($service),
+                    'system_price' => $systemPrice,
+                    'suggested_price' => $paygoService ? (float) $paygoService->price : $systemPrice + 100,
+                    'paygo_service' => $paygoService ? [
+                        'id' => $paygoService->id,
+                        'name' => $paygoService->name,
+                        'price' => (float) $paygoService->price,
+                        'is_active' => $paygoService->is_active,
+                        'public_slug' => $paygoService->public_slug,
+                        'result_url' => $paygoService->resultUrl(),
+                        'selector_url' => $paygoService->resultSelectorUrl(),
+                    ] : null,
+                ];
+            })
+            ->values();
 
         return Inertia::render('Admin/Customers/Show', [
             'customer' => $customer,
@@ -129,6 +163,7 @@ class CustomerController extends Controller
             'customPricing' => $customPricing,
             'resultPinProducts' => $resultPinProducts,
             'resultPinPricing' => $resultPinPricing,
+            'paygoResultServices' => $paygoResultServices,
         ]);
     }
 
@@ -145,7 +180,7 @@ class CustomerController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $customer->id,
+            'email' => 'required|email|unique:users,email,'.$customer->id,
             'phone' => 'nullable|string|max:20',
             'is_active' => 'boolean',
             'account_type' => ['required', Rule::in(Customer::ACCOUNT_TYPES)],
@@ -231,17 +266,69 @@ class CustomerController extends Controller
     {
         $validated = $request->validate([
             'enabled' => 'required|boolean',
+            'paygo_result_reference_fetch_limit' => 'required|integer|min:1|max:50',
         ]);
 
         $profile = $customer->customer()->firstOrNew(['user_id' => $customer->id]);
         $profile->result_fetch_enabled = $validated['enabled'];
+        $profile->paygo_result_reference_fetch_limit = $validated['paygo_result_reference_fetch_limit'];
 
-        if (!$profile->account_type) {
+        if (! $profile->account_type) {
             $profile->account_type = 'individual';
         }
 
         $profile->save();
 
         return back()->with('success', 'Result board fetch access updated successfully.');
+    }
+
+    public function updateResultPaygoService(Request $request, User $customer, VerificationService $service)
+    {
+        abort_unless($service->is_active && $this->isResultFetchService($service), 404);
+
+        $validated = $request->validate([
+            'name' => 'nullable|string|max:120',
+            'price' => 'required|numeric|min:1',
+            'is_active' => 'required|boolean',
+        ]);
+
+        $minimum = (float) $customer->getPriceForService($service);
+
+        if ((float) $validated['price'] <= $minimum) {
+            return back()->withErrors([
+                'price' => 'The public price must be above this customer system price of NGN '.number_format($minimum, 2).'.',
+            ]);
+        }
+
+        $paygoService = CustomerPaygoService::firstOrNew([
+            'user_id' => $customer->id,
+            'verification_service_id' => $service->id,
+        ]);
+
+        if (! $paygoService->exists) {
+            $paygoService->public_slug = CustomerPaygoService::generatePublicSlug($validated['name'] ?: $service->name);
+            $paygoService->verify_secret_hash = hash('sha256', CustomerPaygoService::generateSecret());
+            $paygoService->success_url = null;
+            $paygoService->failure_url = null;
+            $paygoService->response_mode = 'redirect';
+        }
+
+        $paygoService->fill([
+            'name' => $validated['name'] ?: strtoupper($this->boardFromResultFetchService($service)).' Result Verification',
+            'price' => $validated['price'],
+            'is_active' => $validated['is_active'],
+        ])->save();
+
+        return back()->with('success', 'Customer PayGo result page updated successfully.');
+    }
+
+    protected function isResultFetchService(VerificationService $service): bool
+    {
+        return (bool) preg_match('/^[a-z0-9-]+-result-fetch$/', $service->slug);
+    }
+
+    protected function boardFromResultFetchService(VerificationService $service): string
+    {
+        return preg_replace('/-result-fetch$/', '', $service->slug);
     }
 }

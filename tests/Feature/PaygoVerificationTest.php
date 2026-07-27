@@ -2,14 +2,18 @@
 
 use App\Models\Customer;
 use App\Models\CustomerPaygoService;
-use App\Models\PaygoVerificationIntent;
 use App\Models\ServiceProvider;
 use App\Models\User;
 use App\Models\VerificationService;
 use App\Services\Paygo\PaygoVerificationService;
+use App\Services\ResultVerify\ResultGates\WAECResult;
+use App\Services\ResultVerify\ResultInterface;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->withoutMiddleware(ValidateCsrfToken::class);
@@ -37,15 +41,32 @@ function createPaygoCustomer(): User
 
 function createPaygoNinService(float $price = 100): VerificationService
 {
-    return VerificationService::create([
-        'name' => 'NIN Verification',
-        'slug' => 'nin',
-        'description' => 'NIN service',
-        'default_price' => $price,
-        'cost_price' => 50,
-        'is_active' => true,
-        'sort_order' => 1,
-    ]);
+    return VerificationService::updateOrCreate(
+        ['slug' => 'nin'],
+        [
+            'name' => 'NIN Verification',
+            'description' => 'NIN service',
+            'default_price' => $price,
+            'cost_price' => 50,
+            'is_active' => true,
+            'sort_order' => 1,
+        ],
+    );
+}
+
+function createPaygoResultService(string $slug = 'waec-result-fetch', float $price = 100): VerificationService
+{
+    return VerificationService::updateOrCreate(
+        ['slug' => $slug],
+        [
+            'name' => ucwords(str_replace('-', ' ', $slug)),
+            'description' => 'Result service',
+            'default_price' => $price,
+            'cost_price' => 0,
+            'is_active' => true,
+            'sort_order' => 10,
+        ],
+    );
 }
 
 function attachSuccessfulPaygoProvider(VerificationService $service): void
@@ -124,7 +145,7 @@ it('completes paygo payment idempotently and credits the customer wallet once', 
         'channel' => 'card',
     ]);
 
-    expect((float) $user->wallet->fresh()->balance)->toBe(150.0)
+    expect((float) $user->paygoWallet()->first()->fresh()->balance)->toBe(50.0)
         ->and($intent->fresh()->status)->toBe('paid');
 });
 
@@ -191,7 +212,7 @@ it('allows three successful calls for one paid nin and caches after the first', 
 
     expect($intent->fresh()->status)->toBe('paid')
         ->and($intent->fresh()->verification_attempts)->toBe(1)
-        ->and((float) $user->wallet->fresh()->balance)->toBe(50.0);
+        ->and((float) $user->paygoWallet()->first()->fresh()->balance)->toBe(50.0);
 
     $secondResponse = $this->postJson("/api/paygo/{$paygoService->public_slug}/verify", [
         'nin' => '12345678901',
@@ -230,4 +251,146 @@ it('allows three successful calls for one paid nin and caches after the first', 
     $fourthResponse
         ->assertStatus(400)
         ->assertJsonPath('error_code', 'PAYGO_PAYMENT_INVALID');
+});
+
+it('allows a customer to publish a paygo result verification page', function () {
+    $this->withoutVite();
+
+    $user = createPaygoCustomer();
+    $service = createPaygoResultService();
+
+    $this
+        ->actingAs($user)
+        ->post('/customer/paygo-services', [
+            'name' => 'WAEC PayGo',
+            'verification_service_id' => $service->id,
+            'price' => 150,
+        ])
+        ->assertSessionHasNoErrors();
+
+    $paygoService = CustomerPaygoService::firstOrFail();
+
+    $this
+        ->get("/paygo/results/customer/{$user->customer->referral_code}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Public/Paygo/ResultInitiate')
+            ->has('services', 5)
+        );
+
+    $this
+        ->get("/paygo/results/{$paygoService->public_slug}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Public/Paygo/ResultInitiate')
+            ->where('paygoService.board', 'WAEC')
+            ->where('fields.0.name', 'txtExamNumber')
+        );
+});
+
+it('exposes one generic result verification option when customers create paygo services', function () {
+    $this->withoutVite();
+
+    $user = createPaygoCustomer();
+    createPaygoNinService();
+
+    $response = $this
+        ->actingAs($user)
+        ->get('/customer/paygo-services')
+        ->assertOk();
+
+    $options = collect($response->viewData('page')['props']['verificationServices'] ?? []);
+
+    expect($options->pluck('slug')->all())->toContain('nin', 'result-verification')
+        ->not->toContain('neco-everify-result-fetch');
+
+    $this
+        ->actingAs($user)
+        ->post('/customer/paygo-services', [
+            'verification_service_id' => 'result',
+            'price' => 150,
+            'response_mode' => 'redirect',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $resultFetchServices = VerificationService::where('slug', 'like', '%-result-fetch')->count();
+
+    expect(CustomerPaygoService::where('user_id', $user->id)->count())->toBe($resultFetchServices);
+});
+
+it('stores a paid paygo result and limits open endpoint pulls by admin configuration', function () {
+    $user = createPaygoCustomer();
+    $user->customer->update(['paygo_result_reference_fetch_limit' => 2]);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+
+    app()->instance(WAECResult::class, new class implements ResultInterface
+    {
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamYear', 'label' => 'Examination Year', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamType', 'label' => 'Examination Type', 'type' => 'text', 'required' => true],
+                ['name' => 'txtPIN', 'label' => 'PIN', 'type' => 'text', 'required' => true],
+                ['name' => 'txtCardSerialNo', 'label' => 'Card Serial Number', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '<html>paid result</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'success',
+                'candidate' => [
+                    'name' => 'Paid Candidate',
+                    'exam_number' => '1234567890',
+                ],
+                'subjects' => [
+                    ['subject' => 'MATHEMATICS', 'grade' => 'A1', 'score' => null],
+                ],
+                'overall' => null,
+            ];
+        }
+    });
+
+    $intent = app(PaygoVerificationService::class)->createIntent($paygoService, [
+        'params' => [
+            'txtExamNumber' => '1234567890',
+            'ExamYear' => '2025',
+            'ExamType' => 'MAY/JUN',
+            'txtPIN' => '123456789012',
+            'txtCardSerialNo' => 'WRN123456789',
+        ],
+    ]);
+
+    app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 150,
+        'reference' => $intent->reference,
+        'paid_at' => now(),
+        'channel' => 'card',
+    ]);
+
+    $result = app(PaygoVerificationService::class)->fetchResultForPaidIntent($intent->fresh(), '127.0.0.1');
+
+    expect($result['success'])->toBeTrue()
+        ->and($intent->fresh()->max_fetches_snapshot)->toBe(2)
+        ->and($intent->fresh()->verificationRequest->response_data['candidate']['name'])->toBe('Paid Candidate');
+
+    $this->getJson("/api/paygo/results/{$intent->reference}")
+        ->assertOk()
+        ->assertJsonPath('data.candidate.name', 'Paid Candidate')
+        ->assertJsonPath('fetches_remaining', 1);
+
+    $this->getJson("/api/paygo/results/{$intent->reference}")
+        ->assertOk()
+        ->assertJsonPath('fetches_remaining', 0);
+
+    $this->getJson("/api/paygo/results/{$intent->reference}")
+        ->assertStatus(429)
+        ->assertJsonPath('error_code', 'PULL_LIMIT_EXCEEDED');
 });

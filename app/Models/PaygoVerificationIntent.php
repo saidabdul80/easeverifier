@@ -15,14 +15,20 @@ class PaygoVerificationIntent extends Model
         'customer_paygo_service_id',
         'user_id',
         'verification_service_id',
+        'flow_type',
         'transaction_id',
         'verification_request_id',
         'reference',
         'nin_hash',
+        'lookup_hash',
+        'lookup_label',
+        'payload',
         'amount',
         'system_price_snapshot',
         'status',
         'verification_attempts',
+        'max_fetches_snapshot',
+        'reference_fetches',
         'buyer_phone',
         'paid_at',
         'used_at',
@@ -35,7 +41,10 @@ class PaygoVerificationIntent extends Model
         return [
             'amount' => 'decimal:2',
             'system_price_snapshot' => 'decimal:2',
+            'payload' => 'encrypted:array',
             'verification_attempts' => 'integer',
+            'max_fetches_snapshot' => 'integer',
+            'reference_fetches' => 'integer',
             'paid_at' => 'datetime',
             'used_at' => 'datetime',
             'expires_at' => 'datetime',
@@ -51,6 +60,16 @@ class PaygoVerificationIntent extends Model
     public static function hashNin(string $nin): string
     {
         return hash('sha256', preg_replace('/\D+/', '', $nin));
+    }
+
+    public static function hashLookup(string $value): string
+    {
+        return hash('sha256', trim(strtolower($value)));
+    }
+
+    public function isResultFlow(): bool
+    {
+        return $this->flow_type === 'result';
     }
 
     public function paygoService(): BelongsTo
