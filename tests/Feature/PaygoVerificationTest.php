@@ -103,6 +103,8 @@ function createPaygoServiceFor(User $user, VerificationService $service, string 
         'verify_secret_hash' => hash('sha256', $secret),
         'price' => $price,
         'is_active' => true,
+        'callback_mode' => 'redirect',
+        'webhook_secret' => CustomerPaygoService::generateWebhookSecret(),
     ]);
 }
 
@@ -265,6 +267,8 @@ it('allows a customer to publish a paygo result verification page', function () 
             'name' => 'WAEC PayGo',
             'verification_service_id' => $service->id,
             'price' => 150,
+            'success_url' => 'https://school.test/verify/success',
+            'failure_url' => 'https://school.test/verify/failure',
         ])
         ->assertSessionHasNoErrors();
 
@@ -310,6 +314,8 @@ it('exposes one generic result verification option when customers create paygo s
             'verification_service_id' => 'result',
             'price' => 150,
             'response_mode' => 'redirect',
+            'success_url' => 'https://school.test/verify/success',
+            'failure_url' => 'https://school.test/verify/failure',
         ])
         ->assertSessionHasNoErrors();
 
@@ -393,4 +399,109 @@ it('stores a paid paygo result and limits open endpoint pulls by admin configura
     $this->getJson("/api/paygo/results/{$intent->reference}")
         ->assertStatus(429)
         ->assertJsonPath('error_code', 'PULL_LIMIT_EXCEEDED');
+});
+
+it('redirects back to the school portal and posts a webhook for hybrid paygo result callbacks', function () {
+    $user = createPaygoCustomer();
+    $user->customer->update([
+        'webhook_url' => 'https://school.test/hooks/easeverifier',
+    ]);
+
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+    $paygoService->update([
+        'name' => 'WAEC Result Verification',
+        'success_url' => 'https://school.test/verify/success',
+        'failure_url' => 'https://school.test/verify/failure',
+        'callback_mode' => 'hybrid',
+    ]);
+
+    app()->instance(WAECResult::class, new class implements ResultInterface
+    {
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamYear', 'label' => 'Examination Year', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamType', 'label' => 'Examination Type', 'type' => 'text', 'required' => true],
+                ['name' => 'txtPIN', 'label' => 'PIN', 'type' => 'text', 'required' => true],
+                ['name' => 'txtCardSerialNo', 'label' => 'Card Serial Number', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '<html>hybrid result</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'success',
+                'candidate' => [
+                    'name' => 'Hybrid Candidate',
+                    'exam_number' => '1234567890',
+                ],
+                'subjects' => [
+                    ['subject' => 'ENGLISH', 'grade' => 'A1', 'score' => null],
+                ],
+            ];
+        }
+    });
+
+    Http::fake([
+        '*/transaction/verify/*' => Http::response([
+            'status' => true,
+            'data' => [
+                'status' => 'success',
+                'amount' => 15000,
+                'reference' => 'PGO-HYBRID-REF',
+                'paid_at' => now()->toISOString(),
+                'channel' => 'card',
+                'customer' => [
+                    'email' => $user->email,
+                ],
+            ],
+        ], 200),
+        'https://school.test/hooks/easeverifier' => Http::response([
+            'received' => true,
+        ], 200),
+    ]);
+
+    $intent = app(PaygoVerificationService::class)->createIntent($paygoService->fresh('user.customer', 'verificationService'), [
+        'params' => [
+            'txtExamNumber' => '1234567890',
+            'ExamYear' => '2025',
+            'ExamType' => 'MAY/JUN',
+            'txtPIN' => '123456789012',
+            'txtCardSerialNo' => 'WRN123456789',
+        ],
+        'portal_context' => [
+            'candidate_id' => 'STU-12345',
+            'portal_ref' => 'APP-90210',
+            'state' => 'signed-state-token',
+        ],
+    ]);
+
+    $response = $this->get("/paygo/callback?reference={$intent->reference}");
+
+    $response->assertRedirect(
+        'https://school.test/verify/success?reference='.$intent->reference
+        .'&candidate_id=STU-12345&portal_ref=APP-90210&state=signed-state-token&status=paid&payment_status=paid&result_status=ready'
+    );
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) use ($intent) {
+        if ($request->url() !== 'https://school.test/hooks/easeverifier') {
+            return false;
+        }
+
+        return $request->hasHeader('X-EaseVerifier-Signature')
+            && $request['reference'] === $intent->reference
+            && $request['candidate_id'] === 'STU-12345'
+            && $request['portal_ref'] === 'APP-90210'
+            && $request['result_status'] === 'ready'
+            && $request['result']['candidate']['name'] === 'Hybrid Candidate';
+    });
+
+    expect($intent->fresh()->metadata['webhook_last_status'] ?? null)->toBe('delivered');
 });

@@ -38,6 +38,8 @@ class PaygoServiceController extends Controller
                 'success_url' => $service->success_url,
                 'failure_url' => $service->failure_url,
                 'response_mode' => $service->response_mode ?? 'redirect',
+                'callback_mode' => $service->callback_mode ?? 'redirect',
+                'webhook_secret' => $service->ensureWebhookSecret(),
                 'service' => $service->verificationService,
                 'service_type' => $service->isResultVerification() ? 'result' : 'identity',
                 'board' => $service->isResultVerification() ? strtoupper((string) $service->resultBoard()) : null,
@@ -62,6 +64,7 @@ class PaygoServiceController extends Controller
         return Inertia::render('Customer/Paygo/Index', [
             'paygoServices' => $services,
             'verificationServices' => $verificationServices,
+            'customerWebhookUrl' => $request->user()->customer?->webhook_url,
             'paygoWallet' => [
                 'balance' => (float) $paygoWallet->balance,
                 'pending_withdrawal' => (float) $paygoWallet->pending_withdrawal,
@@ -297,7 +300,11 @@ class PaygoServiceController extends Controller
             'success_url' => $validated['success_url'] ?? null,
             'failure_url' => $validated['failure_url'] ?? null,
             'response_mode' => $validated['response_mode'] ?? 'redirect',
+            'callback_mode' => $validated['callback_mode'] ?? 'redirect',
+            'webhook_secret' => CustomerPaygoService::generateWebhookSecret(),
         ]);
+
+        $this->syncCustomerWebhookUrl($request, $validated['webhook_url'] ?? null);
 
         return back()->with('success', 'Pay-on-the-go service created successfully.');
     }
@@ -326,8 +333,15 @@ class PaygoServiceController extends Controller
             'success_url' => $validated['success_url'] ?? null,
             'failure_url' => $validated['failure_url'] ?? null,
             'response_mode' => $validated['response_mode'] ?? $paygoService->response_mode ?? 'redirect',
+            'callback_mode' => $validated['callback_mode'] ?? $paygoService->callback_mode ?? 'redirect',
             'is_active' => $validated['is_active'] ?? $paygoService->is_active,
         ]);
+
+        if (! $paygoService->webhook_secret) {
+            $paygoService->update(['webhook_secret' => CustomerPaygoService::generateWebhookSecret()]);
+        }
+
+        $this->syncCustomerWebhookUrl($request, $validated['webhook_url'] ?? null);
 
         return back()->with('success', 'Pay-on-the-go service updated successfully.');
     }
@@ -381,7 +395,7 @@ class PaygoServiceController extends Controller
 
     protected function validatePayload(Request $request, ?CustomerPaygoService $paygoService = null): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'name' => 'nullable|string|max:120',
             'verification_service_id' => [
                 'required',
@@ -426,8 +440,35 @@ class PaygoServiceController extends Controller
             'success_url' => 'nullable|url|max:255',
             'failure_url' => 'nullable|url|max:255',
             'response_mode' => ['nullable', Rule::in(CustomerPaygoService::RESPONSE_MODES)],
+            'callback_mode' => ['nullable', Rule::in(CustomerPaygoService::CALLBACK_MODES)],
+            'webhook_url' => 'nullable|url|max:255',
             'is_active' => 'sometimes|boolean',
         ]);
+
+        $isResultFlow = $this->submissionTargetsResultFlow($request, $paygoService);
+        $callbackMode = $validated['callback_mode'] ?? ($paygoService->callback_mode ?? 'redirect');
+
+        if ($isResultFlow && in_array($callbackMode, ['redirect', 'hybrid'], true)) {
+            if (blank($validated['success_url'] ?? null)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'success_url' => 'A success redirect URL is required for result PayGo redirect callbacks.',
+                ]);
+            }
+
+            if (blank($validated['failure_url'] ?? null)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'failure_url' => 'A failure redirect URL is required for result PayGo redirect callbacks.',
+                ]);
+            }
+        }
+
+        if ($isResultFlow && in_array($callbackMode, ['webhook', 'hybrid'], true) && blank($validated['webhook_url'] ?? null)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'webhook_url' => 'A webhook URL is required for webhook or hybrid result callbacks.',
+            ]);
+        }
+
+        return $validated;
     }
 
     protected function authorizeService(Request $request, CustomerPaygoService $paygoService): void
@@ -438,6 +479,27 @@ class PaygoServiceController extends Controller
     protected function isResultBoardFetchService(VerificationService $service): bool
     {
         return (bool) preg_match('/^[a-z0-9-]+-result-fetch$/', $service->slug);
+    }
+
+    protected function submissionTargetsResultFlow(Request $request, ?CustomerPaygoService $paygoService = null): bool
+    {
+        if ($paygoService?->isResultVerification()) {
+            return true;
+        }
+
+        $serviceId = $request->input('verification_service_id');
+
+        if ($serviceId === 'result') {
+            return true;
+        }
+
+        if (! filter_var($serviceId, FILTER_VALIDATE_INT)) {
+            return false;
+        }
+
+        $service = VerificationService::find((int) $serviceId);
+
+        return $service ? $this->isResultBoardFetchService($service) : false;
     }
 
     protected function boardFromService(VerificationService $service): string
@@ -498,6 +560,11 @@ class PaygoServiceController extends Controller
         }
 
         DB::transaction(function () use ($request, $validated) {
+            $sharedWebhookSecret = CustomerPaygoService::query()
+                ->where('user_id', $request->user()->id)
+                ->whereHas('verificationService', fn ($query) => $query->where('slug', 'like', '%-result-fetch'))
+                ->first()?->webhook_secret ?: CustomerPaygoService::generateWebhookSecret();
+
             foreach ($this->activeResultFetchServices() as $service) {
                 $board = strtoupper($this->boardFromService($service));
                 $paygoService = CustomerPaygoService::firstOrNew([
@@ -508,6 +575,7 @@ class PaygoServiceController extends Controller
                 if (! $paygoService->exists) {
                     $paygoService->public_slug = CustomerPaygoService::generatePublicSlug($board.' Result Verification');
                     $paygoService->verify_secret_hash = hash('sha256', CustomerPaygoService::generateSecret());
+                    $paygoService->webhook_secret = $sharedWebhookSecret;
                 }
 
                 $paygoService->fill([
@@ -517,10 +585,25 @@ class PaygoServiceController extends Controller
                     'success_url' => $validated['success_url'] ?? null,
                     'failure_url' => $validated['failure_url'] ?? null,
                     'response_mode' => $validated['response_mode'] ?? 'redirect',
+                    'callback_mode' => $validated['callback_mode'] ?? 'redirect',
+                    'webhook_secret' => $paygoService->webhook_secret ?: $sharedWebhookSecret,
                 ])->save();
             }
         });
 
+        $this->syncCustomerWebhookUrl($request, $validated['webhook_url'] ?? null);
+
         return back()->with('success', 'Result verification PayGo pages created successfully.');
+    }
+
+    protected function syncCustomerWebhookUrl(Request $request, ?string $webhookUrl): void
+    {
+        $customer = $request->user()->customer;
+
+        if (! $customer) {
+            return;
+        }
+
+        $customer->update(['webhook_url' => $webhookUrl]);
     }
 }

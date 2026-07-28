@@ -22,6 +22,8 @@ interface PaygoService {
     success_url?: string | null;
     failure_url?: string | null;
     response_mode: 'redirect' | 'json';
+    callback_mode?: 'redirect' | 'webhook' | 'hybrid';
+    webhook_secret?: string | null;
     service_type?: 'identity' | 'result';
     board?: string | null;
     system_price: number;
@@ -66,6 +68,7 @@ interface ServiceWalletTransaction {
 const props = defineProps<{
     paygoServices: PaygoService[];
     verificationServices: VerificationService[];
+    customerWebhookUrl?: string | null;
     paygoWallet: {
         balance: number;
         pending_withdrawal: number;
@@ -134,6 +137,8 @@ const visiblePaygoServices = computed(() => {
             used_intents_count: resultPaygoServices.value.reduce((total, service) => total + service.used_intents_count, 0),
             result_url: source.result_selector_url || source.result_url,
             result_selector_url: source.result_selector_url,
+            callback_mode: source.callback_mode || 'redirect',
+            webhook_secret: source.webhook_secret,
             is_group: true,
             grouped_services: resultPaygoServices.value,
         } as PaygoService,
@@ -151,6 +156,8 @@ const form = useForm({
     success_url: '',
     failure_url: '',
     response_mode: 'redirect' as 'redirect' | 'json',
+    callback_mode: 'redirect' as 'redirect' | 'webhook' | 'hybrid',
+    webhook_url: props.customerWebhookUrl || '',
     is_active: true,
 });
 
@@ -183,6 +190,8 @@ const openCreateDialog = () => {
     editingService.value = null;
     form.reset();
     form.verification_service_id = defaultServiceId.value;
+    form.webhook_url = props.customerWebhookUrl || '';
+    form.callback_mode = 'redirect';
     applySelectedServiceDefaults();
     form.is_active = true;
     showFormDialog.value = true;
@@ -198,6 +207,8 @@ const openEditDialog = (service: PaygoService) => {
     form.success_url = service.success_url || '';
     form.failure_url = service.failure_url || '';
     form.response_mode = service.response_mode || 'redirect';
+    form.callback_mode = service.callback_mode || 'redirect';
+    form.webhook_url = props.customerWebhookUrl || '';
     form.is_active = service.is_active;
     showFormDialog.value = true;
 };
@@ -292,6 +303,7 @@ const formatDate = (date?: string | null) => date ? new Date(date).toLocaleStrin
 
 const initiateExample = (service: PaygoService) => service.service_type === 'result' ? (service.result_url || service.initiate_url) : `${service.initiate_url}/12345678901`;
 const verifyGetExample = (service: PaygoService) => `${service.verify_url}/12345678901`;
+const resultExample = (service: PaygoService) => `${service.result_selector_url || service.result_url}?candidate_id=STU-12345&portal_ref=APP-90210`;
 const verifyPostBody = `{
   "nin": "12345678901",
   "consent": true
@@ -477,7 +489,7 @@ const verifyPostBody = `{
 
                 <div class="guide-callout">
                     <v-icon>mdi-information-outline</v-icon>
-                    <span>The initiate URL can open a payment form or return JSON. Add <code>response=json</code> or <code>response=ui</code> to override the service response mode.</span>
+                    <span>For school portals, append <code>candidate_id</code> and <code>portal_ref</code> to the public result URL. EaseVerifier returns them on redirect and webhook callbacks.</span>
                 </div>
 
                 <div class="guide-steps">
@@ -487,8 +499,8 @@ const verifyPostBody = `{
                             <h3>Send the buyer to payment</h3>
                             <p>Use the result page URL for result checks, or pass the NIN in the URL path for NIN checks.</p>
                             <div class="code-row">
-                                <code>{{ firstService ? initiateExample(firstService) : '/paygo/{slug}/initiate/12345678901' }}</code>
-                                <v-btn icon variant="outlined" size="small" title="Copy initiate example" @click="copyToClipboard(firstService ? initiateExample(firstService) : '/paygo/{slug}/initiate/12345678901')">
+                                <code>{{ firstService?.service_type === 'result' ? resultExample(firstService) : (firstService ? initiateExample(firstService) : '/paygo/{slug}/initiate/12345678901') }}</code>
+                                <v-btn icon variant="outlined" size="small" title="Copy initiate example" @click="copyToClipboard(firstService?.service_type === 'result' ? resultExample(firstService) : (firstService ? initiateExample(firstService) : '/paygo/{slug}/initiate/12345678901'))">
                                     <v-icon>mdi-content-copy</v-icon>
                                 </v-btn>
                             </div>
@@ -499,20 +511,20 @@ const verifyPostBody = `{
                         <div class="step-number">2</div>
                         <div class="step-body">
                             <h3>Payment succeeds</h3>
-                            <p>The request now has a paid verification reference.</p>
-                            <span class="paid-pill"><v-icon size="18">mdi-check-circle-outline</v-icon>status = paid</span>
+                                <p>The request now has a paid verification reference.</p>
+                                <span class="paid-pill"><v-icon size="18">mdi-check-circle-outline</v-icon>status = paid</span>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="guide-step">
-                        <div class="step-number">3</div>
-                        <div class="step-body">
-                            <h3>Fetch the paid verification</h3>
-                            <p>NIN links use the verify endpoint. Result links show the result page and expose a limited open pull endpoint.</p>
-                            <div class="code-row">
-                                <code>{{ firstService ? verifyGetExample(firstService) : '/api/paygo/{slug}/verify/12345678901' }}</code>
-                                <v-btn icon variant="outlined" size="small" title="Copy verify example" @click="copyToClipboard(firstService ? verifyGetExample(firstService) : '/api/paygo/{slug}/verify/12345678901')">
-                                    <v-icon>mdi-content-copy</v-icon>
+                        <div class="guide-step">
+                            <div class="step-number">3</div>
+                            <div class="step-body">
+                                <h3>Deliver the verified result</h3>
+                                <p>Result PayGo can redirect back to the school portal, post a webhook, or do both using the configured callback mode.</p>
+                                <div class="code-row">
+                                    <code>{{ firstService ? verifyGetExample(firstService) : '/api/paygo/{slug}/verify/12345678901' }}</code>
+                                    <v-btn icon variant="outlined" size="small" title="Copy verify example" @click="copyToClipboard(firstService ? verifyGetExample(firstService) : '/api/paygo/{slug}/verify/12345678901')">
+                                        <v-icon>mdi-content-copy</v-icon>
                                 </v-btn>
                             </div>
                             <div class="code-row code-row-pre">
@@ -576,6 +588,33 @@ const verifyPostBody = `{
                     </div>
                     <div v-if="selectedLinksService.service_type !== 'result'" class="modal-link-note">
                         Add the NIN to the path, for example <code>/12345678901</code>. The verify endpoint works with GET or POST.
+                    </div>
+                    <div v-if="selectedLinksService.service_type === 'result'" class="modal-link-note">
+                        Append <code>?candidate_id=STU-12345&amp;portal_ref=APP-90210</code> when redirecting students from the school portal.
+                    </div>
+                    <div v-if="selectedLinksService.service_type === 'result'" class="modal-link-row">
+                        <div>
+                            <span>Callback mode</span>
+                            <code>{{ selectedLinksService.callback_mode || 'redirect' }}</code>
+                        </div>
+                    </div>
+                    <div v-if="selectedLinksService.service_type === 'result'" class="modal-link-row">
+                        <div>
+                            <span>Customer webhook URL</span>
+                            <code>{{ props.customerWebhookUrl || 'Not configured' }}</code>
+                        </div>
+                        <v-btn icon variant="outlined" title="Copy webhook URL" :disabled="!props.customerWebhookUrl" @click="copyToClipboard(props.customerWebhookUrl || '')">
+                            <v-icon>mdi-content-copy</v-icon>
+                        </v-btn>
+                    </div>
+                    <div v-if="selectedLinksService.service_type === 'result' && selectedLinksService.webhook_secret" class="modal-link-row">
+                        <div>
+                            <span>Webhook signature secret</span>
+                            <code>{{ selectedLinksService.webhook_secret }}</code>
+                        </div>
+                        <v-btn icon variant="outlined" title="Copy webhook secret" @click="copyToClipboard(selectedLinksService.webhook_secret || '')">
+                            <v-icon>mdi-content-copy</v-icon>
+                        </v-btn>
                     </div>
                 </v-card-text>
                 <v-card-actions>
@@ -708,8 +747,27 @@ const verifyPostBody = `{
                         class="mb-4"
                         :error-messages="form.errors.response_mode"
                     />
+                    <v-select
+                        v-model="form.callback_mode"
+                        :items="[
+                            { title: 'Redirect callback', value: 'redirect' },
+                            { title: 'Webhook only', value: 'webhook' },
+                            { title: 'Hybrid (redirect + webhook)', value: 'hybrid' },
+                        ]"
+                        label="School Callback Mode"
+                        variant="outlined"
+                        class="mb-4"
+                        :error-messages="form.errors.callback_mode"
+                    />
                     <v-text-field v-model="form.success_url" label="Success Redirect URL" variant="outlined" class="mb-4" :error-messages="form.errors.success_url" />
                     <v-text-field v-model="form.failure_url" label="Failure Redirect URL" variant="outlined" class="mb-4" :error-messages="form.errors.failure_url" />
+                    <v-text-field
+                        v-model="form.webhook_url"
+                        label="School Webhook URL"
+                        variant="outlined"
+                        class="mb-4"
+                        :error-messages="form.errors.webhook_url"
+                    />
                     <v-switch v-if="editingService" v-model="form.is_active" label="Service active" color="primary" />
                 </v-card-text>
                 <v-card-actions>

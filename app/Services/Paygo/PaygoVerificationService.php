@@ -22,7 +22,7 @@ class PaygoVerificationService
 
     public function createIntent(CustomerPaygoService $paygoService, array $data, ?string $ipAddress = null): PaygoVerificationIntent
     {
-        $paygoService->loadMissing(['user.wallet', 'verificationService']);
+        $paygoService->loadMissing(['user.wallet', 'user.customer', 'verificationService']);
 
         if (! $paygoService->is_active || ! $paygoService->verificationService?->is_active) {
             throw new RuntimeException('This pay-on-the-go service is not available.');
@@ -37,6 +37,7 @@ class PaygoVerificationService
 
         $isResultFlow = $paygoService->isResultVerification();
         $maxFetches = $this->maxFetchesFor($paygoService);
+        $portalContext = $isResultFlow ? $this->portalContextForIntent($paygoService, $data['portal_context'] ?? []) : [];
         $lookup = $isResultFlow
             ? $this->resultSearchParameter($paygoService, $data['params'] ?? [])
             : $this->normalizeNin($data['nin']);
@@ -47,7 +48,7 @@ class PaygoVerificationService
 
         $reference = PaygoVerificationIntent::generateReference();
 
-        return DB::transaction(function () use ($paygoService, $data, $ipAddress, $isResultFlow, $maxFetches, $lookup, $reference, $publicPrice, $systemPrice) {
+        return DB::transaction(function () use ($paygoService, $data, $ipAddress, $isResultFlow, $maxFetches, $portalContext, $lookup, $reference, $publicPrice, $systemPrice) {
             $intent = PaygoVerificationIntent::create([
                 'customer_paygo_service_id' => $paygoService->id,
                 'user_id' => $paygoService->user_id,
@@ -66,7 +67,7 @@ class PaygoVerificationService
                 'reference_fetches' => 0,
                 'buyer_phone' => $data['phone'] ?? null,
                 'expires_at' => now()->addHours(24),
-                'metadata' => [
+                'metadata' => array_merge([
                     'flow_type' => $isResultFlow ? 'result' : 'identity',
                     'nin_last4' => $isResultFlow ? null : substr($lookup, -4),
                     'lookup_label' => $this->lookupLabel($paygoService, $lookup),
@@ -74,7 +75,7 @@ class PaygoVerificationService
                     'initiated_ip' => $ipAddress,
                     'payment_gateway' => 'paystack',
                     'payment_status' => 'pending',
-                ],
+                ], $portalContext),
             ]);
 
             return $intent->fresh(['paygoService']);
@@ -533,6 +534,22 @@ class PaygoVerificationService
     protected function maxFetchesForIntent(PaygoVerificationIntent $intent): int
     {
         return max(1, (int) ($intent->max_fetches_snapshot ?: self::MAX_VERIFICATION_ATTEMPTS));
+    }
+
+    protected function portalContextForIntent(CustomerPaygoService $paygoService, array $context): array
+    {
+        $customer = $paygoService->user?->customer;
+
+        return [
+            'candidate_id' => filled($context['candidate_id'] ?? null) ? (string) $context['candidate_id'] : null,
+            'portal_ref' => filled($context['portal_ref'] ?? null) ? (string) $context['portal_ref'] : null,
+            'portal_state' => filled($context['state'] ?? null) ? (string) $context['state'] : null,
+            'referral_code' => $customer?->referral_code,
+            'callback_mode' => $paygoService->callback_mode ?? 'redirect',
+            'success_url_snapshot' => $paygoService->success_url,
+            'failure_url_snapshot' => $paygoService->failure_url,
+            'webhook_url_snapshot' => $customer?->webhook_url,
+        ];
     }
 
     protected function isConsumableFailure(?string $message, ?string $code): bool

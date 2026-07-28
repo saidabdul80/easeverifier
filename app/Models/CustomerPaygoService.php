@@ -13,6 +13,7 @@ class CustomerPaygoService extends Model
     use HasFactory;
 
     public const RESPONSE_MODES = ['redirect', 'json'];
+    public const CALLBACK_MODES = ['redirect', 'webhook', 'hybrid'];
 
     protected $fillable = [
         'user_id',
@@ -25,6 +26,8 @@ class CustomerPaygoService extends Model
         'success_url',
         'failure_url',
         'response_mode',
+        'callback_mode',
+        'webhook_secret',
         'metadata',
     ];
 
@@ -33,6 +36,7 @@ class CustomerPaygoService extends Model
         return [
             'price' => 'decimal:2',
             'is_active' => 'boolean',
+            'webhook_secret' => 'encrypted',
             'metadata' => 'array',
         ];
     }
@@ -71,6 +75,11 @@ class CustomerPaygoService extends Model
     public static function generateSecret(): string
     {
         return 'pgs_'.Str::random(48);
+    }
+
+    public static function generateWebhookSecret(): string
+    {
+        return 'pgw_'.Str::random(48);
     }
 
     public static function syncResultBoardSetForUser(User $user): void
@@ -123,6 +132,8 @@ class CustomerPaygoService extends Model
                 'success_url' => $template->success_url,
                 'failure_url' => $template->failure_url,
                 'response_mode' => $template->response_mode ?? 'redirect',
+                'callback_mode' => $template->callback_mode ?? 'redirect',
+                'webhook_secret' => $template->webhook_secret ?: static::generateWebhookSecret(),
             ]);
         }
     }
@@ -138,6 +149,28 @@ class CustomerPaygoService extends Model
     public function secretMatches(?string $secret): bool
     {
         return filled($secret) && hash_equals($this->verify_secret_hash, hash('sha256', $secret));
+    }
+
+    public function ensureWebhookSecret(): string
+    {
+        if (filled($this->webhook_secret)) {
+            return $this->webhook_secret;
+        }
+
+        $secret = static::generateWebhookSecret();
+        $this->update(['webhook_secret' => $secret]);
+
+        return $secret;
+    }
+
+    public function usesRedirectCallback(): bool
+    {
+        return in_array($this->callback_mode ?? 'redirect', ['redirect', 'hybrid'], true);
+    }
+
+    public function usesWebhookCallback(): bool
+    {
+        return in_array($this->callback_mode ?? 'redirect', ['webhook', 'hybrid'], true);
     }
 
     public function initiateUrl(): string

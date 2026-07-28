@@ -28,7 +28,13 @@ const props = defineProps<{
     services: PaygoResultService[];
     paygoService?: PaygoResultService | null;
     fields: ResultField[];
-    prefill?: { email?: string | null; phone?: string | null };
+    prefill?: {
+        email?: string | null;
+        phone?: string | null;
+        candidate_id?: string | null;
+        portal_ref?: string | null;
+        state?: string | null;
+    };
 }>();
 
 const page = usePage();
@@ -40,6 +46,9 @@ const fieldLoadError = ref<string | null>(null);
 const form = useForm<Record<string, any>>({
     email: props.prefill?.email || '',
     phone: props.prefill?.phone || '',
+    candidate_id: props.prefill?.candidate_id || '',
+    portal_ref: props.prefill?.portal_ref || '',
+    state: props.prefill?.state || '',
 });
 
 props.fields.forEach((field) => {
@@ -57,6 +66,24 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 const selectedService = computed(() => props.paygoService || props.services.find((service) => service.public_slug === selectedSlug.value) || null);
 const selectorUrl = computed(() => props.customer?.selector_url || selectedService.value?.selector_url || null);
 
+const withPortalContext = (url?: string | null) => {
+    if (!url) return '';
+
+    const query = new URLSearchParams();
+
+    ['candidate_id', 'portal_ref', 'state', 'email', 'phone'].forEach((key) => {
+        const value = form[key];
+
+        if (value) {
+            query.set(key, String(value));
+        }
+    });
+
+    const queryString = query.toString();
+
+    return queryString ? `${url}${url.includes('?') ? '&' : '?'}${queryString}` : url;
+};
+
 const normalizedOptions = (options?: any[]) => (options || []).map((option) => ({
     title: option.title ?? option.label ?? option.name ?? option.value ?? option.id,
     value: option.value ?? option.id ?? option.name ?? option.label,
@@ -68,7 +95,7 @@ const chooseService = () => {
     const service = props.services.find((item) => item.public_slug === selectedSlug.value);
 
     if (service) {
-        window.location.href = service.result_url;
+        window.location.href = withPortalContext(service.result_url);
     }
 };
 
@@ -136,7 +163,7 @@ watch(
 
                                 <v-btn
                                     v-if="paygoService && selectorUrl && services.length > 1"
-                                    :href="selectorUrl"
+                                    :href="withPortalContext(selectorUrl)"
                                     variant="text"
                                     color="primary"
                                     prepend-icon="mdi-arrow-left"
