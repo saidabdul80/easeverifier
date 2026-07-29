@@ -43,18 +43,19 @@ const selectedSlug = ref(props.paygoService?.public_slug || '');
 const fieldOptions = ref<Record<string, any[]>>({});
 const fieldLoadError = ref<string | null>(null);
 
+const resultFieldDefaults = props.fields.reduce<Record<string, any>>((defaults, field) => {
+    defaults[field.name] = '';
+
+    return defaults;
+}, {});
+
 const form = useForm<Record<string, any>>({
+    ...resultFieldDefaults,
     email: props.prefill?.email || '',
     phone: props.prefill?.phone || '',
     candidate_id: props.prefill?.candidate_id || '',
     portal_ref: props.prefill?.portal_ref || '',
     state: props.prefill?.state || '',
-});
-
-props.fields.forEach((field) => {
-    if (form[field.name] === undefined) {
-        form[field.name] = '';
-    }
 });
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {

@@ -441,7 +441,7 @@ const verifyPostBody = `{
                         <div class="service-money">
                             <span>Public price</span>
                             <strong>{{ formatCurrency(service.price) }}</strong>
-                            <small>System {{ formatCurrency(service.system_price) }} · Margin {{ formatCurrency(serviceMargin(service)) }}</small>
+                            <!-- <small>System {{ formatCurrency(service.system_price) }} · Margin {{ formatCurrency(serviceMargin(service)) }}</small> -->
                         </div>
 
                         <div class="service-usage">

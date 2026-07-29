@@ -4,6 +4,7 @@ use App\Models\Customer;
 use App\Models\CustomerPaygoService;
 use App\Models\ServiceProvider;
 use App\Models\User;
+use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Services\Paygo\PaygoVerificationService;
 use App\Services\ResultVerify\ResultGates\WAECResult;
@@ -385,7 +386,8 @@ it('stores a paid paygo result and limits open endpoint pulls by admin configura
 
     expect($result['success'])->toBeTrue()
         ->and($intent->fresh()->max_fetches_snapshot)->toBe(2)
-        ->and($intent->fresh()->verificationRequest->response_data['candidate']['name'])->toBe('Paid Candidate');
+        ->and($intent->fresh()->verificationRequest->response_data['candidate']['name'])->toBe('Paid Candidate')
+        ->and($intent->fresh()->verificationRequest->source)->toBe('paygo');
 
     $this->getJson("/api/paygo/results/{$intent->reference}")
         ->assertOk()
@@ -399,6 +401,59 @@ it('stores a paid paygo result and limits open endpoint pulls by admin configura
     $this->getJson("/api/paygo/results/{$intent->reference}")
         ->assertStatus(429)
         ->assertJsonPath('error_code', 'PULL_LIMIT_EXCEEDED');
+});
+
+it('allows a school to pull a paid result when a matching completed verification exists later', function () {
+    $user = createPaygoCustomer();
+    $user->customer->update(['paygo_result_reference_fetch_limit' => 2]);
+    $service = createPaygoResultService(slug: 'nabteb-result-fetch', price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+
+    $intent = app(PaygoVerificationService::class)->createIntent($paygoService, [
+        'params' => [
+            'candid' => '27054614',
+            'examtype' => '01',
+            'examyear' => '2011',
+            'serial' => '123456789012',
+            'pin' => '999988887777',
+        ],
+    ]);
+
+    app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 150,
+        'reference' => $intent->reference,
+        'paid_at' => now(),
+        'channel' => 'card',
+    ]);
+
+    VerificationRequest::create([
+        'user_id' => $user->id,
+        'verification_service_id' => $service->id,
+        'reference' => VerificationRequest::generateReference(),
+        'search_parameter' => '27054614',
+        'request_data' => ['board' => 'nabteb', 'action' => 'fetch'],
+        'response_data' => [
+            'candidate' => [
+                'name' => 'Recovered Candidate',
+                'exam_number' => '27054614',
+            ],
+            'subjects' => [
+                ['subject' => 'MATHEMATICS', 'grade' => 'A1'],
+            ],
+        ],
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'web',
+        'completed_at' => now(),
+    ]);
+
+    $this->getJson("/api/paygo/results/{$intent->reference}")
+        ->assertOk()
+        ->assertJsonPath('data.candidate.name', 'Recovered Candidate')
+        ->assertJsonPath('fetches_remaining', 1);
+
+    expect($intent->fresh()->verificationRequest?->response_data['candidate']['name'])->toBe('Recovered Candidate')
+        ->and($intent->fresh()->metadata['verification_status'] ?? null)->toBe('completed');
 });
 
 it('redirects back to the school portal and posts a webhook for hybrid paygo result callbacks', function () {

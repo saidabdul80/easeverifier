@@ -351,12 +351,14 @@ class PaygoVerificationService
             throw new RuntimeException('Payment has not been completed for this result verification.');
         }
 
-        if ($intent->verificationRequest?->status === 'completed') {
+        $completedVerification = $this->resolveCompletedResultVerification($intent);
+
+        if ($completedVerification) {
             return [
                 'success' => true,
-                'data' => $intent->verificationRequest->response_data,
+                'data' => $completedVerification->response_data,
                 'response_time' => 0,
-                'verification' => $intent->verificationRequest,
+                'verification' => $completedVerification,
             ];
         }
 
@@ -469,7 +471,9 @@ class PaygoVerificationService
                 throw new RuntimeException('Result payment has not been completed.');
             }
 
-            if (! $intent->verificationRequest || $intent->verificationRequest->status !== 'completed') {
+            $verification = $this->resolveCompletedResultVerification($intent);
+
+            if (! $verification) {
                 throw new RuntimeException('Result is not available for this reference.');
             }
 
@@ -487,7 +491,7 @@ class PaygoVerificationService
 
             return [
                 'intent' => $intent->fresh(['verificationRequest', 'paygoService']),
-                'data' => $intent->verificationRequest->response_data,
+                'data' => $verification->response_data,
                 'fetches_remaining' => max(0, $maxFetches - $fetches),
             ];
         });
@@ -529,6 +533,56 @@ class PaygoVerificationService
         }
 
         return self::MAX_VERIFICATION_ATTEMPTS;
+    }
+
+    protected function resolveCompletedResultVerification(PaygoVerificationIntent $intent): ?VerificationRequest
+    {
+        $intent->loadMissing(['paygoService', 'verificationRequest']);
+
+        if ($intent->verificationRequest?->status === 'completed' && filled($intent->verificationRequest->response_data)) {
+            return $intent->verificationRequest;
+        }
+
+        if (! $intent->paygoService?->isResultVerification()) {
+            return null;
+        }
+
+        $params = $intent->payload ?? [];
+        $searchParameter = $params !== []
+            ? $this->resultSearchParameter($intent->paygoService, $params)
+            : '';
+
+        if (blank($searchParameter)) {
+            return null;
+        }
+
+        $verification = VerificationRequest::query()
+            ->where('user_id', $intent->user_id)
+            ->where('verification_service_id', $intent->verification_service_id)
+            ->where('search_parameter', $searchParameter)
+            ->where('status', 'completed')
+            ->whereNotNull('response_data')
+            ->latest('id')
+            ->first();
+
+        if (! $verification) {
+            return null;
+        }
+
+        if ($intent->verification_request_id !== $verification->id) {
+            $intent->update([
+                'verification_request_id' => $verification->id,
+                'metadata' => array_merge($intent->metadata ?? [], [
+                    'verification_status' => 'completed',
+                    'verification_reference' => $verification->reference,
+                    'result_fetched_at' => now()->toISOString(),
+                ]),
+            ]);
+
+            $intent->setRelation('verificationRequest', $verification);
+        }
+
+        return $verification;
     }
 
     protected function maxFetchesForIntent(PaygoVerificationIntent $intent): int
