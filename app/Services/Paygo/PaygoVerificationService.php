@@ -354,11 +354,21 @@ class PaygoVerificationService
         $completedVerification = $this->resolveCompletedResultVerification($intent);
 
         if ($completedVerification) {
+            $intent->update([
+                'metadata' => array_merge($intent->metadata ?? [], [
+                    'verification_status' => 'completed',
+                    'verification_reference' => $completedVerification->reference,
+                    'result_served_from' => 'local_cache',
+                    'result_last_served_at' => now()->toISOString(),
+                ]),
+            ]);
+
             return [
                 'success' => true,
                 'data' => $completedVerification->response_data,
                 'response_time' => 0,
                 'verification' => $completedVerification,
+                'served_from' => 'local_cache',
             ];
         }
 
@@ -393,6 +403,15 @@ class PaygoVerificationService
             ->first();
 
         if ($result->isSuccessful()) {
+            $intent = $intent->fresh(['paygoService', 'verificationRequest']);
+            $completedVerification = $this->resolveCompletedResultVerification($intent);
+
+            if ($completedVerification) {
+                $verification = $completedVerification;
+            }
+        }
+
+        if ($result->isSuccessful()) {
             $intent->update([
                 'status' => 'paid',
                 'verification_request_id' => $verification?->id,
@@ -400,6 +419,7 @@ class PaygoVerificationService
                     'verification_status' => 'completed',
                     'verification_reference' => $verification?->reference,
                     'result_fetched_at' => now()->toISOString(),
+                    'result_served_from' => 'provider_fetch',
                 ]),
             ]);
 
@@ -408,6 +428,7 @@ class PaygoVerificationService
                 'data' => $result->getData(),
                 'response_time' => $result->responseTime,
                 'verification' => $verification,
+                'served_from' => 'provider_fetch',
             ];
         }
 
@@ -493,6 +514,7 @@ class PaygoVerificationService
                 'intent' => $intent->fresh(['verificationRequest', 'paygoService']),
                 'data' => $verification->response_data,
                 'fetches_remaining' => max(0, $maxFetches - $fetches),
+                'served_from' => 'local_cache',
             ];
         });
     }

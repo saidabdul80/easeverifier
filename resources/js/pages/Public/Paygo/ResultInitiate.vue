@@ -42,6 +42,8 @@ const flash = computed(() => page.props.flash as any);
 const selectedSlug = ref(props.paygoService?.public_slug || '');
 const fieldOptions = ref<Record<string, any[]>>({});
 const fieldLoadError = ref<string | null>(null);
+const confirmationOpen = ref(false);
+const consentChecked = ref(false);
 
 const resultFieldDefaults = props.fields.reduce<Record<string, any>>((defaults, field) => {
     defaults[field.name] = '';
@@ -66,6 +68,42 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
 
 const selectedService = computed(() => props.paygoService || props.services.find((service) => service.public_slug === selectedSlug.value) || null);
 const selectorUrl = computed(() => props.customer?.selector_url || selectedService.value?.selector_url || null);
+const confirmationEntries = computed(() => {
+    const entries = props.fields
+        .map((field) => {
+            const value = form[field.name];
+
+            if (value === null || value === undefined || value === '') {
+                return null;
+            }
+
+            const displayValue = field.type === 'select'
+                ? optionsForField(field).find((option) => String(option.value) === String(value))?.title ?? String(value)
+                : String(value);
+
+            return {
+                label: field.label,
+                value: displayValue,
+            };
+        })
+        .filter((entry): entry is { label: string; value: string } => entry !== null);
+
+    if (form.email) {
+        entries.push({
+            label: 'Email',
+            value: String(form.email),
+        });
+    }
+
+    if (form.phone) {
+        entries.push({
+            label: 'Phone number',
+            value: String(form.phone),
+        });
+    }
+
+    return entries;
+});
 
 const withPortalContext = (url?: string | null) => {
     if (!url) return '';
@@ -122,8 +160,18 @@ const loadDependentOptions = async (field: ResultField) => {
     fieldOptions.value[field.name] = payload.data || [];
 };
 
+const openConfirmation = () => {
+    if (!selectedService.value || form.processing) return;
+
+    consentChecked.value = false;
+    confirmationOpen.value = true;
+};
+
 const submit = () => {
     if (!selectedService.value) return;
+
+    confirmationOpen.value = false;
+    consentChecked.value = false;
 
     form.post(selectedService.value.result_url, {
         preserveScroll: true,
@@ -193,7 +241,7 @@ watch(
                                         <strong>{{ formatCurrency(selectedService.price) }}</strong>
                                     </div>
 
-                                    <v-form @submit.prevent="submit">
+                                    <v-form @submit.prevent="openConfirmation">
                                         <template v-for="field in fields" :key="field.name">
                                             <v-autocomplete
                                                 v-if="field.type === 'select'"
@@ -246,6 +294,56 @@ watch(
                                             Proceed to Payment
                                         </v-btn>
                                     </v-form>
+
+                                    <v-dialog v-model="confirmationOpen" max-width="560">
+                                        <v-card>
+                                            <v-card-text class="pa-6">
+                                                <h2 class="text-h6 font-weight-bold mb-2">Confirm your details</h2>
+                                                <p class="text-body-2 text-grey-darken-1 mb-4">
+                                                    Please confirm that the result-check details below are correct before we continue to payment.
+                                                </p>
+
+                                                <div class="confirmation-list mb-4">
+                                                    <div
+                                                        v-for="entry in confirmationEntries"
+                                                        :key="entry.label"
+                                                        class="confirmation-row"
+                                                    >
+                                                        <span>{{ entry.label }}</span>
+                                                        <strong>{{ entry.value }}</strong>
+                                                    </div>
+                                                </div>
+
+                                                <v-checkbox
+                                                    v-model="consentChecked"
+                                                    color="secondary"
+                                                    hide-details
+                                                    class="mb-2"
+                                                    label="I confirm that the information provided is correct and belongs to me."
+                                                />
+
+                                                <div class="d-flex flex-column flex-sm-row ga-3">
+                                                    <v-btn
+                                                        variant="outlined"
+                                                        color="primary"
+                                                        class="confirmation-action"
+                                                        @click="confirmationOpen = false"
+                                                    >
+                                                        Review again
+                                                    </v-btn>
+                                                    <v-btn
+                                                        color="secondary"
+                                                        class="confirmation-action"
+                                                        :disabled="!consentChecked"
+                                                        :loading="form.processing"
+                                                        @click="submit"
+                                                    >
+                                                        Confirm and Pay
+                                                    </v-btn>
+                                                </div>
+                                            </v-card-text>
+                                        </v-card>
+                                    </v-dialog>
                                 </template>
 
                                 <v-alert v-else-if="!services.length" type="warning" variant="tonal">
@@ -292,5 +390,37 @@ watch(
 .price-strip strong {
     color: #0f3e20;
     font-size: 1.25rem;
+}
+
+.confirmation-list {
+    border: 1px solid rgba(15, 62, 32, 0.12);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.confirmation-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid rgba(15, 62, 32, 0.08);
+}
+
+.confirmation-row:last-child {
+    border-bottom: 0;
+}
+
+.confirmation-row span {
+    color: #5f6f65;
+}
+
+.confirmation-row strong {
+    color: #0f3e20;
+    text-align: right;
+}
+
+.confirmation-action {
+    flex: 1 1 0;
+    min-width: 0;
 }
 </style>

@@ -313,6 +313,7 @@ class PublicPaygoVerificationController extends Controller
             'portal_ref' => $intent->metadata['portal_ref'] ?? null,
             'data' => $result['data'],
             'fetches_remaining' => $result['fetches_remaining'],
+            'served_from' => $result['served_from'] ?? 'local_cache',
         ]);
     }
 
