@@ -3,6 +3,7 @@
 use App\Models\ApiKey;
 use App\Models\ServiceProvider;
 use App\Models\User;
+use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -30,7 +31,7 @@ function createNinService(): VerificationService
     ]);
 }
 
-function attachApiProvider(VerificationService $service, array $responseMapping = []): ServiceProvider
+function attachApiProvider(VerificationService $service, ?array $responseMapping = null): ServiceProvider
 {
     return ServiceProvider::create([
         'verification_service_id' => $service->id,
@@ -42,7 +43,7 @@ function attachApiProvider(VerificationService $service, array $responseMapping 
         'auth_config' => ['headers' => []],
         'request_headers' => [],
         'request_body_template' => ['nin' => '{{search_parameter}}'],
-        'response_mapping' => $responseMapping ?: [
+        'response_mapping' => $responseMapping ?? [
             'nin' => 'data.nin',
             'first_name' => 'data.first_name',
         ],
@@ -218,4 +219,103 @@ it('does not reuse cached verification data after provider mapping changes', fun
         ->assertJsonMissingPath('cached_reference');
 
     Http::assertSentCount(2);
+});
+
+it('falls back to raw provider response when response mapping is empty', function () {
+    $user = createApiUser();
+    $user->wallet()->create([
+        'balance' => 500,
+        'bonus_balance' => 0,
+    ]);
+
+    $service = createNinService();
+    attachApiProvider($service, []);
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+
+    $rawResponse = [
+        'success' => true,
+        'statusCode' => 200,
+        'message' => 'Record found',
+        'data' => [
+            'data' => [
+                'firstname' => 'Ada',
+                'lastname' => 'Lovelace',
+                'birthdate' => '1990-12-10',
+                'mobile' => '08012345678',
+                'nin' => '12345678901',
+            ],
+        ],
+    ];
+
+    Http::fake([
+        '*' => Http::response($rawResponse, 200),
+    ]);
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+    ])->postJson('/api/v1/verify/nin', [
+        'nin' => '12345678901',
+        'consent' => true,
+    ]);
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('data.data.data.firstname', 'Ada')
+        ->assertJsonPath('data.data.data.lastname', 'Lovelace');
+
+    $verification = VerificationRequest::query()->latest('id')->first();
+
+    expect($verification)->not->toBeNull()
+        ->and($verification->status)->toBe('completed')
+        ->and($verification->response_data)->toBe($rawResponse);
+});
+
+it('falls back to raw provider response when response mapping resolves only null values', function () {
+    $user = createApiUser();
+    $user->wallet()->create([
+        'balance' => 500,
+        'bonus_balance' => 0,
+    ]);
+
+    $service = createNinService();
+    attachApiProvider($service, [
+        'first_name' => 'data.missing_first_name',
+        'last_name' => 'data.missing_last_name',
+    ]);
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+
+    $rawResponse = [
+        'success' => true,
+        'statusCode' => 200,
+        'message' => 'Record found',
+        'data' => [
+            'first_name' => 'Grace',
+            'last_name' => 'Hopper',
+            'nin' => '98765432109',
+        ],
+    ];
+
+    Http::fake([
+        '*' => Http::response($rawResponse, 200),
+    ]);
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+    ])->postJson('/api/v1/verify/nin', [
+        'nin' => '98765432109',
+        'consent' => true,
+    ]);
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('data.data.first_name', 'Grace')
+        ->assertJsonPath('data.data.last_name', 'Hopper');
+
+    $verification = VerificationRequest::query()->latest('id')->first();
+
+    expect($verification)->not->toBeNull()
+        ->and($verification->status)->toBe('completed')
+        ->and($verification->response_data)->toBe($rawResponse);
 });

@@ -416,13 +416,19 @@ class VerificationEngine
                 }
                 
                 Log::info('Response received successfully' );
+                $rawResponse = $response->json();
+
                 if(isset($datajson['response_code']) && $datajson['response_code'] == '00'){
-                    $datajson = ["data"=>$datajson];
-                    $mappedData = $this->mapResponse($datajson, $provider->response_mapping ?? []);
-                    return VerificationResult::success($mappedData, $responseTime, $provider->id, $provider->environment === 'test');
+                    $mappedData = $this->mapResponse(["data" => $datajson], $provider->response_mapping ?? []);
+                    $finalData = $this->resolveSuccessfulResponseData($provider, $mappedData, $rawResponse, $verificationRequest);
+
+                    return VerificationResult::success($finalData, $responseTime, $provider->id, $provider->environment === 'test');
                 }
-                $mappedData = $this->mapResponse($response->json(), $provider->response_mapping ?? []);
-                return VerificationResult::success($mappedData, $responseTime, $provider->id, $provider->environment === 'test');
+
+                $mappedData = $this->mapResponse($rawResponse, $provider->response_mapping ?? []);
+                $finalData = $this->resolveSuccessfulResponseData($provider, $mappedData, $rawResponse, $verificationRequest);
+
+                return VerificationResult::success($finalData, $responseTime, $provider->id, $provider->environment === 'test');
             }
             $message = $response->json()['message'] ?? 'Unknown error';
             return VerificationResult::failure(
@@ -492,6 +498,53 @@ class VerificationEngine
         }
 
         return $mapped;
+    }
+
+    /**
+     * Use mapped response data when it contains meaningful values.
+     * Fall back to the raw provider payload when mapping is empty or misconfigured.
+     */
+    protected function resolveSuccessfulResponseData(
+        ServiceProvider $provider,
+        array $mappedData,
+        array $rawResponse,
+        VerificationRequest $verificationRequest
+    ): array {
+        if ($this->hasMeaningfulResponseData($mappedData)) {
+            return $mappedData;
+        }
+
+        Log::warning('Provider response mapping produced no usable data; falling back to raw payload.', [
+            'provider_id' => $provider->id,
+            'provider_name' => $provider->name,
+            'verification_request_id' => $verificationRequest->id,
+            'response_mapping' => $provider->response_mapping ?? [],
+        ]);
+
+        return $rawResponse;
+    }
+
+    protected function hasMeaningfulResponseData(array $data): bool
+    {
+        if ($data === []) {
+            return false;
+        }
+
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                if ($this->hasMeaningfulResponseData($value)) {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if ($value !== null && $value !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
