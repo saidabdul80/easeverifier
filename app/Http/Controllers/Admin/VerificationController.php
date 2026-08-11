@@ -61,7 +61,7 @@ class VerificationController extends Controller
 
     public function show(VerificationRequest $verification)
     {
-        $verification->load(['user', 'verificationService', 'serviceProvider', 'transaction']);
+        $verification->load(['user', 'verificationService', 'serviceProvider', 'transaction', 'sourceOverride']);
 
         return Inertia::render('Admin/Verifications/Show', [
             'verification' => $verification,
@@ -90,6 +90,7 @@ class VerificationController extends Controller
                 'user:id,name,email',
                 'verificationService:id,name',
                 'serviceProvider:id,name',
+                'sourceOverride:id,verification_request_id,source',
             ])
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $nestedQuery) use ($search) {
@@ -103,7 +104,17 @@ class VerificationController extends Controller
             })
             ->when($request->filled('service'), fn (Builder $query) => $query->where('verification_service_id', $request->integer('service')))
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
-            ->when($request->filled('source'), fn (Builder $query) => $query->where('source', $request->string('source')))
+            ->when($request->filled('source'), function (Builder $query) use ($request) {
+                $source = $request->string('source')->toString();
+
+                if ($source === 'paygo') {
+                    $query->whereHas('sourceOverride', fn (Builder $sourceQuery) => $sourceQuery->where('source', 'paygo'));
+
+                    return;
+                }
+
+                $query->where('source', $source)->whereDoesntHave('sourceOverride');
+            })
             ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
             ->when($request->filled('date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('date_to')));
     }

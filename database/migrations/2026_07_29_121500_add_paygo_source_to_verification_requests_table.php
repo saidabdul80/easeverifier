@@ -1,26 +1,30 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        if (DB::getDriverName() !== 'mysql') {
-            return;
-        }
+        Schema::create('verification_request_source_overrides', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('verification_request_id');
+            $table->string('source', 20);
+            $table->timestamps();
 
-        DB::statement("ALTER TABLE verification_requests MODIFY source ENUM('web', 'api', 'paygo') NOT NULL DEFAULT 'web'");
+            $table->unique('verification_request_id', 'vr_source_overrides_request_unique');
+            $table->index('source');
+            $table->foreign('verification_request_id', 'vr_source_overrides_request_fk')
+                ->references('id')
+                ->on('verification_requests')
+                ->cascadeOnDelete();
+        });
     }
 
     public function down(): void
     {
-        if (DB::getDriverName() !== 'mysql') {
-            return;
-        }
-
-        DB::statement("UPDATE verification_requests SET source = 'api' WHERE source = 'paygo'");
-        DB::statement("ALTER TABLE verification_requests MODIFY source ENUM('web', 'api') NOT NULL DEFAULT 'web'");
+        Schema::dropIfExists('verification_request_source_overrides');
     }
 };

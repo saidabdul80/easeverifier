@@ -2,14 +2,20 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class VerificationRequest extends Model
 {
     use HasFactory;
+
+    private bool $sourceWasAssigned = false;
+
+    private ?string $pendingSourceOverride = null;
 
     protected $fillable = [
         'user_id',
@@ -37,6 +43,54 @@ class VerificationRequest extends Model
             'amount_charged' => 'decimal:2',
             'completed_at' => 'datetime',
         ];
+    }
+
+    protected function source(): Attribute
+    {
+        return Attribute::make(
+            get: function (?string $value): ?string {
+                if ($this->relationLoaded('sourceOverride')) {
+                    return $this->sourceOverride?->source ?? $value;
+                }
+
+                if (! $this->exists) {
+                    return $this->pendingSourceOverride ?? $value;
+                }
+
+                return $this->sourceOverride()->value('source') ?? $value;
+            },
+            set: function (?string $value): array {
+                $this->sourceWasAssigned = true;
+                $this->pendingSourceOverride = $value === 'paygo' ? 'paygo' : null;
+
+                return [
+                    'source' => $value === 'paygo' ? 'api' : $value,
+                ];
+            },
+        );
+    }
+
+    protected static function booted(): void
+    {
+        static::saved(function (VerificationRequest $request): void {
+            if (! $request->sourceWasAssigned) {
+                return;
+            }
+
+            if ($request->pendingSourceOverride) {
+                $override = $request->sourceOverride()->updateOrCreate(
+                    [],
+                    ['source' => $request->pendingSourceOverride],
+                );
+
+                $request->setRelation('sourceOverride', $override);
+            } else {
+                $request->sourceOverride()->delete();
+                $request->unsetRelation('sourceOverride');
+            }
+
+            $request->sourceWasAssigned = false;
+        });
     }
 
     /**
@@ -77,6 +131,11 @@ class VerificationRequest extends Model
     public function serviceProvider(): BelongsTo
     {
         return $this->belongsTo(ServiceProvider::class);
+    }
+
+    public function sourceOverride(): HasOne
+    {
+        return $this->hasOne(VerificationRequestSourceOverride::class);
     }
 
     /**
