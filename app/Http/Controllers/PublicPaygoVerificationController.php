@@ -58,13 +58,17 @@ class PublicPaygoVerificationController extends Controller
         ]);
 
         if ($validator->fails()) {
-            if ($respondWithJson || $request->isMethod('get')) {
+            if ($respondWithJson) {
                 return response()->json([
                     'success' => false,
                     'error' => 'A valid NIN is required to initiate PayGo payment.',
                     'error_code' => 'VALIDATION_ERROR',
                     'errors' => $validator->errors(),
                 ], 422);
+            }
+
+            if ($request->isMethod('get')) {
+                return $this->initiateForm($paygoService, $request, 'A valid NIN is required to initiate PayGo payment.');
             }
 
             return back()->withErrors($validator)->withInput();
@@ -97,6 +101,10 @@ class PublicPaygoVerificationController extends Controller
                 ], 400);
             }
 
+            if ($request->isMethod('get')) {
+                return $this->initiateForm($paygoService, $request, $exception->getMessage());
+            }
+
             return back()->with('error', $exception->getMessage());
         }
 
@@ -120,7 +128,13 @@ class PublicPaygoVerificationController extends Controller
                 ], 400);
             }
 
-            return back()->with('error', $payment['message'] ?? 'Payment gateway initialization failed.');
+            $message = $payment['message'] ?? 'Payment gateway initialization failed.';
+
+            if ($request->isMethod('get')) {
+                return $this->initiateForm($paygoService, $request, $message);
+            }
+
+            return back()->with('error', $message);
         }
 
         if ($respondWithJson) {
@@ -485,7 +499,7 @@ class PublicPaygoVerificationController extends Controller
         ]);
     }
 
-    protected function initiateForm(CustomerPaygoService $paygoService, Request $request): Response
+    protected function initiateForm(CustomerPaygoService $paygoService, Request $request, ?string $error = null): Response
     {
         return Inertia::render('Public/Paygo/Initiate', [
             'paygoService' => [
@@ -500,6 +514,7 @@ class PublicPaygoVerificationController extends Controller
                 'nin' => $request->string('nin')->value(),
                 'phone' => $request->string('phone')->value(),
             ],
+            'error' => $error,
         ]);
     }
 

@@ -15,6 +15,7 @@ const props = defineProps<{
         nin?: string | null;
         phone?: string | null;
     };
+    error?: string | null;
 }>();
 
 const page = usePage();
@@ -57,7 +58,9 @@ const submit = () => {
                                 <v-alert v-if="!paygoService.is_active" type="warning" variant="tonal" class="mb-4">
                                     This PayGo service is currently unavailable.
                                 </v-alert>
-                                <v-alert v-if="flash?.error" type="error" variant="tonal" class="mb-4">{{ flash.error }}</v-alert>
+                                <v-alert v-if="error || flash?.error" type="error" variant="tonal" class="mb-4">
+                                    {{ error || flash.error }}
+                                </v-alert>
 
                                 <div class="price-strip mb-5">
                                     <span>Amount</span>
