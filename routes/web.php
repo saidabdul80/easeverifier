@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\CustomerController as AdminCustomerController;
 // Controllers
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ProviderController as AdminProviderController;
+use App\Http\Controllers\Admin\PaystackSplitLedgerController as AdminPaystackSplitLedgerController;
 use App\Http\Controllers\Admin\ResultPinController as AdminResultPinController;
 use App\Http\Controllers\Admin\ServiceController as AdminServiceController;
 use App\Http\Controllers\Admin\TransactionController as AdminTransactionController;
@@ -18,6 +19,7 @@ use App\Http\Controllers\Customer\BranchController as CustomerBranchController;
 use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
 use App\Http\Controllers\Customer\PaygoServiceController;
 use App\Http\Controllers\Customer\PaymentController;
+use App\Http\Controllers\Customer\PaystackSplitLedgerController as CustomerPaystackSplitLedgerController;
 use App\Http\Controllers\Customer\ResultPinController as CustomerResultPinController;
 use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
 use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
@@ -150,6 +152,8 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::post('customers/{customer}/result-pin-pricing', [AdminCustomerController::class, 'updateResultPinPricing'])->name('customers.result-pin-pricing');
     Route::post('customers/{customer}/result-fetch-access', [AdminCustomerController::class, 'updateResultFetchAccess'])->name('customers.result-fetch-access');
     Route::post('customers/{customer}/paygo-result-services/{service}', [AdminCustomerController::class, 'updateResultPaygoService'])->name('customers.paygo-result-services.update');
+    Route::get('paystack-banks', [AdminCustomerController::class, 'paystackBanks'])->name('paystack.banks');
+    Route::post('customers/{customer}/paystack-splits', [AdminCustomerController::class, 'updatePaystackSplits'])->name('customers.paystack-splits.update');
 
     // Services
     Route::resource('services', AdminServiceController::class);
@@ -171,6 +175,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::get('transactions', [AdminTransactionController::class, 'index'])->name('transactions.index');
     Route::get('transactions/export', [AdminTransactionController::class, 'export'])->name('transactions.export');
     Route::get('transactions/{transaction}', [AdminTransactionController::class, 'show'])->name('transactions.show');
+    Route::get('paystack-splits', [AdminPaystackSplitLedgerController::class, 'index'])->name('paystack-splits.index');
 
     // Verifications
     Route::get('verifications', [AdminVerificationController::class, 'index'])->name('verifications.index');
@@ -243,6 +248,7 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     Route::get('paygo-transactions', fn () => redirect()->route('customer.paygo.index'))->name('paygo.transactions');
     Route::post('paygo-services', [PaygoServiceController::class, 'store'])->name('paygo.store');
     Route::get('paygo-services/{paygoService}/transactions', [PaygoServiceController::class, 'serviceTransactions'])->name('paygo.service-transactions');
+    Route::get('paygo-splits', [CustomerPaystackSplitLedgerController::class, 'index'])->name('paygo.splits');
     Route::put('paygo-services/{paygoService}', [PaygoServiceController::class, 'update'])->name('paygo.update');
     Route::post('paygo-services/{paygoService}/toggle', [PaygoServiceController::class, 'toggle'])->name('paygo.toggle');
     Route::delete('paygo-services/{paygoService}', [PaygoServiceController::class, 'destroy'])->name('paygo.destroy');

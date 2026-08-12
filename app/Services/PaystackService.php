@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -21,16 +22,24 @@ class PaystackService
     /**
      * Initialize a payment transaction.
      */
-    public function initializeTransaction(string $email, int $amountInKobo, string $reference, ?string $callbackUrl = null): array
+    public function initializeTransaction(
+        string $email,
+        int $amountInKobo,
+        string $reference,
+        ?string $callbackUrl = null,
+        array $options = [],
+    ): array
     {
+        $payload = array_merge([
+            'email' => $email,
+            'amount' => $amountInKobo,
+            'reference' => $reference,
+            'callback_url' => $callbackUrl ?? route('customer.payment.callback'),
+            'currency' => 'NGN',
+        ], $options);
+
         $response = Http::withToken($this->secretKey)
-            ->post("{$this->baseUrl}/transaction/initialize", [
-                'email' => $email,
-                'amount' => $amountInKobo,
-                'reference' => $reference,
-                'callback_url' => $callbackUrl ?? route('customer.payment.callback'),
-                'currency' => 'NGN',
-            ]);
+            ->post("{$this->baseUrl}/transaction/initialize", $payload);
 
         if ($response->successful() && $response->json('status')) {
             return [
@@ -74,6 +83,139 @@ class PaystackService
         return [
             'success' => false,
             'message' => $response->json('message') ?? 'Verification failed',
+        ];
+    }
+
+    /**
+     * List supported banks from Paystack.
+     */
+    public function listBanks(string $country = 'nigeria'): array
+    {
+        $response = Http::withToken($this->secretKey)
+            ->get("{$this->baseUrl}/bank", [
+                'country' => $country,
+                'perPage' => 100,
+            ]);
+
+        if ($response->successful() && $response->json('status')) {
+            return [
+                'success' => true,
+                'banks' => collect($response->json('data', []))
+                    ->map(fn (array $bank) => [
+                        'name' => $bank['name'] ?? null,
+                        'code' => $bank['code'] ?? null,
+                        'slug' => $bank['slug'] ?? null,
+                        'type' => $bank['type'] ?? null,
+                        'currency' => $bank['currency'] ?? null,
+                    ])
+                    ->filter(fn (array $bank) => filled($bank['name']) && filled($bank['code']))
+                    ->values()
+                    ->all(),
+            ];
+        }
+
+        Log::error('Paystack bank list failed', ['response' => $response->json()]);
+
+        return [
+            'success' => false,
+            'message' => $response->json('message') ?? 'Failed to fetch Paystack banks',
+        ];
+    }
+
+    /**
+     * Resolve a bank account name through Paystack.
+     */
+    public function resolveBankAccount(string $accountNumber, string $bankCode): array
+    {
+        try {
+            $response = Http::withToken($this->secretKey)
+                ->get("{$this->baseUrl}/bank/resolve", [
+                    'account_number' => $accountNumber,
+                    'bank_code' => $bankCode,
+                ]);
+        } catch (ConnectionException $exception) {
+            Log::error('Paystack bank account resolve connection failed', ['message' => $exception->getMessage()]);
+
+            return [
+                'success' => false,
+                'message' => 'Unable to reach Paystack to resolve this bank account.',
+            ];
+        }
+
+        if ($response->successful() && $response->json('status')) {
+            return [
+                'success' => true,
+                'account_number' => $response->json('data.account_number'),
+                'account_name' => $response->json('data.account_name'),
+                'bank_id' => $response->json('data.bank_id'),
+                'data' => $response->json('data'),
+            ];
+        }
+
+        Log::error('Paystack bank account resolve failed', ['response' => $response->json()]);
+
+        return [
+            'success' => false,
+            'message' => $response->json('message') ?? 'Failed to resolve bank account',
+        ];
+    }
+
+    /**
+     * Create a Paystack subaccount from settlement bank details.
+     */
+    public function createSubaccount(
+        string $businessName,
+        string $bankCode,
+        string $accountNumber,
+        ?string $description = null,
+        array $metadata = [],
+    ): array
+    {
+        $payload = [
+            'business_name' => $businessName,
+            'settlement_bank' => $bankCode,
+            'account_number' => $accountNumber,
+            'percentage_charge' => 0,
+        ];
+
+        if (filled($description)) {
+            $payload['description'] = $description;
+        }
+
+        if ($metadata !== []) {
+            $payload['metadata'] = json_encode($metadata);
+        }
+
+        try {
+            $response = Http::withToken($this->secretKey)
+                ->post("{$this->baseUrl}/subaccount", $payload);
+        } catch (ConnectionException $exception) {
+            Log::error('Paystack subaccount creation connection failed', ['message' => $exception->getMessage()]);
+
+            return [
+                'success' => false,
+                'message' => 'Unable to reach Paystack to create this subaccount.',
+            ];
+        }
+
+        if ($response->successful() && $response->json('status')) {
+            $data = $response->json('data', []);
+
+            return [
+                'success' => true,
+                'subaccount_code' => $data['subaccount_code'] ?? null,
+                'account_name' => $data['account_name'] ?? null,
+                'account_number' => $data['account_number'] ?? $accountNumber,
+                'bank_name' => $data['settlement_bank'] ?? null,
+                'data' => $data,
+            ];
+        }
+
+        Log::error('Paystack subaccount creation failed', ['response' => $response->json()]);
+
+        return [
+            'success' => false,
+            'message' => $response->json('message') ?? 'Failed to create Paystack subaccount',
         ];
     }
 
@@ -187,4 +329,3 @@ class PaystackService
     }
 
 }
-

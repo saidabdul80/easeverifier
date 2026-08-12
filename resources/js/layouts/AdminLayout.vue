@@ -21,6 +21,7 @@ const navItems = [
     { title: 'Campaign Emails', icon: 'mdi-email-multiple-outline', route: '/admin/campaign-emails' },
     { title: 'Wallets', icon: 'mdi-wallet', route: '/admin/wallets' },
     { title: 'Transactions', icon: 'mdi-swap-horizontal', route: '/admin/transactions' },
+    { title: 'Paystack Splits', icon: 'mdi-bank-transfer-out', route: '/admin/paystack-splits' },
     { title: 'Verifications', icon: 'mdi-shield-check', route: '/admin/verifications' },
 ];
 

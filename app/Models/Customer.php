@@ -116,6 +116,16 @@ class Customer extends Model
         return $this->hasManyThrough(Transaction::class, User::class, 'id', 'user_id', 'user_id', 'id');
     }
 
+    public function paystackSplitAccounts(): HasMany
+    {
+        return $this->hasMany(CustomerPaystackSplitAccount::class);
+    }
+
+    public function paystackSplitLedgers(): HasMany
+    {
+        return $this->hasMany(CustomerPaystackSplitLedger::class);
+    }
+
     /**
      * Get all branches for this customer.
      */

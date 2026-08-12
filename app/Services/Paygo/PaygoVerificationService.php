@@ -3,6 +3,8 @@
 namespace App\Services\Paygo;
 
 use App\Models\CustomerPaygoService;
+use App\Models\Customer;
+use App\Models\CustomerPaystackSplitLedger;
 use App\Models\PaygoVerificationIntent;
 use App\Models\PaygoWallet;
 use App\Models\VerificationRequest;
@@ -122,22 +124,28 @@ class PaygoVerificationService
 
             if (in_array($intent->status, ['pending', 'failed'], true)) {
                 $margin = max(0, (float) $intent->amount - (float) $intent->system_price_snapshot);
-                $paygoWallet = PaygoWallet::firstOrCreate(
-                    ['user_id' => $intent->user_id],
-                    ['balance' => 0, 'pending_withdrawal' => 0, 'currency' => 'NGN', 'is_active' => true],
-                );
+                $splitApplied = (bool) data_get($intent->metadata, 'paystack_split.applied');
+                $paygoWallet = null;
+                $earningTransaction = null;
 
-                $earningTransaction = $paygoWallet->credit(
-                    $margin,
-                    "PayGo earning for {$intent->reference}",
-                    [
-                        'paygo_intent_id' => $intent->id,
-                        'customer_paygo_service_id' => $intent->customer_paygo_service_id,
-                        'payment_reference' => $paymentData['reference'] ?? $reference,
-                        'payment_amount' => (float) $intent->amount,
-                        'system_price' => (float) $intent->system_price_snapshot,
-                    ],
-                );
+                if (! $splitApplied) {
+                    $paygoWallet = PaygoWallet::firstOrCreate(
+                        ['user_id' => $intent->user_id],
+                        ['balance' => 0, 'pending_withdrawal' => 0, 'currency' => 'NGN', 'is_active' => true],
+                    );
+
+                    $earningTransaction = $paygoWallet->credit(
+                        $margin,
+                        "PayGo earning for {$intent->reference}",
+                        [
+                            'paygo_intent_id' => $intent->id,
+                            'customer_paygo_service_id' => $intent->customer_paygo_service_id,
+                            'payment_reference' => $paymentData['reference'] ?? $reference,
+                            'payment_amount' => (float) $intent->amount,
+                            'system_price' => (float) $intent->system_price_snapshot,
+                        ],
+                    );
+                }
 
                 $intent->update([
                     'status' => 'paid',
@@ -148,16 +156,71 @@ class PaygoVerificationService
                         'payment_status' => 'success',
                         'payment_reference' => $paymentData['reference'] ?? $reference,
                         'payment_channel' => $paymentData['channel'] ?? null,
-                        'paygo_wallet_id' => $paygoWallet->id,
+                        'paygo_wallet_id' => $paygoWallet?->id,
                         'paygo_wallet_transaction_id' => $earningTransaction?->id,
-                        'paygo_earning' => $margin,
+                        'paygo_earning' => $splitApplied ? 0 : $margin,
+                        'paygo_wallet_credit_skipped' => $splitApplied,
                         'system_price' => (float) $intent->system_price_snapshot,
                     ]),
                 ]);
+
+                if ($splitApplied) {
+                    $this->recordPaystackSplitLedger($intent->fresh(), $paymentData, $reference);
+                }
             }
 
             return $intent->fresh(['paygoService', 'transaction']);
         });
+    }
+
+    private function recordPaystackSplitLedger(PaygoVerificationIntent $intent, array $paymentData, string $reference): void
+    {
+        $split = $intent->metadata['paystack_split'] ?? null;
+
+        if (! is_array($split) || empty($split['subaccounts']) || ! is_array($split['subaccounts'])) {
+            return;
+        }
+
+        $customerId = Customer::where('user_id', $intent->user_id)->value('id');
+
+        if (! $customerId) {
+            return;
+        }
+
+        foreach ($split['subaccounts'] as $subaccount) {
+            $subaccountCode = $subaccount['subaccount_code'] ?? null;
+
+            if (! $subaccountCode) {
+                continue;
+            }
+
+            CustomerPaystackSplitLedger::updateOrCreate(
+                [
+                    'paygo_verification_intent_id' => $intent->id,
+                    'subaccount_code' => $subaccountCode,
+                ],
+                [
+                    'customer_id' => $customerId,
+                    'user_id' => $intent->user_id,
+                    'payment_reference' => $paymentData['reference'] ?? $reference,
+                    'split_reference' => $split['reference'] ?? null,
+                    'subaccount_label' => $subaccount['label'] ?? null,
+                    'flat_amount' => (float) ($subaccount['flat_amount'] ?? 0),
+                    'flat_amount_kobo' => (int) ($subaccount['share'] ?? 0),
+                    'transaction_amount' => (float) $intent->amount,
+                    'main_account_remainder' => (float) ($split['main_account_remainder'] ?? 0),
+                    'status' => 'completed',
+                    'paid_at' => $paymentData['paid_at'] ?? $intent->paid_at ?? now(),
+                    'metadata' => [
+                        'paygo_reference' => $intent->reference,
+                        'customer_paygo_service_id' => $intent->customer_paygo_service_id,
+                        'verification_service_id' => $intent->verification_service_id,
+                        'split_type' => $split['type'] ?? null,
+                        'bearer_type' => $split['bearer_type'] ?? null,
+                    ],
+                ],
+            );
+        }
     }
 
     public function verifyPaidIntent(CustomerPaygoService $paygoService, array $data, ?string $ipAddress = null): array

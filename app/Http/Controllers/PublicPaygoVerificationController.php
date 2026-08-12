@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Paygo\PaygoResultCallbackService;
 use App\Services\Paygo\PaygoVerificationService;
 use App\Services\PaystackService;
+use App\Services\PaystackSplitService;
 use App\Services\ResultVerify\ResultFactory;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +24,7 @@ class PublicPaygoVerificationController extends Controller
         protected PaygoVerificationService $paygo,
         protected PaygoResultCallbackService $resultCallbacks,
         protected PaystackService $paystack,
+        protected PaystackSplitService $paystackSplits,
         protected ResultFactory $resultFactory,
     ) {}
 
@@ -98,12 +100,7 @@ class PublicPaygoVerificationController extends Controller
             return back()->with('error', $exception->getMessage());
         }
 
-        $payment = $this->paystack->initializeTransaction(
-            email: $paygoService->user->email,
-            amountInKobo: (int) ((float) $intent->amount * 100),
-            reference: $intent->reference,
-            callbackUrl: route('paygo.callback'),
-        );
+        $payment = $this->initializePaygoPayment($paygoService, $intent, $paygoService->user->email);
 
         if (! $payment['success']) {
             $intent->update([
@@ -203,12 +200,7 @@ class PublicPaygoVerificationController extends Controller
             return back()->withErrors(['result' => $exception->getMessage()])->withInput();
         }
 
-        $payment = $this->paystack->initializeTransaction(
-            email: $validated['email'] ?? $paygoService->user->email,
-            amountInKobo: (int) ((float) $intent->amount * 100),
-            reference: $intent->reference,
-            callbackUrl: route('paygo.callback'),
-        );
+        $payment = $this->initializePaygoPayment($paygoService, $intent, $validated['email'] ?? $paygoService->user->email);
 
         if (! $payment['success']) {
             $intent->update([
@@ -330,6 +322,40 @@ class PublicPaygoVerificationController extends Controller
         }
 
         return $request->expectsJson() || ($paygoService->response_mode ?? 'redirect') === 'json';
+    }
+
+    protected function initializePaygoPayment(CustomerPaygoService $paygoService, PaygoVerificationIntent $intent, string $email): array
+    {
+        $amountInKobo = (int) round((float) $intent->amount * 100);
+
+        try {
+            $split = $this->paystackSplits->buildDynamicFlatSplit(
+                $paygoService->user?->customer,
+                $amountInKobo,
+                $intent->reference,
+            );
+        } catch (RuntimeException $exception) {
+            return [
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ];
+        }
+
+        if ($split) {
+            $intent->update([
+                'metadata' => array_merge($intent->metadata ?? [], [
+                    'paystack_split' => $split['metadata'],
+                ]),
+            ]);
+        }
+
+        return $this->paystack->initializeTransaction(
+            email: $email,
+            amountInKobo: $amountInKobo,
+            reference: $intent->reference,
+            callbackUrl: route('paygo.callback'),
+            options: $split ? ['split' => $split['payload']] : [],
+        );
     }
 
     protected function publicResultServicesForUser(User $user)

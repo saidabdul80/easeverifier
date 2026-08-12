@@ -1,7 +1,10 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\CustomerPaystackSplitAccount;
+use App\Models\CustomerPaystackSplitLedger;
 use App\Models\CustomerPaygoService;
+use App\Models\PaygoWallet;
 use App\Models\ServiceProvider;
 use App\Models\User;
 use App\Models\VerificationRequest;
@@ -110,7 +113,7 @@ function createPaygoServiceFor(User $user, VerificationService $service, string 
 }
 
 it('does not allow a customer to create a paygo service at or below system price', function () {
-    $user = createPaygoCustomer();
+    $user = createPaygoCustomer()->fresh('customer');
     $service = createPaygoNinService(100);
 
     $response = $this
@@ -126,7 +129,7 @@ it('does not allow a customer to create a paygo service at or below system price
 });
 
 it('completes paygo payment idempotently and credits the customer wallet once', function () {
-    $user = createPaygoCustomer();
+    $user = createPaygoCustomer()->fresh('customer');
     $service = createPaygoNinService(100);
     $paygoService = createPaygoServiceFor($user, $service, price: 150);
 
@@ -150,6 +153,133 @@ it('completes paygo payment idempotently and credits the customer wallet once', 
 
     expect((float) $user->paygoWallet()->first()->fresh()->balance)->toBe(50.0)
         ->and($intent->fresh()->status)->toBe('paid');
+});
+
+it('initializes paygo payment with configured flat paystack split', function () {
+    config([
+        'services.paystack.secret_key' => 'paystack-secret',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
+    Http::fake([
+        'https://api.paystack.co/transaction/initialize' => Http::response([
+            'status' => true,
+            'data' => [
+                'authorization_url' => 'https://checkout.test/paygo',
+                'access_code' => 'ACCESS',
+                'reference' => 'PGO_SPLIT',
+            ],
+        ]),
+    ]);
+
+    $user = createPaygoCustomer()->fresh('customer');
+    $service = createPaygoNinService(100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 200);
+
+    CustomerPaystackSplitAccount::create([
+        'customer_id' => $user->customer->id,
+        'label' => 'School account',
+        'subaccount_code' => 'ACCT_school',
+        'bank_name' => 'Test Bank',
+        'bank_code' => '058',
+        'account_number' => '0123456789',
+        'account_number_last4' => '6789',
+        'account_name' => 'School Ltd',
+        'flat_amount' => 75,
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    CustomerPaystackSplitAccount::create([
+        'customer_id' => $user->customer->id,
+        'label' => 'Partner account',
+        'subaccount_code' => 'ACCT_partner',
+        'bank_name' => 'Second Bank',
+        'bank_code' => '011',
+        'account_number' => '1111111111',
+        'account_number_last4' => '1111',
+        'account_name' => 'Partner Ltd',
+        'flat_amount' => 25,
+        'sort_order' => 2,
+        'is_active' => true,
+    ]);
+
+    $this->post("/paygo/{$paygoService->public_slug}/initiate", [
+        'nin' => '12345678901',
+    ]);
+
+    Http::assertSent(function ($request) {
+        $payload = $request->data();
+
+        return $request->url() === 'https://api.paystack.co/transaction/initialize'
+            && data_get($payload, 'split.type') === 'flat'
+            && data_get($payload, 'split.bearer_type') === 'account'
+            && data_get($payload, 'split.subaccounts.0.subaccount') === 'ACCT_school'
+            && data_get($payload, 'split.subaccounts.0.share') === 7500
+            && data_get($payload, 'split.subaccounts.1.subaccount') === 'ACCT_partner'
+            && data_get($payload, 'split.subaccounts.1.share') === 2500;
+    });
+
+    $intent = $paygoService->intents()->firstOrFail();
+
+    expect($intent->metadata['paystack_split']['applied'])->toBeTrue()
+        ->and((float) $intent->metadata['paystack_split']['total_split_amount'])->toBe(100.0)
+        ->and((float) $intent->metadata['paystack_split']['main_account_remainder'])->toBe(100.0);
+});
+
+it('does not credit paygo wallet when paystack split was applied', function () {
+    $user = createPaygoCustomer();
+    $service = createPaygoNinService(100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+
+    $wallet = PaygoWallet::create([
+        'user_id' => $user->id,
+        'balance' => 10,
+        'pending_withdrawal' => 0,
+        'currency' => 'NGN',
+        'is_active' => true,
+    ]);
+
+    $intent = app(PaygoVerificationService::class)->createIntent($paygoService, [
+        'nin' => '12345678901',
+    ]);
+
+    $intent->update([
+        'metadata' => array_merge($intent->metadata ?? [], [
+            'paystack_split' => [
+                'applied' => true,
+                'type' => 'flat',
+                'bearer_type' => 'account',
+                'reference' => 'SPLIT-'.$intent->reference,
+                'main_account_remainder' => 100,
+                'wallet_credit_skipped' => true,
+                'subaccounts' => [
+                    [
+                        'label' => 'School account',
+                        'subaccount_code' => 'ACCT_school',
+                        'share' => 5000,
+                        'flat_amount' => 50,
+                    ],
+                ],
+            ],
+        ]),
+    ]);
+
+    app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 150,
+        'reference' => $intent->reference,
+        'paid_at' => now(),
+        'channel' => 'card',
+    ]);
+
+    $intent->refresh();
+
+    expect((float) $wallet->fresh()->balance)->toBe(10.0)
+        ->and($wallet->transactions()->count())->toBe(0)
+        ->and(CustomerPaystackSplitLedger::count())->toBe(1)
+        ->and((float) CustomerPaystackSplitLedger::first()->flat_amount)->toBe(50.0)
+        ->and($intent->metadata['paygo_wallet_credit_skipped'])->toBeTrue()
+        ->and((float) $intent->metadata['paygo_earning'])->toBe(0.0);
 });
 
 it('rejects an unpaid paygo verification even without requiring a secret', function () {

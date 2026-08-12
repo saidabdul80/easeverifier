@@ -10,9 +10,11 @@ use App\Models\CustomerServicePricing;
 use App\Models\ResultPinProduct;
 use App\Models\User;
 use App\Models\VerificationService;
+use App\Services\PaystackService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
@@ -105,7 +107,11 @@ class CustomerController extends Controller
 
     public function show(User $customer)
     {
-        $customer->load(['customer', 'wallet', 'transactions' => fn ($q) => $q->latest()->take(20)]);
+        $customer->load([
+            'customer.paystackSplitAccounts' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+            'wallet',
+            'transactions' => fn ($q) => $q->latest()->take(20),
+        ]);
 
         $verificationStats = $customer->verificationRequests()
             ->selectRaw('status, COUNT(*) as count')
@@ -164,6 +170,19 @@ class CustomerController extends Controller
             'resultPinProducts' => $resultPinProducts,
             'resultPinPricing' => $resultPinPricing,
             'paygoResultServices' => $paygoResultServices,
+            'paystackSplitAccounts' => $customer->customer?->paystackSplitAccounts
+                ?->map(fn ($account) => [
+                    'id' => $account->id,
+                    'label' => $account->label,
+                    'subaccount_code' => $account->subaccount_code,
+                    'account_name' => $account->account_name,
+                    'bank_name' => $account->bank_name,
+                    'bank_code' => $account->bank_code,
+                    'account_number_last4' => $account->account_number_last4,
+                    'flat_amount' => (float) $account->flat_amount,
+                    'is_active' => $account->is_active,
+                ])
+                ->values() ?? [],
         ]);
     }
 
@@ -320,6 +339,177 @@ class CustomerController extends Controller
         ])->save();
 
         return back()->with('success', 'Customer PayGo result page updated successfully.');
+    }
+
+    public function paystackBanks(PaystackService $paystack)
+    {
+        $result = $paystack->listBanks('nigeria');
+
+        if (! $result['success']) {
+            return response()->json([
+                'message' => $result['message'] ?? 'Unable to fetch Paystack banks.',
+            ], 422);
+        }
+
+        return response()->json([
+            'banks' => $result['banks'],
+        ]);
+    }
+
+    public function updatePaystackSplits(Request $request, User $customer, PaystackService $paystack)
+    {
+        $validated = $request->validate([
+            'splits' => ['nullable', 'array', 'max:2'],
+            'splits.*.id' => ['nullable', 'integer'],
+            'splits.*.label' => ['nullable', 'string', 'max:120'],
+            'splits.*.subaccount_code' => ['nullable', 'string', 'max:80'],
+            'splits.*.account_name' => ['nullable', 'string', 'max:150'],
+            'splits.*.bank_name' => ['required', 'string', 'max:120'],
+            'splits.*.bank_code' => ['required', 'string', 'max:20'],
+            'splits.*.account_number' => ['nullable', 'digits:10'],
+            'splits.*.flat_amount' => ['required', 'numeric', 'min:0.01'],
+            'splits.*.is_active' => ['required', 'boolean'],
+        ]);
+
+        $profile = $customer->customer()->firstOrNew(['user_id' => $customer->id]);
+
+        if (! $profile->account_type) {
+            $profile->account_type = 'individual';
+        }
+
+        $profile->save();
+
+        $splits = array_values($validated['splits'] ?? []);
+        $existingIds = collect($splits)->pluck('id')->filter()->values();
+        $existingAccounts = $profile->paystackSplitAccounts()
+            ->whereIn('id', $existingIds)
+            ->get()
+            ->keyBy('id');
+        $preparedSplits = [];
+
+        foreach ($splits as $index => $split) {
+            $existing = isset($split['id']) ? $existingAccounts->get($split['id']) : null;
+
+            if (isset($split['id']) && ! $existing) {
+                throw ValidationException::withMessages([
+                    "splits.{$index}.id" => 'This split account does not belong to the selected customer.',
+                ]);
+            }
+
+            $accountNumber = isset($split['account_number'])
+                ? preg_replace('/\D/', '', (string) $split['account_number'])
+                : '';
+            $needsSubaccount = filled($accountNumber)
+                || ! $existing
+                || blank($existing->subaccount_code)
+                || $existing->bank_code !== $split['bank_code'];
+            $paystackSubaccount = null;
+            $resolvedAccount = null;
+
+            if ($needsSubaccount) {
+                if (blank($accountNumber)) {
+                    throw ValidationException::withMessages([
+                        "splits.{$index}.account_number" => 'Enter the 10-digit account number for this Paystack split.',
+                    ]);
+                }
+
+                $resolvedAccount = $paystack->resolveBankAccount($accountNumber, $split['bank_code']);
+
+                if (! $resolvedAccount['success']) {
+                    throw ValidationException::withMessages([
+                        "splits.{$index}.account_number" => $resolvedAccount['message'] ?? 'Paystack could not resolve this bank account.',
+                    ]);
+                }
+
+                $paystackSubaccount = $paystack->createSubaccount(
+                    businessName: $this->paystackSplitBusinessName($customer, $split, $index),
+                    bankCode: $split['bank_code'],
+                    accountNumber: $accountNumber,
+                    description: 'Easeverifier PayGo flat split for '.$customer->name,
+                    metadata: [
+                        'customer_user_id' => $customer->id,
+                        'customer_profile_id' => $profile->id,
+                        'split_label' => $split['label'] ?? null,
+                    ],
+                );
+
+                if (! $paystackSubaccount['success'] || blank($paystackSubaccount['subaccount_code'] ?? null)) {
+                    throw ValidationException::withMessages([
+                        "splits.{$index}.account_number" => $paystackSubaccount['message'] ?? 'Paystack could not create a subaccount for this bank account.',
+                    ]);
+                }
+            }
+
+            $preparedSplits[] = [
+                'existing' => $existing,
+                'split' => $split,
+                'account_number' => $accountNumber,
+                'resolved_account' => $resolvedAccount,
+                'paystack_subaccount' => $paystackSubaccount,
+            ];
+        }
+
+        DB::transaction(function () use ($profile, $preparedSplits) {
+            $savedIds = [];
+
+            foreach ($preparedSplits as $index => $prepared) {
+                $split = $prepared['split'];
+                $existing = $prepared['existing'];
+                $paystackSubaccount = $prepared['paystack_subaccount'];
+                $resolvedAccount = $prepared['resolved_account'];
+                $accountNumber = $prepared['account_number'];
+                $account = $existing ?: $profile->paystackSplitAccounts()->make();
+                $creatingSubaccount = is_array($paystackSubaccount);
+
+                $account->fill([
+                    'label' => $split['label'] ?? null,
+                    'bank_name' => $split['bank_name'],
+                    'bank_code' => $split['bank_code'],
+                    'flat_amount' => $split['flat_amount'],
+                    'sort_order' => $index + 1,
+                    'is_active' => $split['is_active'],
+                ]);
+
+                if ($creatingSubaccount) {
+                    $account->fill([
+                        'subaccount_code' => $paystackSubaccount['subaccount_code'],
+                        'account_name' => $paystackSubaccount['account_name'] ?: ($resolvedAccount['account_name'] ?? ($split['account_name'] ?? null)),
+                        'account_number' => $accountNumber,
+                        'account_number_last4' => substr($accountNumber, -4),
+                        'metadata' => array_filter([
+                            'paystack_resolved_account' => $resolvedAccount['data'] ?? null,
+                            'paystack_subaccount' => $paystackSubaccount['data'] ?? null,
+                        ]),
+                    ]);
+                } else {
+                    $account->account_name = $split['account_name'] ?? $account->account_name;
+                }
+
+                $account->save();
+                $savedIds[] = $account->id;
+            }
+
+            $profile->paystackSplitAccounts()
+                ->when($savedIds !== [], fn ($query) => $query->whereNotIn('id', $savedIds))
+                ->delete();
+        });
+
+        return back()->with('success', 'Paystack split accounts updated successfully.');
+    }
+
+    protected function paystackSplitBusinessName(User $customer, array $split, int $index): string
+    {
+        $name = trim((string) ($split['label'] ?? ''));
+
+        if ($name === '') {
+            $name = trim((string) ($split['account_name'] ?? ''));
+        }
+
+        if ($name === '') {
+            $name = trim((string) ($customer->customer?->company_name ?: $customer->name));
+        }
+
+        return str($name.' Split '.($index + 1))->limit(120, '')->toString();
     }
 
     protected function isResultFetchService(VerificationService $service): bool

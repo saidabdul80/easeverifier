@@ -139,6 +139,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(CustomerResultPinPricing::class);
     }
 
+    public function paystackSplitLedgers(): HasMany
+    {
+        return $this->hasMany(CustomerPaystackSplitLedger::class);
+    }
+
     /**
      * Get all verification requests for the user.
      */

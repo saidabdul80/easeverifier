@@ -1,6 +1,15 @@
 <laravel-boost-guidelines>
 === foundation rules ===
 
+# Critical Database Safety Rule
+
+- Never run any command that can clear, refresh, wipe, reset, truncate, migrate fresh, roll back, reseed, or otherwise destructively modify any database unless the user explicitly asks for that exact destructive action in the current message.
+- Never write or modify PHP tests in a way that can clear, refresh, wipe, reset, truncate, migrate fresh, roll back, reseed, or otherwise destructively modify MySQL, production, staging, or local development databases.
+- Do not add `RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation`, `DatabaseTransactions`, manual table truncation, destructive SQL, or migration-refresh logic to PHP tests unless the test is provably isolated to sqlite `:memory:` before Laravel boots and the user has approved that testing approach.
+- Before running any test, migration, seeder, tinker command, or Artisan command that may touch the database, first prove the active connection is a safe test database. For tests, this must be sqlite with `DB_DATABASE=:memory:` verified before Laravel test setup can run. Do not rely on cached config, `.env`, or `phpunit.xml` by assumption.
+- Do not run `php artisan test`, `pest`, `phpunit`, `migrate:fresh`, `migrate:refresh`, `migrate:reset`, `db:wipe`, `schema:dump --prune`, destructive SQL, or any similar command against MySQL, production, staging, or local development databases.
+- If verification needs database access and safety cannot be proven first, stop and ask the user instead of running the command.
+
 # Laravel Boost Guidelines
 
 The Laravel Boost guidelines are specifically curated by Laravel maintainers for this application. These guidelines should be followed closely to enhance the user's satisfaction building Laravel applications.

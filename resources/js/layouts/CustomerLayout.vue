@@ -26,6 +26,7 @@ const navItems = [
     { title: 'Transactions', icon: 'mdi-swap-horizontal', route: '/customer/transactions' },
     { title: 'API Keys', icon: 'mdi-key', route: '/customer/api' },
     { title: 'PayGo Services', icon: 'mdi-cash-fast', route: '/customer/paygo-services' },
+    { title: 'Split Ledger', icon: 'mdi-bank-transfer-out', route: '/customer/paygo-splits' },
 ];
 
 const logout = () => {
