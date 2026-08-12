@@ -52,7 +52,7 @@ class PaystackSplitService
 
         $payload = [
             'type' => 'flat',
-            'bearer_type' => 'all',
+            'bearer_type' => 'all-proportional',
             'reference' => 'SPLIT-'.$paymentReference,
             'subaccounts' => $subaccounts->all(),
         ];
@@ -62,7 +62,7 @@ class PaystackSplitService
             'metadata' => [
                 'applied' => true,
                 'type' => 'flat',
-                'bearer_type' => 'all',
+                'bearer_type' => 'all-proportional',
                 'reference' => $payload['reference'],
                 'total_split_amount' => $totalShare / 100,
                 'total_split_amount_kobo' => $totalShare,
