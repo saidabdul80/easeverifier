@@ -368,7 +368,7 @@ class PublicPaygoVerificationController extends Controller
             amountInKobo: $amountInKobo,
             reference: $intent->reference,
             callbackUrl: route('paygo.callback'),
-            options: $split ? ['split' => $split['payload']] : [],
+            options: $split ? $split['payment_options'] : [],
         );
     }
 
