@@ -380,6 +380,16 @@ class CustomerController extends Controller
         $profile->save();
 
         $splits = array_values($validated['splits'] ?? []);
+        $activeSplitTotalKobo = collect($splits)
+            ->filter(fn (array $split) => (bool) ($split['is_active'] ?? false))
+            ->sum(fn (array $split) => (int) round((float) $split['flat_amount'] * 100));
+
+        if ($activeSplitTotalKobo > 0 && $activeSplitTotalKobo < 100) {
+            throw ValidationException::withMessages([
+                'splits' => 'The active Paystack split total must be at least NGN 1.00.',
+            ]);
+        }
+
         $existingIds = collect($splits)->pluck('id')->filter()->values();
         $existingAccounts = $profile->paystackSplitAccounts()
             ->whereIn('id', $existingIds)

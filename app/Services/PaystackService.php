@@ -50,7 +50,10 @@ class PaystackService
             ];
         }
 
-        Log::error('Paystack initialize failed', ['response' => $response->json()]);
+        Log::error('Paystack initialize failed', [
+            'response' => $response->json(),
+            'payload' => $this->safeInitializePayloadForLog($payload),
+        ]);
         
         return [
             'success' => false,
@@ -84,6 +87,13 @@ class PaystackService
             'success' => false,
             'message' => $response->json('message') ?? 'Verification failed',
         ];
+    }
+
+    private function safeInitializePayloadForLog(array $payload): array
+    {
+        unset($payload['email']);
+
+        return $payload;
     }
 
     /**

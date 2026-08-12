@@ -42,13 +42,17 @@ class PaystackSplitService
 
         $totalShare = (int) $subaccounts->sum('share');
 
+        if ($totalShare < 100) {
+            throw new RuntimeException('The active Paystack split total must be at least NGN 1.00.');
+        }
+
         if ($totalShare >= $amountInKobo) {
             throw new RuntimeException('The configured Paystack split amount must be lower than the transaction amount.');
         }
 
         $payload = [
             'type' => 'flat',
-            'bearer_type' => 'account',
+            'bearer_type' => 'all',
             'reference' => 'SPLIT-'.$paymentReference,
             'subaccounts' => $subaccounts->all(),
         ];
@@ -58,7 +62,7 @@ class PaystackSplitService
             'metadata' => [
                 'applied' => true,
                 'type' => 'flat',
-                'bearer_type' => 'account',
+                'bearer_type' => 'all',
                 'reference' => $payload['reference'],
                 'total_split_amount' => $totalShare / 100,
                 'total_split_amount_kobo' => $totalShare,
