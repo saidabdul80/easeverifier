@@ -50,9 +50,11 @@ class PaystackSplitService
             throw new RuntimeException('The configured Paystack split amount must be lower than the transaction amount.');
         }
 
+        $bearerType = $this->bearerTypeFor($subaccounts);
+
         $payload = [
             'type' => 'flat',
-            'bearer_type' => 'all-proportional',
+            'bearer_type' => $bearerType,
             'reference' => 'SPLIT-'.$paymentReference,
             'subaccounts' => $subaccounts->all(),
         ];
@@ -62,7 +64,7 @@ class PaystackSplitService
             'metadata' => [
                 'applied' => true,
                 'type' => 'flat',
-                'bearer_type' => 'all-proportional',
+                'bearer_type' => $bearerType,
                 'reference' => $payload['reference'],
                 'total_split_amount' => $totalShare / 100,
                 'total_split_amount_kobo' => $totalShare,
@@ -86,5 +88,12 @@ class PaystackSplitService
     private function amountToKobo(float $amount): int
     {
         return (int) round($amount * 100);
+    }
+
+    private function bearerTypeFor($subaccounts): string
+    {
+        $hasSmallShare = $subaccounts->contains(fn (array $account) => (int) $account['share'] <= 5000);
+
+        return $hasSmallShare ? 'account' : 'all-proportional';
     }
 }
