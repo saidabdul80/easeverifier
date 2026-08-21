@@ -22,21 +22,6 @@ class NbaisResult implements ResultInterface
     {
         return [
             [
-                'name' => 'parent_cat',
-                'label' => 'State',
-                'type' => 'select',
-                'required' => true,
-                'options' => $this->stateOptions(),
-            ],
-            [
-                'name' => 'sub_cat',
-                'label' => 'School / Centre',
-                'type' => 'select',
-                'required' => true,
-                'depends_on' => 'parent_cat',
-                'options_endpoint' => '/api/v1/results/nbais/schools',
-            ],
-            [
                 'name' => 'year',
                 'label' => 'Examination Year',
                 'type' => 'select',
@@ -44,24 +29,13 @@ class NbaisResult implements ResultInterface
                 'options' => $this->yearOptions(2008),
             ],
             [
-                'name' => 'month-select',
+                'name' => 'month',
                 'label' => 'Examination Month',
                 'type' => 'select',
                 'required' => true,
                 'options' => [
                     ['value' => 'June/July', 'label' => 'June/July'],
                     ['value' => 'Nov/Dec', 'label' => 'Nov/Dec'],
-                ],
-            ],
-            [
-                'name' => 'exam_type',
-                'label' => 'Examination Type',
-                'type' => 'select',
-                'required' => true,
-                'options' => [
-                    ['value' => 'SAISSCE', 'label' => 'SAISSCE'],
-                    ['value' => 'SCIENCE', 'label' => 'SCIENCE'],
-                    ['value' => 'TAHFEEZ', 'label' => 'TAHFEEZ'],
                 ],
             ],
             [
@@ -76,12 +50,6 @@ class NbaisResult implements ResultInterface
                 'type' => 'text',
                 'required' => true,
             ],
-            [
-                'name' => 'serial',
-                'label' => 'Result Checker Serial Number',
-                'type' => 'text',
-                'required' => true,
-            ],
         ];
     }
 
@@ -89,37 +57,43 @@ class NbaisResult implements ResultInterface
     {
         $cookieJar = tempnam(sys_get_temp_dir(), 'nbais_');
 
-        $payload = [
-            'website' => '',
-            'parent_cat' => trim((string) ($params['parent_cat'] ?? '')),
-            'sub_cat' => trim((string) ($params['sub_cat'] ?? '')),
-            'year' => trim((string) ($params['year'] ?? '')),
-            'month-select' => trim((string) ($params['month-select'] ?? $params['month'] ?? '')),
-            'exam_type' => trim((string) ($params['exam_type'] ?? '')),
-            'exam_no' => trim((string) ($params['exam_no'] ?? $params['exam_number'] ?? '')),
-        ];
-
         try {
-            $this->request(
-                url: $this->baseUrl.'/',
+            $checkHtml = $this->request(
+                url: $this->baseUrl.'/check',
                 method: 'GET',
                 payload: null,
                 headers: $this->commonHeaders,
                 cookieJar: $cookieJar,
             );
 
+            $checkForm = $this->findFormByAction($this->extractForms($checkHtml), '/check') ?? [
+                'action' => '/check',
+                'method' => 'POST',
+                'inputs' => $this->extractHiddenInputs($checkHtml),
+            ];
+
+            $token = trim((string) ($checkForm['inputs']['_token'] ?? '')) ?: $this->extractCsrfToken($checkHtml);
+            if ($token === null) {
+                throw new RuntimeException('NBAIS check form did not include a CSRF token.');
+            }
+
             $stage1 = $this->request(
-                url: $this->baseUrl.'/process-results-1.php',
+                url: $this->resolveUrl((string) ($checkForm['action'] ?: '/check')),
                 method: 'POST',
-                payload: $payload,
+                payload: [
+                    'exam_no' => trim((string) ($params['exam_no'] ?? $params['exam_number'] ?? '')),
+                    'year' => trim((string) ($params['year'] ?? '')),
+                    'month' => trim((string) ($params['month'] ?? $params['month-select'] ?? '')),
+                    '_token' => $token,
+                    'website' => '',
+                ],
                 headers: array_merge($this->commonHeaders, [
                     'Content-Type: application/x-www-form-urlencoded',
                     'Origin: '.$this->baseUrl,
-                    'Referer: '.$this->baseUrl.'/',
+                    'Referer: '.$this->baseUrl.'/check',
                 ]),
                 cookieJar: $cookieJar,
             );
-
 
             if ($this->looksLikeResultPage($stage1)) {
                 return $stage1;
@@ -128,7 +102,6 @@ class NbaisResult implements ResultInterface
             if ($this->extractStageValidationMessage($stage1)) {
                 return $stage1;
             }
-
 
             $pinForm = $this->findPinForm($this->extractForms($stage1));
             if (!$pinForm) {
@@ -140,15 +113,14 @@ class NbaisResult implements ResultInterface
 
                 throw new RuntimeException($message ?: 'NBAIS returned an intermediate validation page but no second-stage PIN form was found.');
             }
-            
 
             $response = $this->submitPinStage(
                 pinForm: $pinForm,
                 params: $params,
                 cookieJar: $cookieJar,
-                referer: $this->baseUrl.'/process-results-1.php',
+                referer: $this->baseUrl.'/check',
             );
-            
+
             return $response;
         } finally {
             @unlink($cookieJar);
@@ -157,16 +129,19 @@ class NbaisResult implements ResultInterface
 
     private function submitPinStage(array $pinForm, array $params, string $cookieJar, string $referer): string
     {
-        $stage2Payload = $this->injectPinFields(
-            payload: $pinForm['inputs'],
-            pin: trim((string) ($params['pin'] ?? $params['PIN'] ?? $params['txtPIN'] ?? '')),
-            serial: trim((string) ($params['serial'] ?? $params['Serial'] ?? $params['serial_no'] ?? $params['txtCardSerialNo'] ?? '')),
-        );
+        $token = (string) ($pinForm['inputs']['_token'] ?? '');
+        if ($token === '') {
+            throw new RuntimeException('NBAIS PIN form did not include a CSRF token.');
+        }
 
         return $this->request(
-            url: $this->resolveUrl((string) $pinForm['action']),
-            method: (string) ($pinForm['method'] ?? 'POST'),
-            payload: $stage2Payload,
+            url: $this->resolveUrl((string) ($pinForm['action'] ?: '/pin')),
+            method: 'POST',
+            payload: [
+                'pin' => trim((string) ($params['pin'] ?? $params['PIN'] ?? $params['txtPIN'] ?? '')),
+                '_token' => $token,
+                'website' => '',
+            ],
             headers: array_merge($this->commonHeaders, [
                 'Content-Type: application/x-www-form-urlencoded',
                 'Origin: '.$this->baseUrl,
@@ -176,7 +151,7 @@ class NbaisResult implements ResultInterface
         );
     }
 
-    private function request(string $url, string $method, ?array $payload, array $headers, string $cookieJar): string
+    protected function request(string $url, string $method, ?array $payload, array $headers, string $cookieJar): string
     {
         $ch = curl_init();
         curl_setopt_array($ch, [
@@ -227,6 +202,10 @@ class NbaisResult implements ResultInterface
         $html = trim($html, " \t\n\r\0\x0B'\",");
         $lower = strtolower($html);
 
+        if ($portalError = $this->extractPortalError($html)) {
+            return $portalError;
+        }
+
         if ($pinForm = $this->findPinForm($this->extractForms($html))) {
             $message = $this->extractHtmlErrorMessage($html);
             if ($message && $this->mapErrorCode($message) !== 'UNKNOWN_ERROR') {
@@ -243,7 +222,7 @@ class NbaisResult implements ResultInterface
             return [
                 'status' => 'error',
                 'code' => 'NBAIS_SECOND_STAGE_NOT_COMPLETED',
-                'message' => 'NBAIS returned the PIN validation page instead of a final result. Please verify the supplied PIN and serial number.',
+                'message' => 'NBAIS returned the PIN validation page instead of a final result. Please verify the supplied PIN.',
                 'meta' => [
                     'detected_fields' => array_keys($pinForm['inputs']),
                 ],
@@ -277,8 +256,8 @@ class NbaisResult implements ResultInterface
         }
 
         $examLabel = $this->normalizeText((string) ($xpath->query('//span[contains(@class, "border")]')?->item(0)?->textContent ?? ''));
-        $passport = $xpath->query('//img[contains(@class, "candidate-image")]/@src')?->item(0)?->nodeValue;
-        $qrCode = $xpath->query('//div[contains(@class, "qr-code-scanner")]//img/@src')?->item(0)?->nodeValue;
+        $passport = $this->extractImageByMeaning($xpath, ['candidate-image', 'passport', 'photo']);
+        $qrCode = $this->extractImageByMeaning($xpath, ['qr-code-scanner', 'qr-code', 'qr']);
 
         if ($passport) {
             $candidate['passport'] = $this->absoluteUrl($passport);
@@ -440,14 +419,28 @@ class NbaisResult implements ResultInterface
         return $forms;
     }
 
+    private function findFormByAction(array $forms, string $actionNeedle): ?array
+    {
+        foreach ($forms as $form) {
+            $action = strtolower((string) ($form['action'] ?? ''));
+
+            if (str_contains($action, strtolower($actionNeedle))) {
+                return $form;
+            }
+        }
+
+        return null;
+    }
+
     private function findPinForm(array $forms): ?array
     {
         foreach ($forms as $form) {
             $fields = strtolower(implode(' ', array_keys($form['inputs'] ?? [])));
+            $action = strtolower((string) ($form['action'] ?? ''));
 
             if (
                 str_contains($fields, 'pin')
-                || str_contains($fields, 'serial')
+                || str_contains($action, '/pin')
                 || str_contains($fields, 'card')
                 || str_contains($fields, 'scratch')
             ) {
@@ -477,7 +470,7 @@ class NbaisResult implements ResultInterface
     {
         $path = strtolower(parse_url($this->resolveUrl($action), PHP_URL_PATH) ?: '');
 
-        return str_ends_with($path, '/process-results-1.php');
+        return str_ends_with($path, '/check');
     }
 
     private function extractStageTwoAction(string $html): ?string
@@ -487,9 +480,9 @@ class NbaisResult implements ResultInterface
         $xpath = new \DOMXPath($dom);
 
         $candidates = [
-            '//form[contains(translate(@action, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "process-results")]',
-            '//a[contains(translate(@href, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "process-results")]',
-            '//*[contains(translate(@data-url, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "process-results")]',
+            '//form[contains(translate(@action, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "/pin")]',
+            '//a[contains(translate(@href, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "/pin")]',
+            '//*[contains(translate(@data-url, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "/pin")]',
         ];
 
         foreach ($candidates as $query) {
@@ -504,11 +497,7 @@ class NbaisResult implements ResultInterface
             }
         }
 
-        if (preg_match('/["\']([^"\']*process-results-[^"\']+\.php[^"\']*)["\']/i', $html, $matches)) {
-            return html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        }
-
-        if (preg_match('/\b(?:action|url|href)\s*[:=]\s*["\']([^"\']+\.php[^"\']*)["\']/i', $html, $matches)) {
+        if (preg_match('/["\']([^"\']*\/pin(?:\?[^"\']*)?)["\']/i', $html, $matches)) {
             return html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
         }
 
@@ -534,40 +523,45 @@ class NbaisResult implements ResultInterface
         return $inputs;
     }
 
-    private function injectPinFields(array $payload, string $pin, string $serial): array
+    private function extractCsrfToken(string $html): ?string
     {
-        $pinFields = ['pin', 'PIN', 'card_pin', 'cardpin', 'txtPIN', 'pin_no', 'pin_number'];
-        $serialFields = ['serial', 'Serial', 'serial_no', 'serial_number', 'card_serial', 'card_serial_no', 'txtSerial', 'txtCardSerialNo'];
+        $inputs = $this->extractHiddenInputs($html);
+        $token = trim((string) ($inputs['_token'] ?? ''));
 
-        $hasPin = false;
-        foreach ($pinFields as $field) {
-            if (array_key_exists($field, $payload)) {
-                $payload[$field] = $pin;
-                $hasPin = true;
+        if ($token !== '') {
+            return $token;
+        }
+
+        if (preg_match('/<meta[^>]+name\s*=\s*["\']csrf-token["\'][^>]+content\s*=\s*["\']([^"\']+)["\']/i', $html, $matches)) {
+            return html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+
+        return null;
+    }
+
+    private function extractImageByMeaning(\DOMXPath $xpath, array $needles): ?string
+    {
+        foreach ($xpath->query('//img[@src]') ?: [] as $image) {
+            if (!$image instanceof \DOMElement) {
+                continue;
+            }
+
+            $haystack = strtolower(implode(' ', [
+                $image->getAttribute('class'),
+                $image->getAttribute('alt'),
+                $image->getAttribute('id'),
+                $image->getAttribute('src'),
+                $image->parentNode instanceof \DOMElement ? $image->parentNode->getAttribute('class') : '',
+            ]));
+
+            foreach ($needles as $needle) {
+                if (str_contains($haystack, strtolower($needle))) {
+                    return $image->getAttribute('src');
+                }
             }
         }
 
-        $hasSerial = false;
-        foreach ($serialFields as $field) {
-            if (array_key_exists($field, $payload)) {
-                $payload[$field] = $serial;
-                $hasSerial = true;
-            }
-        }
-
-        if (!$hasPin) {
-            $payload['pin'] = $pin;
-        }
-
-        if (!$hasSerial && $serial !== '') {
-            $payload['serial'] = $serial;
-        }
-
-        if (!array_key_exists('Submit', $payload) && !array_key_exists('submit', $payload)) {
-            $payload['Submit'] = 'Submit';
-        }
-
-        return $payload;
+        return null;
     }
 
     private function resolveUrl(string $action): string
@@ -600,7 +594,31 @@ class NbaisResult implements ResultInterface
             'centre_number' => null,
             'centre_name' => null,
             'centre' => null,
+            'gender' => null,
+            'date_of_birth' => null,
+            'dob' => null,
         ];
+
+        foreach ($xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " sheet-label ")]') ?: [] as $labelNode) {
+            $valueNode = $xpath->query('./following-sibling::*[contains(concat(" ", normalize-space(@class), " "), " sheet-value ")][1]', $labelNode)?->item(0);
+
+            if (!$valueNode && $labelNode->parentNode) {
+                $valueNode = $xpath->query('.//*[contains(concat(" ", normalize-space(@class), " "), " sheet-value ")][1]', $labelNode->parentNode)?->item(0);
+            }
+
+            if (!$valueNode && $labelNode->parentNode) {
+                $valueNode = $xpath->query('./following-sibling::*//*[contains(concat(" ", normalize-space(@class), " "), " sheet-value ")][1]', $labelNode->parentNode)?->item(0);
+            }
+
+            if (!$valueNode) {
+                continue;
+            }
+
+            $key = strtolower($this->normalizeText((string) $labelNode->textContent));
+            $value = $this->normalizeText((string) $valueNode->textContent);
+
+            $this->mapCandidateField($candidate, $key, $value);
+        }
 
         foreach ($xpath->query('//input[contains(@class, "form-control-plaintext")]') ?: [] as $input) {
             $label = $xpath->query('./following-sibling::*[contains(@class, "placeholder-label")][1]', $input)?->item(0);
@@ -659,23 +677,48 @@ class NbaisResult implements ResultInterface
 
         if (str_contains($key, 'center name') || str_contains($key, 'centre name')) {
             $candidate['centre_name'] = $value;
+            return;
+        }
+
+        if (str_contains($key, 'gender') || str_contains($key, 'sex')) {
+            $candidate['gender'] = $value;
+            return;
+        }
+
+        if (str_contains($key, 'date of birth') || str_contains($key, 'birth') || $key === 'dob') {
+            $candidate['date_of_birth'] = $value;
+            $candidate['dob'] = $value;
         }
     }
 
     private function extractSubjects(\DOMXPath $xpath): array
     {
         $subjects = [];
-        $rows = $xpath->query('//table[contains(@class, "table")]//tbody/tr');
+        $rows = $xpath->query('//table[contains(concat(" ", normalize-space(@class), " "), " results ")]//tr');
+
+        if (!$rows || $rows->length === 0) {
+            $rows = $xpath->query('//table[contains(@class, "table")]//tbody/tr');
+        }
 
         foreach ($rows ?: [] as $row) {
             $cells = $xpath->query('./th|./td', $row);
-            if ($cells->length < 3) {
+            if ($cells->length < 2) {
                 continue;
             }
 
-            $subject = $this->normalizeText((string) $cells->item(0)?->textContent);
-            $grade = $this->normalizeText((string) $cells->item(1)?->textContent);
-            $remark = $this->normalizeText((string) $cells->item(2)?->textContent);
+            $values = [];
+            foreach ($cells as $cell) {
+                $values[] = $this->normalizeText((string) $cell->textContent);
+            }
+
+            if ($this->looksLikeSubjectHeader($values)) {
+                continue;
+            }
+
+            $subjectIndex = $this->subjectColumnIndex($values);
+            $subject = $values[$subjectIndex] ?? '';
+            $grade = $values[$subjectIndex + 1] ?? '';
+            $remark = $values[$subjectIndex + 2] ?? '';
 
             if ($subject === '' || $grade === '') {
                 continue;
@@ -690,6 +733,22 @@ class NbaisResult implements ResultInterface
         }
 
         return $subjects;
+    }
+
+    private function looksLikeSubjectHeader(array $values): bool
+    {
+        $joined = strtolower(implode(' ', $values));
+
+        return str_contains($joined, 'subject') && str_contains($joined, 'grade');
+    }
+
+    private function subjectColumnIndex(array $values): int
+    {
+        if (count($values) >= 3 && preg_match('/^(?:\d+|s\/?n|sn|no\.?)$/i', $values[0] ?? '')) {
+            return 1;
+        }
+
+        return 0;
     }
 
     private function extractNotes(\DOMXPath $xpath): array
@@ -712,6 +771,10 @@ class NbaisResult implements ResultInterface
             return false;
         }
 
+        if (str_contains($lowerHtml, 'sheet-label') && str_contains($lowerHtml, 'table') && str_contains($lowerHtml, 'results')) {
+            return false;
+        }
+
         return str_contains($lowerHtml, 'no result')
             || str_contains($lowerHtml, 'result not found')
             || str_contains($lowerHtml, 'invalid')
@@ -719,8 +782,7 @@ class NbaisResult implements ResultInterface
             || str_contains($lowerHtml, 'try again')
             || str_contains($lowerHtml, 'incorrect')
             || str_contains($lowerHtml, 'pin')
-            || str_contains($lowerHtml, 'serial')
-            || str_contains($lowerHtml, 'process-results-1.php') && !str_contains($lowerHtml, 'candidate-image');
+            || str_contains($lowerHtml, 'serial');
     }
 
     private function errorCode(string $lowerHtml): string
@@ -741,6 +803,10 @@ class NbaisResult implements ResultInterface
 
     private function extractHtmlErrorMessage(string $html): ?string
     {
+        if ($message = $this->extractPortalErrorMessage($html)) {
+            return mb_substr($message, 0, 240);
+        }
+
         $dom = new \DOMDocument();
         @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new \DOMXPath($dom);
@@ -771,6 +837,34 @@ class NbaisResult implements ResultInterface
         $message = $this->normalizeText(strip_tags($html));
 
         return $this->isUsefulErrorText($message) ? mb_substr($message, 0, 240) : null;
+    }
+
+    private function extractPortalError(string $html): ?array
+    {
+        $message = $this->extractPortalErrorMessage($html);
+
+        return $message ? [
+            'status' => 'error',
+            'code' => $this->mapErrorCode($message),
+            'message' => $message,
+        ] : null;
+    }
+
+    private function extractPortalErrorMessage(string $html): ?string
+    {
+        if (!preg_match_all('/ecertNotify\(\s*([\'"])((?:\\\\.|(?!\1).)*)\1\s*,\s*([\'"])(error|danger|warning)\3/isu', $html, $matches, PREG_SET_ORDER)) {
+            return null;
+        }
+
+        foreach ($matches as $match) {
+            $message = $this->normalizeText(stripcslashes($match[2]));
+
+            if ($this->isUsefulErrorText($message)) {
+                return $message;
+            }
+        }
+
+        return null;
     }
 
     private function extractStageValidationMessage(string $html): ?string
@@ -813,6 +907,14 @@ class NbaisResult implements ResultInterface
     {
         $lower = strtolower($message);
 
+        if (str_contains($lower, 'card limit reached') || str_contains($lower, 'used this card five times')) {
+            return 'CARD_LIMIT_REACHED';
+        }
+
+        if (str_contains($lower, 'access denied')) {
+            return 'ACCESS_VIOLATION';
+        }
+
         if (str_contains($lower, 'pin') || str_contains($lower, 'serial') || str_contains($lower, 'card')) {
             return 'INVALID_PIN';
         }
@@ -832,11 +934,17 @@ class NbaisResult implements ResultInterface
     {
         $lower = strtolower($html);
 
-        return str_contains($lower, 'form-control-plaintext')
-            && str_contains($lower, 'candidate-image')
+        return (
+            str_contains($lower, 'form-control-plaintext')
             && str_contains($lower, '<table')
             && str_contains($lower, 'subject')
-            && str_contains($lower, 'grade');
+            && str_contains($lower, 'grade')
+        ) || (
+            str_contains($lower, 'sheet-label')
+            && str_contains($lower, 'sheet-value')
+            && str_contains($lower, 'table')
+            && str_contains($lower, 'results')
+        );
     }
 
     private function normalizeText(string $value): string

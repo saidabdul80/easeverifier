@@ -66,12 +66,15 @@ it('loads result board form fields internally without charging the customer', fu
     $customer = createResultCustomer();
     $service = createCustomerResultService('nbais-result-fetch', 'NBAIS Result Fetch');
 
-    $this->actingAs($customer)
+    $response = $this->actingAs($customer)
         ->getJson("/customer/verify/{$service->id}/form-fields")
         ->assertOk()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('data.board', 'NBAIS')
-        ->assertJsonPath('data.fields.0.name', 'parent_cat');
+        ->assertJsonPath('data.board', 'NBAIS');
+
+    $fieldNames = collect($response->json('data.fields'))->pluck('name');
+
+    expect($fieldNames->all())->toBe(['year', 'month', 'exam_no', 'pin']);
 
     expect((float) $customer->wallet()->first()->fresh()->balance)->toBe(500.0)
         ->and(VerificationRequest::count())->toBe(0);

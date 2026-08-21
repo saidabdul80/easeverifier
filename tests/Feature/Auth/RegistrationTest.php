@@ -1,8 +1,10 @@
 <?php
 
-use App\Notifications\VerifyEmailOtpNotification;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+
+uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->withoutMiddleware(ValidateCsrfToken::class);
@@ -14,7 +16,7 @@ test('registration screen can be rendered', function () {
     $response->assertStatus(200);
 });
 
-test('new users can register and are redirected to otp email verification', function () {
+test('new users can register and are redirected to the dashboard without otp verification', function () {
     Notification::fake();
 
     $response = $this->post(route('register.store'), [
@@ -28,13 +30,12 @@ test('new users can register and are redirected to otp email verification', func
     $user = \App\Models\User::where('email', 'test@example.com')->firstOrFail();
 
     $this->assertAuthenticatedAs($user);
-    $response->assertRedirect(route('verification.notice', absolute: false));
+    $response->assertRedirect(route('dashboard', absolute: false));
 
-    Notification::assertSentTo($user, VerifyEmailOtpNotification::class);
+    Notification::assertNothingSent();
 
-    expect($user->email_verified_at)->toBeNull()
-        ->and($user->email_verification_otp)->not->toBeNull()
-        ->and($user->email_verification_otp_expires_at)->not->toBeNull()
+    expect($user->email_verification_otp)->toBeNull()
+        ->and($user->email_verification_otp_expires_at)->toBeNull()
         ->and($user->customer->account_type)->toBe('individual');
 });
 
@@ -78,7 +79,7 @@ test('business users can register with profile details', function () {
     $user = \App\Models\User::where('email', 'business@example.com')->firstOrFail();
 
     $this->assertAuthenticatedAs($user);
-    $response->assertRedirect(route('verification.notice', absolute: false));
+    $response->assertRedirect(route('dashboard', absolute: false));
 
     expect($user->customer->account_type)->toBe('business')
         ->and($user->customer->registration_number)->toBe('RC1234567')

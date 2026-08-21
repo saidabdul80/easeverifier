@@ -215,7 +215,7 @@ class ResultVerificationEngine
             'endpoint' => "result-board:{$board}",
             'method' => 'POST',
             'request_headers' => [],
-            'request_body' => $this->sanitizeParams($params),
+            'request_body' => ApiLog::requestSummary($this->sanitizeParams($params)),
             'ip_address' => request()?->ip(),
         ]);
 
@@ -226,7 +226,7 @@ class ResultVerificationEngine
 
             $apiLog->update([
                 'response_status' => ($parsed['status'] ?? null) === 'success' ? 200 : 400,
-                'response_body' => $this->sanitizeParsedResponse($parsed),
+                'response_body' => ApiLog::responseSummary($this->sanitizeParsedResponse($parsed), ($parsed['status'] ?? null) === 'success' ? 200 : 400),
                 'response_time' => $responseTime,
             ]);
 
@@ -252,7 +252,7 @@ class ResultVerificationEngine
 
             $apiLog->update([
                 'response_status' => 500,
-                'response_body' => ['message' => $exception->getMessage()],
+                'response_body' => ApiLog::exceptionSummary($exception->getMessage()),
                 'response_time' => $responseTime,
             ]);
 

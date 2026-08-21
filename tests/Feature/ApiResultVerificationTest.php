@@ -179,46 +179,28 @@ it('parses NBAIS html result into candidate and result payloads', function () {
 <!doctype html>
 <html>
 <body>
-    <span class="border mt-3 p-2 text-dark"> Nov/Dec - 2022</span>
-    <div class="form-group">
-        <input type="text" readonly class="form-control-plaintext" value="SAYYID ABDULLAHI">
-        <span class="placeholder-label">Name</span>
+    <div class="result-sheet">
+        <div><span class="sheet-label">Candidate Name</span><span class="sheet-value">SAYYID ABDULLAHI</span></div>
+        <div><span class="sheet-label">Exam Number</span><span class="sheet-value">481634346OS</span></div>
+        <div><span class="sheet-label">Exam Type</span><span class="sheet-value">SAISSC</span></div>
+        <div><span class="sheet-label">Month/Year</span><span class="sheet-value">Nov/Dec - 2022</span></div>
+        <div><span class="sheet-label">Centre Number</span><span class="sheet-value">OS001</span></div>
+        <div><span class="sheet-label">Centre Name</span><span class="sheet-value">ISLAMIC INSTITUTE OF NIGERIA, EDE</span></div>
+        <div><span class="sheet-label">Gender</span><span class="sheet-value">Male</span></div>
+        <div><span class="sheet-label">DOB</span><span class="sheet-value">2006-03-14</span></div>
     </div>
-    <div class="row form-group">
-        <div class="col-md-4">
-            <input type="text" readonly class="form-control-plaintext" value="481634346OS">
-            <span class="placeholder-label">Exam Number</span>
-        </div>
-        <div class="col-md-4">
-            <input type="text" readonly class="form-control-plaintext" value="SAISSC">
-            <span class="placeholder-label">Exam Type</span>
-        </div>
-        <div class="col-md-4">
-            <input type="text" readonly class="form-control-plaintext" value="Nov/Dec - 2022">
-            <span class="placeholder-label">Exam Year</span>
-        </div>
-    </div>
-    <div class="row form-group">
-        <div class="col-md-4">
-            <input type="text" readonly class="form-control-plaintext" value="OS001">
-            <span class="placeholder-label">Center Number</span>
-        </div>
-        <div class="col-md-8">
-            <input type="text" readonly class="form-control-plaintext" value="ISLAMIC INSTITUTE OF NIGERIA, EDE">
-            <span class="placeholder-label">Center Name</span>
-        </div>
-    </div>
-    <img src="http://nbais.com.ng/students/481634346OS.jpg" alt="Student Passport" class="candidate-image img-fluid">
-    <table class="table table-bordered">
+    <img src="/storage/photos/481634346OS.jpg" alt="Candidate Photo" class="student-photo">
+    <img src="/qrcode/481634346OS.png" alt="QR Code">
+    <table class="results">
+        <thead><tr><th>S/N</th><th>Subject</th><th>Grade</th><th>Remark</th></tr></thead>
         <tbody>
-            <tr><th scope="row"><strong>ISLAMIC STUDIES</strong></th><td><strong>B3</strong></td><td><strong>GOOD</strong></td></tr>
-            <tr><th scope="row"><strong>MATHEMATICS</strong></th><td><strong>A1</strong></td><td><strong>EXCELLENT</strong></td></tr>
+            <tr><td>1</td><td>ISLAMIC STUDIES</td><td>B3</td><td>GOOD</td></tr>
+            <tr><td>2</td><td>MATHEMATICS</td><td>A1</td><td>EXCELLENT</td></tr>
         </tbody>
     </table>
     <div class="notes-container">
         <ol><li>The Result is provisional and not transferable</li></ol>
     </div>
-    <div class="qr-code-scanner"><img src="https://example.test/qr.png"></div>
 </body>
 </html>
 HTML;
@@ -230,6 +212,10 @@ HTML;
         ->and($parsed['candidate']['exam_number'])->toBe('481634346OS')
         ->and($parsed['candidate']['centre_number'])->toBe('OS001')
         ->and($parsed['candidate']['centre_name'])->toBe('ISLAMIC INSTITUTE OF NIGERIA, EDE')
+        ->and($parsed['candidate']['gender'])->toBe('Male')
+        ->and($parsed['candidate']['date_of_birth'])->toBe('2006-03-14')
+        ->and($parsed['candidate']['passport'])->toBe('https://resultchecker.nbais.com.ng/storage/photos/481634346OS.jpg')
+        ->and($parsed['result']['qr_code'])->toBe('https://resultchecker.nbais.com.ng/qrcode/481634346OS.png')
         ->and($parsed['result']['exam_label'])->toBe('Nov/Dec - 2022')
         ->and($parsed['result']['subjects'])->toHaveCount(2)
         ->and($parsed['result']['subjects'][0])->toMatchArray([
@@ -285,14 +271,10 @@ it('charges NBAIS fetch separately and returns candidate plus result data', func
     $response = $this->withHeaders([
         'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/results/nbais/fetch', [
-        'parent_cat' => '8',
-        'sub_cat' => '1214',
         'year' => '2022',
-        'month-select' => 'Nov/Dec',
-        'exam_type' => 'SAISSCE',
+        'month' => 'Nov/Dec',
         'exam_no' => '481634346OS',
         'pin' => '123456789012',
-        'serial' => 'NBAIS123456',
     ]);
 
     $response
@@ -315,17 +297,64 @@ it('requires NBAIS form data for both result lookup stages', function () {
     $fields = collect(app(NbaisResult::class)->formFields())->keyBy('name');
 
     expect($fields)->toHaveKeys([
-        'parent_cat',
-        'sub_cat',
         'year',
-        'month-select',
-        'exam_type',
+        'month',
         'exam_no',
         'pin',
-        'serial',
     ])
-        ->and($fields['pin']['required'])->toBeTrue()
-        ->and($fields['serial']['required'])->toBeTrue();
+        ->and($fields)->not->toHaveKeys(['parent_cat', 'sub_cat', 'month-select', 'exam_type', 'serial'])
+        ->and($fields['pin']['required'])->toBeTrue();
+});
+
+it('uses the new NBAIS check and pin session flow', function () {
+    $gateway = new class extends NbaisResult
+    {
+        public array $calls = [];
+
+        protected function request(string $url, string $method, ?array $payload, array $headers, string $cookieJar): string
+        {
+            $this->calls[] = compact('url', 'method', 'payload');
+
+            return match (count($this->calls)) {
+                1 => '<form action="/check" method="POST"><input type="hidden" name="_token" value="csrf-check"></form>',
+                2 => '<h2>Candidate Found</h2><form action="/pin" method="POST"><input type="hidden" name="_token" value="csrf-pin"><input name="pin"></form>',
+                3 => '<html><body><div class="sheet-label">Candidate Name</div><div class="sheet-value">Candidate</div><table class="results"><tr><th>Subject</th><th>Grade</th></tr><tr><td>ARABIC LANGUAGE</td><td>A1</td></tr></table></body></html>',
+                default => throw new RuntimeException('Unexpected NBAIS request'),
+            };
+        }
+    };
+
+    $html = $gateway->fetchResult([
+        'exam_no' => '481634346OS',
+        'year' => '2022',
+        'month' => 'Nov/Dec',
+        'pin' => '123456789012',
+        'parent_cat' => 'ignored',
+        'sub_cat' => 'ignored',
+        'exam_type' => 'ignored',
+        'serial' => 'ignored',
+    ]);
+
+    expect($html)->toContain('table class="results"')
+        ->and($gateway->calls)->toHaveCount(3)
+        ->and($gateway->calls[0]['method'])->toBe('GET')
+        ->and($gateway->calls[0]['url'])->toEndWith('/check')
+        ->and($gateway->calls[1]['method'])->toBe('POST')
+        ->and($gateway->calls[1]['url'])->toEndWith('/check')
+        ->and($gateway->calls[1]['payload'])->toBe([
+            'exam_no' => '481634346OS',
+            'year' => '2022',
+            'month' => 'Nov/Dec',
+            '_token' => 'csrf-check',
+            'website' => '',
+        ])
+        ->and($gateway->calls[2]['method'])->toBe('POST')
+        ->and($gateway->calls[2]['url'])->toEndWith('/pin')
+        ->and($gateway->calls[2]['payload'])->toBe([
+            'pin' => '123456789012',
+            '_token' => 'csrf-pin',
+            'website' => '',
+        ]);
 });
 
 it('returns a clear NBAIS internal second stage error when a pin form is returned', function () {
@@ -336,7 +365,6 @@ it('returns a clear NBAIS internal second stage error when a pin form is returne
     <form action="validate-pin.php" method="POST">
         <input type="hidden" name="exam_no" value="481634346OS">
         <input type="text" name="pin" value="">
-        <input type="text" name="serial" value="">
     </form>
 </body>
 </html>
@@ -347,6 +375,14 @@ HTML;
     expect($parsed['status'])->toBe('error')
         ->and($parsed['code'])->toBe('NBAIS_SECOND_STAGE_NOT_COMPLETED')
         ->and($parsed['message'])->toContain('PIN validation page');
+});
+
+it('maps NBAIS portal notification errors into structured errors', function () {
+    $parsed = app(NbaisResult::class)->parseResult('<script>ecertNotify("Card Limit Reached", "error")</script>');
+
+    expect($parsed['status'])->toBe('error')
+        ->and($parsed['code'])->toBe('CARD_LIMIT_REACHED')
+        ->and($parsed['message'])->toBe('Card Limit Reached');
 });
 
 it('maps html error pages for WAEC and NECO into structured errors', function () {

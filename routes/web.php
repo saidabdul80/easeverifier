@@ -12,7 +12,6 @@ use App\Http\Controllers\Admin\ServiceController as AdminServiceController;
 use App\Http\Controllers\Admin\TransactionController as AdminTransactionController;
 use App\Http\Controllers\Admin\VerificationController as AdminVerificationController;
 use App\Http\Controllers\Admin\WalletController as AdminWalletController;
-use App\Http\Controllers\Auth\EmailOtpVerificationController;
 use App\Http\Controllers\BlogController;
 use App\Http\Controllers\Customer\ApiKeyController;
 use App\Http\Controllers\Customer\BranchController as CustomerBranchController;
@@ -133,10 +132,6 @@ Route::get('dashboard', function () {
 
     return redirect()->route('customer.dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
-
-Route::middleware(['auth', 'throttle:6,1'])->group(function () {
-    Route::post('email/verify-otp', [EmailOtpVerificationController::class, 'store'])->name('verification.otp.verify');
-});
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::impersonate();

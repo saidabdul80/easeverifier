@@ -375,8 +375,8 @@ class VerificationEngine
                 'direction' => 'outbound',
                 'endpoint' => $url,
                 'method' => $provider->http_method,
-                'request_headers' => $this->sanitizeHeaders($headers),
-                'request_body' => $body,
+                'request_headers' => ApiLog::headerSummary($headers),
+                'request_body' => ApiLog::requestSummary($body),
                 'ip_address' => request()->ip(),
             ]);
 
@@ -386,11 +386,18 @@ class VerificationEngine
                 ->withHeaders($headers)
                 ->send($provider->http_method, $url, ['json' => $body]);
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
+            $responsePayload = $response->json();
+
+            if (! is_array($responsePayload)) {
+                $responsePayload = [
+                    'message' => substr($response->body(), 0, 300),
+                ];
+            }
 
             // Update API log with response
             $apiLog->update([
                 'response_status' => $response->status(),
-                'response_body' => $response->json(),
+                'response_body' => ApiLog::responseSummary($responsePayload, $response->status()),
                 'response_time' => $responseTime,
             ]);
 
@@ -545,21 +552,6 @@ class VerificationEngine
         }
 
         return false;
-    }
-
-    /**
-     * Sanitize headers for logging (remove sensitive data).
-     */
-    protected function sanitizeHeaders(array $headers): array
-    {
-        $sensitiveKeys = ['authorization', 'x-api-key', 'api-key', 'token'];
-
-        return collect($headers)->map(function ($value, $key) use ($sensitiveKeys) {
-            if (in_array(strtolower($key), $sensitiveKeys)) {
-                return '***REDACTED***';
-            }
-            return $value;
-        })->toArray();
     }
 
     /**

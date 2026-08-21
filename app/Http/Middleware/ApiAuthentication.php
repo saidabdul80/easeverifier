@@ -6,7 +6,6 @@ use App\Models\ApiKey;
 use App\Models\ApiLog;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class ApiAuthentication
@@ -66,8 +65,8 @@ class ApiAuthentication
             'direction' => 'inbound',
             'endpoint' => $request->path(),
             'method' => $request->method(),
-            'request_headers' => $this->sanitizeHeaders($request->headers->all()),
-            'request_body' => $request->all(),
+            'request_headers' => ApiLog::headerSummary($request->headers->all()),
+            'request_body' => ApiLog::requestSummary($request->except(['api_key', 'branch'])),
             'ip_address' => $request->ip(),
         ]);
 
@@ -91,17 +90,5 @@ class ApiAuthentication
             'error' => $message,
             'error_code' => 'UNAUTHORIZED',
         ], 401);
-    }
-    
-    protected function sanitizeHeaders(array $headers): array
-    {
-        $sensitiveKeys = ['x-api-key', 'authorization', 'api-key'];
-        
-        return collect($headers)->map(function ($value, $key) use ($sensitiveKeys) {
-            if (in_array(strtolower($key), $sensitiveKeys)) {
-                return ['***REDACTED***'];
-            }
-            return $value;
-        })->toArray();
     }
 }

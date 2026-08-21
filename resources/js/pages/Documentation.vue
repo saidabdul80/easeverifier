@@ -48,16 +48,12 @@ const resultBoards = [
         board: 'NBAIS',
         form: 'GET /results/nbais/form',
         fetch: 'POST /results/nbais/fetch',
-        fields: ['parent_cat', 'sub_cat', 'year', 'month-select', 'exam_type', 'exam_no', 'pin', 'serial'],
+        fields: ['year', 'month', 'exam_no', 'pin'],
         sample: `{
-  "parent_cat": "8",
-  "sub_cat": "1214",
   "year": "2022",
-  "month-select": "Nov/Dec",
-  "exam_type": "SAISSCE",
+  "month": "Nov/Dec",
   "exam_no": "481634346OS",
-  "pin": "123456789012",
-  "serial": "NBAIS123456"
+  "pin": "123456789012"
 }`,
     },
     {
@@ -279,13 +275,6 @@ const errorResponse = `{
                                     </v-card-text>
                                 </v-card>
 
-                                <v-card variant="outlined" class="mb-4">
-                                    <v-card-title>NBAIS School Lookup</v-card-title>
-                                    <v-card-text>
-                                        <p class="text-body-2">When <code>parent_cat</code> is selected, fetch schools with:</p>
-                                        <code>GET /results/nbais/schools?parent_cat=8</code>
-                                    </v-card-text>
-                                </v-card>
                                 <v-card variant="outlined">
                                     <v-card-title>Result Response</v-card-title>
                                     <v-card-text class="bg-grey-darken-4"><pre class="text-blue-lighten-1 text-body-2" style="white-space: pre-wrap;">{{ resultSuccessResponse }}</pre></v-card-text>

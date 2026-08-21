@@ -39,16 +39,12 @@ const resultBoards = [
         board: 'NBAIS',
         form: 'GET /results/nbais/form',
         fetch: 'POST /results/nbais/fetch',
-        fields: ['parent_cat', 'sub_cat', 'year', 'month-select', 'exam_type', 'exam_no', 'pin', 'serial'],
+        fields: ['year', 'month', 'exam_no', 'pin'],
         sample: `{
-  "parent_cat": "8",
-  "sub_cat": "1214",
   "year": "2022",
-  "month-select": "Nov/Dec",
-  "exam_type": "SAISSCE",
+  "month": "Nov/Dec",
   "exam_no": "481634346OS",
-  "pin": "123456789012",
-  "serial": "NBAIS123456"
+  "pin": "123456789012"
 }`,
     },
     {
@@ -255,13 +251,6 @@ const errorResponse = `{
                         <div class="mb-3"><v-chip color="success" size="small" class="mr-2">FETCH</v-chip><code>{{ board.fetch }}</code></div>
                         <p class="text-body-2 mb-2">Required fields: <code>{{ board.fields.join(', ') }}</code></p>
                         <pre class="bg-grey-darken-4 text-green-lighten-1 pa-4 rounded overflow-x-auto">{{ board.sample }}</pre>
-                    </v-card-text>
-                </v-card>
-
-                <v-card class="mb-4">
-                    <v-card-title>NBAIS School Lookup</v-card-title>
-                    <v-card-text>
-                        <code>GET /results/nbais/schools?parent_cat=8</code>
                     </v-card-text>
                 </v-card>
 
