@@ -240,7 +240,7 @@ Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->na
     // Pay-on-the-go verification services
     Route::get('paygo-services', [PaygoServiceController::class, 'index'])->name('paygo.index');
     Route::get('paygo-analytics', fn () => redirect()->route('customer.paygo.index'))->name('paygo.analytics');
-    Route::get('paygo-transactions', fn () => redirect()->route('customer.paygo.index'))->name('paygo.transactions');
+    Route::get('paygo-transactions', [PaygoServiceController::class, 'transactions'])->name('paygo.transactions');
     Route::post('paygo-services', [PaygoServiceController::class, 'store'])->name('paygo.store');
     Route::get('paygo-services/{paygoService}/transactions', [PaygoServiceController::class, 'serviceTransactions'])->name('paygo.service-transactions');
     Route::get('paygo-splits', [CustomerPaystackSplitLedgerController::class, 'index'])->name('paygo.splits');

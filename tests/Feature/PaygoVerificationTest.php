@@ -6,6 +6,7 @@ use App\Models\CustomerPaystackSplitLedger;
 use App\Models\CustomerPaygoService;
 use App\Models\PaygoWallet;
 use App\Models\ServiceProvider;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
@@ -15,6 +16,7 @@ use App\Services\ResultVerify\ResultInterface;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -151,8 +153,54 @@ it('completes paygo payment idempotently and credits the customer wallet once', 
         'channel' => 'card',
     ]);
 
+    $intent->refresh();
+
     expect((float) $user->paygoWallet()->first()->fresh()->balance)->toBe(50.0)
-        ->and($intent->fresh()->status)->toBe('paid');
+        ->and($intent->status)->toBe('paid')
+        ->and($intent->transaction_id)->not->toBeNull()
+        ->and(Transaction::count())->toBe(1);
+});
+
+it('shows paid paygo payment intents and wallet ledger entries on the paygo transactions page', function () {
+    $user = createPaygoCustomer()->fresh('customer');
+    $service = createPaygoNinService(100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+
+    $intent = app(PaygoVerificationService::class)->createIntent($paygoService, [
+        'nin' => '12345678901',
+    ]);
+
+    app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 150,
+        'reference' => $intent->reference,
+        'paid_at' => now(),
+        'channel' => 'card',
+    ]);
+
+    $this->actingAs($user)
+        ->get('/customer/paygo-transactions')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Customer/Paygo/Transactions')
+            ->has('paymentIntents.data', 1)
+            ->where('paymentIntents.data.0.reference', $intent->reference)
+            ->where('paymentIntents.data.0.amount', 150)
+            ->where('paymentIntents.data.0.earning', 50)
+            ->has('walletTransactions.data', 1)
+            ->where('walletTransactions.data.0.amount', 50)
+            ->where('walletTransactions.data.0.category', 'earning'));
+
+    $this->actingAs($user)
+        ->get('/customer/transactions')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Customer/Transactions/Index')
+            ->has('transactions.data', 1)
+            ->where('transactions.data.0.reference', $intent->reference)
+            ->where('transactions.data.0.type', 'credit')
+            ->where('transactions.data.0.category', 'funding')
+            ->where('transactions.data.0.amount', 150)
+            ->where('transactions.data.0.status', 'completed'));
 });
 
 it('initializes paygo payment with configured flat paystack split', function () {
@@ -276,6 +324,8 @@ it('does not credit paygo wallet when paystack split was applied', function () {
 
     expect((float) $wallet->fresh()->balance)->toBe(10.0)
         ->and($wallet->transactions()->count())->toBe(0)
+        ->and($intent->transaction_id)->not->toBeNull()
+        ->and(Transaction::count())->toBe(1)
         ->and(CustomerPaystackSplitLedger::count())->toBe(1)
         ->and((float) CustomerPaystackSplitLedger::first()->flat_amount)->toBe(50.0)
         ->and($intent->metadata['paygo_wallet_credit_skipped'])->toBeTrue()
