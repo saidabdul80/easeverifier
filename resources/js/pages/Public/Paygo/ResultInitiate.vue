@@ -206,9 +206,7 @@ watch(
                             <v-card-text class="pa-6">
                                 <v-chip color="secondary" variant="flat" class="mb-4">Result Verification</v-chip>
                                 <h1 class="text-h4 font-weight-bold mb-2">{{ selectedService?.name || 'Select exam result' }}</h1>
-                                <p class="text-body-2 text-grey-darken-1 mb-5">
-                                    {{ selectedService?.customer_name || customer?.name || 'EaseVerifier' }}
-                                </p>
+                                
 
                                 <v-btn
                                     v-if="paygoService && selectorUrl && services.length > 1"
