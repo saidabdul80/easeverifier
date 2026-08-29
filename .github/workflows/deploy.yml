@@ -26,6 +26,9 @@ jobs:
             echo "Deploying EaseVerifier"
             echo "======================================"
 
+            echo "==> Trusting deploy repository path for Git..."
+            git config --global --add safe.directory "${{ env.APP_PATH }}"
+
             cd "${{ env.APP_PATH }}"
 
             echo "==> Fetching latest code..."
