@@ -9,6 +9,8 @@ jobs:
   deploy:
     name: Deploy to Hestia
     runs-on: ubuntu-latest
+    env:
+      APP_PATH: /home/ashlabtech/web/verify.ashlabtech.ng/public_html
 
     steps:
       - name: Deploy to production server
@@ -18,4 +20,53 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            /home/ashlabtech/deploy-verify.sh
+            set -euo pipefail
+
+            echo "======================================"
+            echo "Deploying EaseVerifier"
+            echo "======================================"
+
+            cd "${{ env.APP_PATH }}"
+
+            echo "==> Fetching latest code..."
+            git fetch origin main
+
+            echo "==> Updating code..."
+            git reset --hard origin/main
+
+            echo "==> Installing PHP dependencies..."
+            composer install --no-interaction --prefer-dist --optimize-autoloader
+
+            echo "==> Installing frontend dependencies..."
+            npm ci
+
+            echo "==> Building frontend..."
+            npm run build
+
+            echo "==> Running database migrations..."
+            php artisan migrate --force
+
+            echo "==> Clearing Laravel caches..."
+            php artisan optimize:clear
+
+            echo "==> Rebuilding Laravel caches..."
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            echo "==> Verifying Laravel writable directories..."
+            mkdir -p \
+              storage/framework/cache/data \
+              storage/framework/sessions \
+              storage/framework/testing \
+              storage/framework/views \
+              storage/logs \
+              bootstrap/cache
+
+            if chmod -R ug+rwX storage bootstrap/cache; then
+              echo "Writable permissions refreshed."
+            else
+              echo "Skipping chmod because the deploy user does not own some files."
+            fi
+
+            echo "==> Deployment completed."
