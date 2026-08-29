@@ -34,6 +34,25 @@ jobs:
             echo "==> Fetching latest code..."
             git fetch origin main
 
+            DEPLOYABLE_CHANGES="$(git diff --name-only HEAD origin/main | grep -vE '^\.github/' || true)"
+
+            if [ -z "${DEPLOYABLE_CHANGES}" ]; then
+              echo "No deployable application changes detected."
+              echo "Workflow-only change; nothing to update on the server."
+              exit 0
+            fi
+
+            echo "==> Files to deploy..."
+            printf '%s\n' "${DEPLOYABLE_CHANGES}"
+
+            if ! touch .deploy-write-check 2>/dev/null; then
+              echo "Deploy user cannot write to the application working tree."
+              echo "Fix ownership/permissions for ${{ env.APP_PATH }} on the server, then rerun."
+              exit 1
+            fi
+
+            rm -f .deploy-write-check
+
             echo "==> Updating code..."
             git reset --hard origin/main
 
