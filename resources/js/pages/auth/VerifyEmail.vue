@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import AuthLayout from '@/layouts/AuthLayout.vue';
 import { logout } from '@/routes';
-import { send } from '@/routes/verification';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
@@ -23,7 +22,7 @@ const otpValue = computed({
 });
 
 const resendVerification = () => {
-    form.post(send() as unknown as string);
+    form.post('/email/verification-notification');
 };
 
 const submitOtp = () => {
