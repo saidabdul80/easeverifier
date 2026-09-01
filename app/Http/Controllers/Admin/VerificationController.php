@@ -61,7 +61,13 @@ class VerificationController extends Controller
 
     public function show(VerificationRequest $verification)
     {
-        $verification->load(['user', 'verificationService', 'serviceProvider', 'transaction', 'sourceOverride']);
+        $relations = ['user', 'verificationService', 'serviceProvider', 'transaction'];
+
+        if (VerificationRequest::supportsSourceOverrides()) {
+            $relations[] = 'sourceOverride';
+        }
+
+        $verification->load($relations);
 
         return Inertia::render('Admin/Verifications/Show', [
             'verification' => $verification,
@@ -71,6 +77,17 @@ class VerificationController extends Controller
     private function filteredVerificationsQuery(Request $request): Builder
     {
         $search = trim((string) $request->input('search', ''));
+        $supportsSourceOverrides = VerificationRequest::supportsSourceOverrides();
+
+        $relations = [
+            'user:id,name,email',
+            'verificationService:id,name',
+            'serviceProvider:id,name',
+        ];
+
+        if ($supportsSourceOverrides) {
+            $relations[] = 'sourceOverride:id,verification_request_id,source';
+        }
 
         return VerificationRequest::query()
             ->select([
@@ -86,12 +103,7 @@ class VerificationController extends Controller
                 'created_at',
                 'completed_at',
             ])
-            ->with([
-                'user:id,name,email',
-                'verificationService:id,name',
-                'serviceProvider:id,name',
-                'sourceOverride:id,verification_request_id,source',
-            ])
+            ->with($relations)
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $nestedQuery) use ($search) {
                     $nestedQuery->where('reference', 'like', "%{$search}%")
@@ -104,16 +116,26 @@ class VerificationController extends Controller
             })
             ->when($request->filled('service'), fn (Builder $query) => $query->where('verification_service_id', $request->integer('service')))
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
-            ->when($request->filled('source'), function (Builder $query) use ($request) {
+            ->when($request->filled('source'), function (Builder $query) use ($request, $supportsSourceOverrides) {
                 $source = $request->string('source')->toString();
 
                 if ($source === 'paygo') {
+                    if (! $supportsSourceOverrides) {
+                        $query->whereRaw('1 = 0');
+
+                        return;
+                    }
+
                     $query->whereHas('sourceOverride', fn (Builder $sourceQuery) => $sourceQuery->where('source', 'paygo'));
 
                     return;
                 }
 
-                $query->where('source', $source)->whereDoesntHave('sourceOverride');
+                $query->where('source', $source);
+
+                if ($supportsSourceOverrides) {
+                    $query->whereDoesntHave('sourceOverride');
+                }
             })
             ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
             ->when($request->filled('date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('date_to')));
