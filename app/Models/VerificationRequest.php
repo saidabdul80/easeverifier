@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class VerificationRequest extends Model
@@ -57,6 +58,10 @@ class VerificationRequest extends Model
                     return $this->pendingSourceOverride ?? $value;
                 }
 
+                if (! static::supportsSourceOverrides()) {
+                    return $value;
+                }
+
                 return $this->sourceOverride()->value('source') ?? $value;
             },
             set: function (?string $value): array {
@@ -77,6 +82,13 @@ class VerificationRequest extends Model
                 return;
             }
 
+            if (! static::supportsSourceOverrides()) {
+                $request->sourceWasAssigned = false;
+                $request->pendingSourceOverride = null;
+
+                return;
+            }
+
             if ($request->pendingSourceOverride) {
                 $override = $request->sourceOverride()->updateOrCreate(
                     [],
@@ -91,6 +103,11 @@ class VerificationRequest extends Model
 
             $request->sourceWasAssigned = false;
         });
+    }
+
+    public static function supportsSourceOverrides(): bool
+    {
+        return Schema::hasTable((new VerificationRequestSourceOverride)->getTable());
     }
 
     /**
