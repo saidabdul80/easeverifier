@@ -24,15 +24,23 @@ class CsvExport
             // UTF-8 BOM improves Excel compatibility for exported CSV files.
             fwrite($handle, "\xEF\xBB\xBF");
             fputcsv($handle, $headers);
+            self::flush($handle);
 
+            $rowCount = 0;
             foreach ($rows() as $row) {
                 fputcsv($handle, array_map(self::normalizeValue(...), $row));
+
+                $rowCount++;
+                if ($rowCount % 500 === 0) {
+                    self::flush($handle);
+                }
             }
 
             fclose($handle);
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'X-Accel-Buffering' => 'no',
         ]);
     }
 
@@ -55,5 +63,16 @@ class CsvExport
         }
 
         return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '';
+    }
+
+    private static function flush($handle): void
+    {
+        fflush($handle);
+
+        if (ob_get_level() > 0) {
+            ob_flush();
+        }
+
+        flush();
     }
 }
