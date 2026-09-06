@@ -357,6 +357,89 @@ it('uses the new NBAIS check and pin session flow', function () {
         ]);
 });
 
+it('uses WAEC encrypted display flow instead of the retired DisplayResult endpoint', function () {
+    $gateway = new class extends WAECResult
+    {
+        public array $calls = [];
+
+        protected function request(
+            string $url,
+            string $method,
+            string|array|null $payload,
+            array $headers,
+            string $cookieJar,
+            int $timeout,
+            bool $failOnHttpError = true,
+        ): string {
+            $this->calls[] = compact('url', 'method', 'payload', 'headers', 'timeout', 'failOnHttpError');
+
+            return match (count($this->calls)) {
+                1 => '<html>WAEC form</html>',
+                2 => '{"success":true,"q":"encrypted-token"}',
+                3 => '<html>WAEC result</html>',
+                default => throw new RuntimeException('Unexpected WAEC request'),
+            };
+        }
+    };
+
+    $html = $gateway->fetchResult([
+        'txtExamNumber' => '4141607071',
+        'ExamYear' => '2026',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '123456789012',
+        'txtCardSerialNo' => 'WRN123456789',
+    ]);
+
+    expect($html)->toBe('<html>WAEC result</html>')
+        ->and($gateway->calls)->toHaveCount(3)
+        ->and($gateway->calls[0]['method'])->toBe('GET')
+        ->and($gateway->calls[0]['url'])->toBe('https://www.waecdirect.org/')
+        ->and($gateway->calls[1]['method'])->toBe('POST')
+        ->and($gateway->calls[1]['url'])->toBe('https://www.waecdirect.org/Result/EncryptPayload')
+        ->and(json_decode($gateway->calls[1]['payload'], true))->toBe([
+            'examNumber' => '4141607071',
+            'examYear' => '2026',
+            'serial' => 'WRN123456789',
+            'pin' => '123456789012',
+            'examType' => 'MAY/JUN',
+        ])
+        ->and($gateway->calls[2]['method'])->toBe('GET')
+        ->and($gateway->calls[2]['url'])->toBe('https://www.waecdirect.org/Result/Display?q=encrypted-token');
+});
+
+it('parses WAEC current result display tables', function () {
+    $html = <<<'HTML'
+<html>
+<body>
+    <table id="tbCandidInfo">
+        <tr><td>Examination Number</td><td>4141607071</td></tr>
+        <tr><td>Candidate's Name</td><td>Sample Candidate</td></tr>
+        <tr><td>Examination</td><td>WASSCE FOR SCHOOL CANDIDATES 2026</td></tr>
+        <tr><td>Centre</td><td>Sample School</td></tr>
+    </table>
+    <table id="tbSubjectGrades">
+        <tr><td>COMMERCE</td><td>C4</td></tr>
+        <tr><td>ACCOUNTING</td><td>A1</td></tr>
+        <tr><td>ENGLISH LANGUAGE</td><td>C6</td></tr>
+    </table>
+</body>
+</html>
+HTML;
+
+    $parsed = app(WAECResult::class)->parseResult($html);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['exam_number'])->toBe('4141607071')
+        ->and($parsed['candidate']['name'])->toBe('Sample Candidate')
+        ->and($parsed['candidate']['centre'])->toBe('Sample School')
+        ->and($parsed['subjects'])->toHaveCount(3)
+        ->and($parsed['subjects'][0])->toBe([
+            'subject' => 'COMMERCE',
+            'grade' => 'C4',
+            'score' => null,
+        ]);
+});
+
 it('returns a clear NBAIS internal second stage error when a pin form is returned', function () {
     $html = <<<'HTML'
 <!doctype html>
