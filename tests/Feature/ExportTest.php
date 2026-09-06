@@ -5,7 +5,10 @@ use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Models\Wallet;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
 
 function createUserWithRole(string $role): User
 {
@@ -40,6 +43,11 @@ function createVerificationService(): VerificationService
         'is_active' => true,
         'sort_order' => 1,
     ]);
+}
+
+function createVerificationRequestForExport(array $attributes): VerificationRequest
+{
+    return VerificationRequest::unguarded(fn () => VerificationRequest::create($attributes));
 }
 
 it('exports admin transactions with grouped filters applied correctly', function () {
@@ -195,8 +203,18 @@ it('exports customer verification history scoped to the authenticated user', fun
     $customer = createUserWithRole('customer');
     $otherCustomer = createUserWithRole('customer');
     $service = createVerificationService();
+    $otherService = VerificationService::create([
+        'name' => 'BVN Lookup',
+        'slug' => 'bvn-lookup',
+        'description' => 'Test service',
+        'icon' => 'mdi-card-account-details',
+        'default_price' => 100,
+        'cost_price' => 50,
+        'is_active' => true,
+        'sort_order' => 2,
+    ]);
 
-    VerificationRequest::create([
+    createVerificationRequestForExport([
         'user_id' => $customer->id,
         'verification_service_id' => $service->id,
         'reference' => 'VER-MINE-001',
@@ -204,10 +222,35 @@ it('exports customer verification history scoped to the authenticated user', fun
         'amount_charged' => 100,
         'status' => 'completed',
         'source' => 'web',
+        'created_at' => '2026-01-10 10:00:00',
         'completed_at' => now(),
     ]);
 
-    VerificationRequest::create([
+    createVerificationRequestForExport([
+        'user_id' => $customer->id,
+        'verification_service_id' => $service->id,
+        'reference' => 'VER-OUTSIDE-DATE-001',
+        'search_parameter' => '33333333333',
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'web',
+        'created_at' => '2026-01-20 10:00:00',
+        'completed_at' => now(),
+    ]);
+
+    createVerificationRequestForExport([
+        'user_id' => $customer->id,
+        'verification_service_id' => $otherService->id,
+        'reference' => 'VER-OTHER-SERVICE-001',
+        'search_parameter' => '44444444444',
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'web',
+        'created_at' => '2026-01-10 10:00:00',
+        'completed_at' => now(),
+    ]);
+
+    createVerificationRequestForExport([
         'user_id' => $otherCustomer->id,
         'verification_service_id' => $service->id,
         'reference' => 'VER-THEIRS-001',
@@ -215,12 +258,18 @@ it('exports customer verification history scoped to the authenticated user', fun
         'amount_charged' => 100,
         'status' => 'completed',
         'source' => 'web',
+        'created_at' => '2026-01-10 10:00:00',
         'completed_at' => now(),
     ]);
 
     $response = $this
         ->actingAs($customer)
-        ->get(route('customer.verification.export', ['status' => 'completed']));
+        ->get(route('customer.verification.export', [
+            'service' => $service->id,
+            'status' => 'completed',
+            'date_from' => '2026-01-01',
+            'date_to' => '2026-01-15',
+        ]));
 
     $response->assertOk();
 
@@ -228,6 +277,9 @@ it('exports customer verification history scoped to the authenticated user', fun
 
     expect($csv)
         ->toContain('VER-MINE-001')
+        ->toContain('NIN Lookup')
+        ->not->toContain('VER-OUTSIDE-DATE-001')
+        ->not->toContain('VER-OTHER-SERVICE-001')
         ->not->toContain('VER-THEIRS-001');
 });
 

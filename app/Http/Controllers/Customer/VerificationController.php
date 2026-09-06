@@ -12,8 +12,10 @@ use App\Services\ResultVerify\ResultVerificationEngine;
 use App\Services\Verification\VerificationEngine;
 use App\Support\CsvExport;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -35,6 +37,7 @@ class VerificationController extends Controller
             ->map(function ($service) use ($request) {
                 $service->price = $request->user()->getPriceForService($service);
                 $this->applyResultBoardDisplayName($service);
+
                 return $service;
             });
 
@@ -45,7 +48,7 @@ class VerificationController extends Controller
 
     public function show(VerificationService $service, Request $request)
     {
-        if (!$service->is_active) {
+        if (! $service->is_active) {
             return redirect()->route('customer.verification.index')
                 ->with('error', 'This service is not available.');
         }
@@ -104,7 +107,7 @@ class VerificationController extends Controller
                 ->firstOrFail();
         }
 
-        if (!$service->is_active) {
+        if (! $service->is_active) {
             return back()->withErrors(['search_parameter' => 'This service is not available.']);
         }
 
@@ -222,16 +225,16 @@ class VerificationController extends Controller
 
     public function exportHistory(Request $request)
     {
-        $query = $this->historyQuery($request)->orderByDesc('id');
+        $query = $this->historyExportQuery($request);
 
         return CsvExport::download(
             filename: 'verification-history-'.now()->format('Ymd-His').'.csv',
             headers: ['Reference', 'Service', 'Search Parameter', 'Status', 'Amount Charged', 'Created At', 'Completed At'],
             rows: function () use ($query) {
-                foreach ($query->lazyByIdDesc(500, 'id') as $verification) {
+                foreach ($query->lazyByIdDesc(1000, 'verification_requests.id', 'id') as $verification) {
                     yield [
                         $verification->reference,
-                        $verification->verificationService?->name,
+                        $verification->service_name,
                         $verification->search_parameter,
                         $verification->status,
                         $verification->amount_charged,
@@ -325,8 +328,37 @@ class VerificationController extends Controller
             )
             ->when($request->filled('service'), fn (Builder $query) => $query->where('verification_service_id', $request->integer('service')))
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
-            ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
-            ->when($request->filled('date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('date_to')));
+            ->when($request->filled('date_from'), fn (Builder $query) => $query->where('created_at', '>=', $request->date('date_from')->startOfDay()))
+            ->when($request->filled('date_to'), fn (Builder $query) => $query->where('created_at', '<=', $request->date('date_to')->endOfDay()));
+    }
+
+    private function historyExportQuery(Request $request): QueryBuilder
+    {
+        return DB::table('verification_requests')
+            ->leftJoin('verification_services', 'verification_services.id', '=', 'verification_requests.verification_service_id')
+            ->where('verification_requests.user_id', $request->user()->id)
+            ->select([
+                'verification_requests.id',
+                'verification_requests.reference',
+                'verification_services.name as service_name',
+                'verification_requests.search_parameter',
+                'verification_requests.status',
+                'verification_requests.amount_charged',
+                'verification_requests.created_at',
+                'verification_requests.completed_at',
+            ])
+            ->when(
+                $request->string('branch')->value() === 'primary',
+                fn (QueryBuilder $query) => $query->whereNull('verification_requests.branch_id')
+            )
+            ->when(
+                $request->filled('branch') && $request->string('branch')->value() !== 'primary',
+                fn (QueryBuilder $query) => $query->where('verification_requests.branch_id', $request->integer('branch'))
+            )
+            ->when($request->filled('service'), fn (QueryBuilder $query) => $query->where('verification_requests.verification_service_id', $request->integer('service')))
+            ->when($request->filled('status'), fn (QueryBuilder $query) => $query->where('verification_requests.status', $request->string('status')))
+            ->when($request->filled('date_from'), fn (QueryBuilder $query) => $query->where('verification_requests.created_at', '>=', $request->date('date_from')->startOfDay()))
+            ->when($request->filled('date_to'), fn (QueryBuilder $query) => $query->where('verification_requests.created_at', '<=', $request->date('date_to')->endOfDay()));
     }
 
     private function verifyResultBoard(Request $request, VerificationService $service)
@@ -349,7 +381,7 @@ class VerificationController extends Controller
                 ->firstOrFail();
         }
 
-        if (!$service->is_active) {
+        if (! $service->is_active) {
             return back()->withErrors(['result' => 'This service is not available.']);
         }
 
@@ -402,7 +434,7 @@ class VerificationController extends Controller
 
     private function applyResultBoardDisplayName(VerificationService $service): void
     {
-        if (!$this->isResultBoardFetchService($service)) {
+        if (! $this->isResultBoardFetchService($service)) {
             return;
         }
 
