@@ -10,7 +10,7 @@ class NecoEVerify implements ResultInterface
     public function formFields(): array
     {
         return [
-            //all commented not needed, also token is same as payRef
+            // all commented not needed, also token is same as payRef
             [
                 'name' => 'token',
                 'label' => 'Verification Token / RRR',
@@ -46,7 +46,7 @@ class NecoEVerify implements ResultInterface
                 'label' => 'Examination Year',
                 'type' => 'select',
                 'required' => true,
-                'options' => $this->yearOptions(2000),
+                'options' => $this->yearOptions(1980),
             ],
             [
                 'name' => 'exam_type',
@@ -63,8 +63,7 @@ class NecoEVerify implements ResultInterface
 
     public function fetchResult(array $params): string
     {
-       
-        $baseUrl = rtrim((string) 'https://everify.neco.gov.ng');
+        $baseUrl = $this->endpointBaseUrl();
         $bearerToken = trim((string) config('services.neco_everify.bearer_token', ''));
         $timeout = $this->boundedTimeout((int) config('services.neco_everify.timeout', 20));
 
@@ -74,24 +73,23 @@ class NecoEVerify implements ResultInterface
 
         $dataPayload = [
             'token' => trim((string) ($params['token'] ?? '')),
-            'payref' => trim((string) ($params['token'] ?? '')),
-            'examno' => trim((string) ($params['examno'] ?? $params['exam_number'] ?? '')),
-            'exam_year' => (string)($params['exam_year'] ?? 0),
+            'payref' => trim((string) ($params['payref'] ?? $params['token'] ?? '')),
+            'examno' => trim((string) ($params['examno'] ?? $params['reg_no'] ?? $params['exam_number'] ?? '')),
+            'exam_year' => (string) ($params['exam_year'] ?? 0),
             'exam_type' => $this->normalizeExamType((string) ($params['exam_type'] ?? '')),
         ];
 
-        $result = $this->postJson($baseUrl . '/api_core/single', $dataPayload, $bearerToken, $timeout);
+        $result = $this->postJson($baseUrl.'/rrr', $dataPayload, $bearerToken, $timeout);
 
-        return $result['response'];
+        return $this->sanitizeEVerifyResponse($result['response']);
     }
 
-    private function postJson(string $url, array $payload, string $bearerToken, int $timeout): array
+    protected function postJson(string $url, array $payload, string $bearerToken, int $timeout): array
     {
         $headers = [];
-        $headers[] = 'Authorization: Bearer ' . $bearerToken;
+        $headers[] = 'Authorization: Bearer '.$bearerToken;
         $headers[] = 'Content-Type: application/json';
         $headers[] = 'Connection: keep-alive';
-
 
         $ch = curl_init();
         curl_setopt_array($ch, [
@@ -101,7 +99,7 @@ class NecoEVerify implements ResultInterface
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HEADER => false,
             CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_POSTFIELDS =>  json_encode($payload, JSON_THROW_ON_ERROR),
+            CURLOPT_POSTFIELDS => json_encode($payload, JSON_THROW_ON_ERROR),
             CURLOPT_CONNECTTIMEOUT => min(8, $timeout),
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_ENCODING => '',
@@ -143,7 +141,7 @@ class NecoEVerify implements ResultInterface
         }
 
         $decoded = $this->decodeJson($response);
-        if (!is_array($decoded)) {
+        if (! is_array($decoded)) {
             $message = strtolower(trim($response));
 
             return str_contains($message, 'error')
@@ -160,7 +158,7 @@ class NecoEVerify implements ResultInterface
             return true;
         }
 
-        return !empty($decoded['error']);
+        return ! empty($decoded['error']);
     }
 
     private function decodeJson(string $response): ?array
@@ -172,11 +170,7 @@ class NecoEVerify implements ResultInterface
 
     private function boundedTimeout(int $configuredTimeout): int
     {
-        if ($configuredTimeout <= 0) {
-            return 20;
-        }
-
-        return min($configuredTimeout, 20);
+        return max(10, min($configuredTimeout ?: 20, 120));
     }
 
     private function normalizeExamType(string $examType): string
@@ -193,14 +187,22 @@ class NecoEVerify implements ResultInterface
 
     public function parseResult(string $html): array
     {
-        $decoded = json_decode($html, true);
+        $decoded = json_decode(trim($html), true);
 
-        if (!is_array($decoded)) {
+        if (! is_array($decoded)) {
+            $decoded = json_decode($this->sanitizeEVerifyResponse($html), true);
+        }
+
+        if (! is_array($decoded)) {
             return [
                 'status' => 'error',
                 'code' => 'UNREADABLE_RESPONSE',
                 'message' => $this->extractHtmlErrorMessage($html) ?: 'NECO e-Verify returned an unreadable response.',
             ];
+        }
+
+        if ($this->isSuccessfulNecoEVerifyResponse($decoded)) {
+            return $this->parseSuccessfulNecoEVerifyResponse($decoded);
         }
 
         if ($this->isErrorResponse($decoded)) {
@@ -211,15 +213,11 @@ class NecoEVerify implements ResultInterface
             ];
         }
 
-        if ($this->isSuccessfulNecoEVerifyResponse($decoded)) {
-            return $this->parseSuccessfulNecoEVerifyResponse($decoded);
-        }
-
         $payload = $this->payload($decoded);
         $candidate = $this->candidate($payload, $decoded);
         $subjects = $this->subjects($payload, $decoded);
 
-        if (!$subjects) {
+        if (! $subjects) {
             return [
                 'status' => 'error',
                 'code' => 'RESULT_NOT_FOUND',
@@ -251,7 +249,7 @@ class NecoEVerify implements ResultInterface
         $details = $decoded['details'];
         $subjects = $this->subjects($details, $decoded);
 
-        if (!$subjects) {
+        if (! $subjects) {
             return [
                 'status' => 'error',
                 'code' => 'RESULT_NOT_FOUND',
@@ -308,7 +306,7 @@ class NecoEVerify implements ResultInterface
             return true;
         }
 
-        if (!empty($decoded['error'])) {
+        if (! empty($decoded['error'])) {
             return true;
         }
 
@@ -349,7 +347,7 @@ class NecoEVerify implements ResultInterface
     private function errorMessage(array $decoded): string
     {
         foreach (['message', 'error', 'detail', 'info'] as $key) {
-            if (!empty($decoded[$key]) && is_string($decoded[$key])) {
+            if (! empty($decoded[$key]) && is_string($decoded[$key])) {
                 return $decoded[$key];
             }
         }
@@ -428,10 +426,11 @@ class NecoEVerify implements ResultInterface
                     'grade' => is_string($key) ? $row : null,
                     'score' => null,
                 ];
+
                 continue;
             }
 
-            if (!is_array($row)) {
+            if (! is_array($row)) {
                 continue;
             }
 
@@ -439,7 +438,7 @@ class NecoEVerify implements ResultInterface
             $grade = $this->firstValue($row, ['grade', 'result', 'score_grade', 'scoreGrade']);
             $score = $this->firstValue($row, ['score', 'mark', 'marks']);
 
-            if (!$subject && is_string($key)) {
+            if (! $subject && is_string($key)) {
                 $subject = $key;
             }
 
@@ -459,7 +458,7 @@ class NecoEVerify implements ResultInterface
     private function firstValue(array $data, array $keys): mixed
     {
         foreach ($keys as $key) {
-            if (array_key_exists($key, $data) && filled($data[$key]) && !is_array($data[$key])) {
+            if (array_key_exists($key, $data) && filled($data[$key]) && ! is_array($data[$key])) {
                 return $data[$key];
             }
         }
@@ -495,5 +494,140 @@ class NecoEVerify implements ResultInterface
         }
 
         return $years;
+    }
+
+    private function endpointBaseUrl(): string
+    {
+        $baseUrl = rtrim((string) config('services.neco_everify.base_url', 'https://everify.neco.gov.ng/api_core'), '/');
+
+        if (! str_ends_with($baseUrl, '/api_core')) {
+            $baseUrl .= '/api_core';
+        }
+
+        return $baseUrl;
+    }
+
+    private function sanitizeEVerifyResponse(string $response): string
+    {
+        $response = trim($response);
+
+        $jsonStart = $this->firstJsonStartPosition($response);
+        if ($jsonStart === null) {
+            return json_encode([
+                'status' => 'error',
+                'message' => $response ?: 'An error occurred with NECO e-Verify.',
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        $jsonEnd = $this->matchingJsonEndPosition($response, $jsonStart);
+
+        if ($jsonEnd === null) {
+            return json_encode([
+                'status' => 'error',
+                'message' => $response ?: 'An error occurred with NECO e-Verify.',
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        $jsonPart = substr($response, $jsonStart, $jsonEnd - $jsonStart + 1);
+        $prefixMessage = trim(substr($response, 0, $jsonStart));
+        $trailingMessage = trim(substr($response, $jsonEnd + 1));
+        $outsideMessage = trim($prefixMessage.($prefixMessage && $trailingMessage ? ' ' : '').$trailingMessage);
+
+        $decoded = json_decode($jsonPart, true);
+        if (! is_array($decoded)) {
+            return json_encode([
+                'status' => 'error',
+                'message' => $outsideMessage ?: $response ?: 'An error occurred with NECO e-Verify.',
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        $hasJsonError = (($decoded['status'] ?? 1) == 0)
+            || ((int) ($decoded['status'] ?? 0) >= 400)
+            || isset($decoded['error']);
+
+        if ($outsideMessage !== '' && $hasJsonError) {
+            $message = $this->errorMessage($decoded);
+
+            if ($message === 'NECO e-Verify returned an error.') {
+                $message = $outsideMessage;
+            }
+
+            return json_encode([
+                'status' => 'error',
+                'message' => $message ?: 'An error occurred with NECO e-Verify.',
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        return json_encode($decoded, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function firstJsonStartPosition(string $response): ?int
+    {
+        $objectPosition = strpos($response, '{');
+        $arrayPosition = strpos($response, '[');
+
+        if ($objectPosition === false) {
+            return $arrayPosition === false ? null : $arrayPosition;
+        }
+
+        if ($arrayPosition === false) {
+            return $objectPosition;
+        }
+
+        return min($objectPosition, $arrayPosition);
+    }
+
+    private function matchingJsonEndPosition(string $response, int $jsonStart): ?int
+    {
+        $opening = $response[$jsonStart] ?? '';
+        $closing = $opening === '[' ? ']' : '}';
+        $depth = 0;
+        $inString = false;
+        $escaped = false;
+
+        for ($i = $jsonStart, $len = strlen($response); $i < $len; $i++) {
+            $char = $response[$i];
+
+            if ($inString) {
+                if ($escaped) {
+                    $escaped = false;
+
+                    continue;
+                }
+
+                if ($char === '\\') {
+                    $escaped = true;
+
+                    continue;
+                }
+
+                if ($char === '"') {
+                    $inString = false;
+                }
+
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = true;
+
+                continue;
+            }
+
+            if ($char === $opening) {
+                $depth++;
+
+                continue;
+            }
+
+            if ($char === $closing) {
+                $depth--;
+                if ($depth === 0) {
+                    return $i;
+                }
+            }
+        }
+
+        return null;
     }
 }

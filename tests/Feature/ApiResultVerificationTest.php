@@ -536,6 +536,63 @@ JSON;
         ->and($parsed['result']['raw']['numberOfSubjects'])->toBe(9);
 });
 
+it('matches the working outside NECO e-Verify request flow', function () {
+    config()->set('services.neco_everify.base_url', 'https://everify.neco.gov.ng/api_core');
+    config()->set('services.neco_everify.bearer_token', 'test-bearer');
+    config()->set('services.neco_everify.timeout', 45);
+
+    $gateway = new class extends NecoEVerify
+    {
+        public array $calls = [];
+
+        protected function postJson(string $url, array $payload, string $bearerToken, int $timeout): array
+        {
+            $this->calls[] = compact('url', 'payload', 'bearerToken', 'timeout');
+
+            return [
+                'status' => 200,
+                'response' => 'NECO notice {"status":"200","details":{"candidateName":"Sample Candidate","candidateNo":"30231645GF","results":[{"subject":"English Language","grade":"C5"}]}}',
+            ];
+        }
+    };
+
+    $response = $gateway->fetchResult([
+        'token' => 'rrr-token',
+        'reg_no' => '30231645GF',
+        'exam_year' => '2013',
+        'exam_type' => 'ssce_int',
+    ]);
+
+    expect($gateway->calls)->toHaveCount(1)
+        ->and($gateway->calls[0]['url'])->toBe('https://everify.neco.gov.ng/api_core/rrr')
+        ->and($gateway->calls[0]['bearerToken'])->toBe('test-bearer')
+        ->and($gateway->calls[0]['timeout'])->toBe(45)
+        ->and($gateway->calls[0]['payload'])->toBe([
+            'token' => 'rrr-token',
+            'payref' => 'rrr-token',
+            'examno' => '30231645GF',
+            'exam_year' => '2013',
+            'exam_type' => 'SSCEInt',
+        ]);
+
+    $parsed = $gateway->parseResult($response);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['candidate_name'])->toBe('Sample Candidate')
+        ->and($parsed['subjects'][0]['subject'])->toBe('English Language');
+});
+
+it('keeps NECO year options aligned with the outside gateway', function () {
+    $necoYears = collect(app(NECOResult::class)->formFields())
+        ->firstWhere('name', 'exam_year')['options'];
+
+    $everifyYears = collect(app(NecoEVerify::class)->formFields())
+        ->firstWhere('name', 'exam_year')['options'];
+
+    expect($necoYears)->toContain(['value' => '1980', 'label' => '1980'])
+        ->and($everifyYears)->toContain(['value' => '1980', 'label' => '1980']);
+});
+
 it('defines NABTEB eWorld form fields from the live checker flow', function () {
     $fields = collect(app(NabtebResult::class)->formFields())->keyBy('name');
 
