@@ -11,6 +11,7 @@ use App\Services\ResultVerify\ResultGates\NecoEVerify;
 use App\Services\ResultVerify\ResultGates\NECOResult;
 use App\Services\ResultVerify\ResultGates\WAECResult;
 use App\Services\ResultVerify\ResultInterface;
+use App\Services\ResultVerify\ResultVerificationEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -145,6 +146,75 @@ it('charges the fetch service independently from the form service', function () 
         ->and($request->request_data['action'])->toBe('fetch')
         ->and($request->request_data['parameters']['txtPIN'])->toBe('123456789012')
         ->and($request->request_data['customer_parameters']['txtPIN'])->toBe('***REDACTED***');
+});
+
+it('stores raw result inputs for admin review and redacted inputs for customer display', function () {
+    $user = createResultApiUser(100);
+    createResultService('waec-result-form', 5);
+    $fetchService = createResultService('waec-result-fetch', 10);
+
+    app()->instance(WAECResult::class, new class implements ResultInterface
+    {
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamYear', 'label' => 'Examination Year', 'type' => 'select', 'required' => true],
+                ['name' => 'ExamType', 'label' => 'Examination Type', 'type' => 'select', 'required' => true],
+                ['name' => 'txtPIN', 'label' => 'PIN', 'type' => 'text', 'required' => true],
+                ['name' => 'txtCardSerialNo', 'label' => 'Card Serial Number', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '<html>result</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'success',
+                'candidate' => ['name' => 'Admin Candidate', 'exam_number' => '4141607071'],
+                'subjects' => [['subject' => 'COMMERCE', 'grade' => 'C4', 'score' => null]],
+                'overall' => null,
+            ];
+        }
+    });
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+
+    $this->withHeaders([
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
+    ])->postJson('/api/v1/results/waec/fetch', [
+        'txtExamNumber' => '4141607071',
+        'ExamYear' => '2026',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '123456789012',
+        'txtCardSerialNo' => 'WRN123456789',
+    ])->assertOk();
+
+    $request = VerificationRequest::where('verification_service_id', $fetchService->id)->first();
+
+    expect($request)->not->toBeNull()
+        ->and($request->request_data['parameters']['txtPIN'])->toBe('123456789012')
+        ->and($request->request_data['parameters']['txtCardSerialNo'])->toBe('WRN123456789')
+        ->and($request->request_data['customer_parameters']['txtPIN'])->toBe('***REDACTED***')
+        ->and($request->request_data['customer_parameters']['txtCardSerialNo'])->toBe('***REDACTED***');
+});
+
+it('stores NECO e-Verify exam type in the exact upstream case', function () {
+    $engine = new class(app(\App\Services\ResultVerify\ResultFactory::class)) extends ResultVerificationEngine
+    {
+        public function record(array $params, ?string $board = null): array
+        {
+            return $this->recordableParams($params, $board);
+        }
+    };
+
+    expect($engine->record(['exam_type' => 'ssce_int'], 'neco-everify')['exam_type'])->toBe('SSCEInt')
+        ->and($engine->record(['exam_type' => 'ssce_ext'], 'neco-everify')['exam_type'])->toBe('SSCEExt')
+        ->and($engine->record(['exam_type' => 'ssce_int'], 'neco')['exam_type'])->toBe('ssce_int');
 });
 
 it('does not charge sandbox API keys for NECO form or fetch', function () {

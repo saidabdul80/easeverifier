@@ -171,8 +171,8 @@ class ResultVerificationEngine
                 requestData: [
                     'board' => $board,
                     'action' => 'fetch',
-                    'parameters' => $this->recordableParams($params),
-                    'customer_parameters' => $this->sanitizeParams($params),
+                    'parameters' => $this->recordableParams($params, $board),
+                    'customer_parameters' => $this->sanitizeParams($params, $board),
                 ],
                 shouldCharge: $shouldCharge,
                 source: $source,
@@ -216,7 +216,7 @@ class ResultVerificationEngine
             'endpoint' => "result-board:{$board}",
             'method' => 'POST',
             'request_headers' => [],
-            'request_body' => ApiLog::requestSummary($this->sanitizeParams($params)),
+            'request_body' => ApiLog::requestSummary($this->sanitizeParams($params, $board)),
             'ip_address' => request()?->ip(),
         ]);
 
@@ -401,11 +401,11 @@ class ResultVerificationEngine
         };
     }
 
-    protected function sanitizeParams(array $params): array
+    protected function sanitizeParams(array $params, ?string $board = null): array
     {
         $sensitiveKeys = ['pin', 'txtpin', 'token', 'bearer_token', 'api_token', 'payref', 'payment_reference', 'txtcardserialno', 'serial', 'card_serial', 'cardserialno'];
 
-        return collect($this->recordableParams($params))
+        return collect($this->recordableParams($params, $board))
             ->mapWithKeys(function ($value, string $key) use ($sensitiveKeys) {
                 if (in_array(strtolower($key), $sensitiveKeys, true)) {
                     return [$key => '***REDACTED***'];
@@ -416,11 +416,30 @@ class ResultVerificationEngine
             ->toArray();
     }
 
-    protected function recordableParams(array $params): array
+    protected function recordableParams(array $params, ?string $board = null): array
     {
-        return collect($params)
+        $recordable = collect($params)
             ->reject(fn ($value, string $key) => in_array($key, ['api_key', 'branch'], true))
             ->toArray();
+
+        if (in_array(strtolower((string) $board), ['neco-everify', 'neco_everify', 'necoeverify'], true) && array_key_exists('exam_type', $recordable)) {
+            $recordable['exam_type'] = $this->normalizeNecoEVerifyExamType((string) $recordable['exam_type']);
+        }
+
+        return $recordable;
+    }
+
+    protected function normalizeNecoEVerifyExamType(string $examType): string
+    {
+        $value = trim($examType);
+        $compact = strtoupper(str_replace([' ', '-', '_'], '', $value));
+
+        return match ($compact) {
+            'SSCEINTERNAL', 'SSCEINT', 'INTERNAL' => 'SSCEInt',
+            'SSCEEXTERNAL', 'SSCEEXT', 'EXTERNAL' => 'SSCEExt',
+            default => $value,
+        };
+        
     }
 
     protected function sanitizeParsedResponse(array $parsed): array
