@@ -653,6 +653,48 @@ it('matches the working outside NECO e-Verify request flow', function () {
         ->and($parsed['subjects'][0]['subject'])->toBe('English Language');
 });
 
+it('sends NECO e-Verify exam type in the exact upstream case during verification', function () {
+    config()->set('services.neco_everify.base_url', 'https://everify.neco.gov.ng/api_core');
+    config()->set('services.neco_everify.bearer_token', 'test-bearer');
+    config()->set('services.neco_everify.timeout', 45);
+
+    $user = createResultApiUser(100);
+    $fetchService = createResultService('neco-everify-result-fetch', 25);
+
+    $gateway = new class extends NecoEVerify
+    {
+        public array $calls = [];
+
+        protected function postJson(string $url, array $payload, string $bearerToken, int $timeout): array
+        {
+            $this->calls[] = compact('url', 'payload', 'bearerToken', 'timeout');
+
+            return [
+                'status' => 200,
+                'response' => '{"status":"200","details":{"candidateName":"Sample Candidate","candidateNo":"30231645GF","results":[{"subject":"English Language","grade":"C5"}]}}',
+            ];
+        }
+    };
+
+    app()->instance(NecoEVerify::class, $gateway);
+
+    $result = app(ResultVerificationEngine::class)->verify($user, 'neco-everify', [
+        'token' => 'rrr-token',
+        'reg_no' => '30231645GF',
+        'exam_year' => '2013',
+        'exam_type' => 'ssce_int',
+    ]);
+
+    $request = VerificationRequest::where('verification_service_id', $fetchService->id)->first();
+
+    expect($result->success)->toBeTrue()
+        ->and($gateway->calls)->toHaveCount(1)
+        ->and($gateway->calls[0]['payload']['examno'])->toBe('30231645GF')
+        ->and($gateway->calls[0]['payload']['exam_type'])->toBe('SSCEInt')
+        ->and($request->search_parameter)->toBe('30231645GF')
+        ->and($request->request_data['parameters']['exam_type'])->toBe('SSCEInt');
+});
+
 it('keeps NECO year options aligned with the outside gateway', function () {
     $necoYears = collect(app(NECOResult::class)->formFields())
         ->firstWhere('name', 'exam_year')['options'];

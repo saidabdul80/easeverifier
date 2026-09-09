@@ -374,7 +374,7 @@ class ResultVerificationEngine
             }
 
             $name = (string) ($field['name'] ?? '');
-            if ($name === '' || filled($params[$name] ?? null)) {
+            if ($name === '' || $this->hasRequiredFieldValue($name, $params)) {
                 continue;
             }
 
@@ -389,12 +389,26 @@ class ResultVerificationEngine
         return $user->hasResultFetchAccess();
     }
 
+    protected function hasRequiredFieldValue(string $name, array $params): bool
+    {
+        if (filled($params[$name] ?? null)) {
+            return true;
+        }
+
+        return match ($name) {
+            'examno', 'reg_no', 'exam_number' => filled($params['examno'] ?? null)
+                || filled($params['reg_no'] ?? null)
+                || filled($params['exam_number'] ?? null),
+            default => false,
+        };
+    }
+
     protected function searchParameter(string $board, array $params): string
     {
         return match (strtolower($board)) {
             'waec' => trim((string) ($params['txtExamNumber'] ?? $params['ExamNumber'] ?? '')),
             'neco' => trim((string) ($params['reg_no'] ?? $params['exam_number'] ?? '')),
-            'neco-everify', 'neco_everify', 'necoeverify' => trim((string) ($params['examno'] ?? $params['exam_number'] ?? '')),
+            'neco-everify', 'neco_everify', 'necoeverify' => trim((string) ($params['examno'] ?? $params['reg_no'] ?? $params['exam_number'] ?? '')),
             'nbais' => trim((string) ($params['exam_no'] ?? $params['exam_number'] ?? '')),
             'nabteb' => trim((string) ($params['candid'] ?? $params['candidate_number'] ?? '')),
             default => trim((string) ($params['exam_number'] ?? $params['reg_no'] ?? $params['txtExamNumber'] ?? '')),
@@ -439,7 +453,7 @@ class ResultVerificationEngine
             'SSCEEXTERNAL', 'SSCEEXT', 'EXTERNAL' => 'SSCEExt',
             default => $value,
         };
-        
+
     }
 
     protected function sanitizeParsedResponse(array $parsed): array
