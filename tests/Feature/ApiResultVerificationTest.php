@@ -143,7 +143,8 @@ it('charges the fetch service independently from the form service', function () 
     $request = VerificationRequest::where('verification_service_id', $fetchService->id)->first();
     expect((float) $request->amount_charged)->toBe(23.0)
         ->and($request->request_data['action'])->toBe('fetch')
-        ->and($request->request_data['parameters']['txtPIN'])->toBe('***REDACTED***');
+        ->and($request->request_data['parameters']['txtPIN'])->toBe('123456789012')
+        ->and($request->request_data['customer_parameters']['txtPIN'])->toBe('***REDACTED***');
 });
 
 it('does not charge sandbox API keys for NECO form or fetch', function () {
@@ -765,6 +766,8 @@ it('charges NABTEB fetch separately and returns candidate plus result data', fun
     expect($request)->not->toBeNull()
         ->and((float) $request->amount_charged)->toBe(21.0)
         ->and($request->search_parameter)->toBe('38001178')
-        ->and($request->request_data['parameters']['pin'])->toBe('***REDACTED***')
-        ->and($request->request_data['parameters']['serial'])->toBe('***REDACTED***');
+        ->and($request->request_data['parameters']['pin'])->toBe('012345678912')
+        ->and($request->request_data['parameters']['serial'])->toBe('N123456789')
+        ->and($request->request_data['customer_parameters']['pin'])->toBe('***REDACTED***')
+        ->and($request->request_data['customer_parameters']['serial'])->toBe('***REDACTED***');
 });

@@ -482,10 +482,12 @@ class VerificationController extends Controller
 
     private function providedInputsForResult(?VerificationRequest $verification, ?string $fallbackSearchParameter = null): array
     {
-        $parameters = $verification?->request_data['parameters'] ?? null;
+        $parameters = $verification?->request_data['customer_parameters']
+            ?? $verification?->request_data['parameters']
+            ?? null;
 
         if (is_array($parameters) && $parameters !== []) {
-            return collect($parameters)
+            return collect($this->redactSensitiveResultInputs($parameters))
                 ->reject(fn ($value, string $key) => $key === 'branch_id' || str_starts_with($key, '_'))
                 ->map(fn ($value) => is_scalar($value) || $value === null ? $value : json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))
                 ->all();
@@ -494,5 +496,16 @@ class VerificationController extends Controller
         $searchParameter = $verification?->search_parameter ?: $fallbackSearchParameter;
 
         return filled($searchParameter) ? ['search_parameter' => $searchParameter] : [];
+    }
+
+    private function redactSensitiveResultInputs(array $parameters): array
+    {
+        $sensitiveKeys = ['pin', 'txtpin', 'token', 'bearer_token', 'api_token', 'payref', 'payment_reference', 'txtcardserialno', 'serial', 'card_serial', 'cardserialno'];
+
+        return collect($parameters)
+            ->mapWithKeys(fn ($value, string $key) => [
+                $key => in_array(strtolower($key), $sensitiveKeys, true) ? '***REDACTED***' : $value,
+            ])
+            ->all();
     }
 }

@@ -171,7 +171,8 @@ class ResultVerificationEngine
                 requestData: [
                     'board' => $board,
                     'action' => 'fetch',
-                    'parameters' => $this->sanitizeParams($params),
+                    'parameters' => $this->recordableParams($params),
+                    'customer_parameters' => $this->sanitizeParams($params),
                 ],
                 shouldCharge: $shouldCharge,
                 source: $source,
@@ -404,8 +405,7 @@ class ResultVerificationEngine
     {
         $sensitiveKeys = ['pin', 'txtpin', 'token', 'bearer_token', 'api_token', 'payref', 'payment_reference', 'txtcardserialno', 'serial', 'card_serial', 'cardserialno'];
 
-        return collect($params)
-            ->reject(fn ($value, string $key) => in_array($key, ['api_key', 'branch'], true))
+        return collect($this->recordableParams($params))
             ->mapWithKeys(function ($value, string $key) use ($sensitiveKeys) {
                 if (in_array(strtolower($key), $sensitiveKeys, true)) {
                     return [$key => '***REDACTED***'];
@@ -413,6 +413,13 @@ class ResultVerificationEngine
 
                 return [$key => $value];
             })
+            ->toArray();
+    }
+
+    protected function recordableParams(array $params): array
+    {
+        return collect($params)
+            ->reject(fn ($value, string $key) => in_array($key, ['api_key', 'branch'], true))
             ->toArray();
     }
 

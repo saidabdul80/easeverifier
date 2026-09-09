@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 interface PaygoResultService {
     name: string;
@@ -44,12 +44,17 @@ const fieldOptions = ref<Record<string, any[]>>({});
 const fieldLoadError = ref<string | null>(null);
 const confirmationOpen = ref(false);
 const consentChecked = ref(false);
+const necoNoticeOpen = ref(false);
+const pendingNecoService = ref<PaygoResultService | null>(null);
 
-const resultFieldDefaults = props.fields.reduce<Record<string, any>>((defaults, field) => {
-    defaults[field.name] = '';
+const resultFieldDefaults = props.fields.reduce<Record<string, any>>(
+    (defaults, field) => {
+        defaults[field.name] = '';
 
-    return defaults;
-}, {});
+        return defaults;
+    },
+    {},
+);
 
 const form = useForm<Record<string, any>>({
     ...resultFieldDefaults,
@@ -60,14 +65,56 @@ const form = useForm<Record<string, any>>({
     state: props.prefill?.state || '',
 });
 
-const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency: 'NGN',
-    minimumFractionDigits: 0,
-}).format(amount || 0);
+const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: 'NGN',
+        minimumFractionDigits: 0,
+    }).format(amount || 0);
 
-const selectedService = computed(() => props.paygoService || props.services.find((service) => service.public_slug === selectedSlug.value) || null);
-const selectorUrl = computed(() => props.customer?.selector_url || selectedService.value?.selector_url || null);
+const selectedService = computed(
+    () =>
+        props.paygoService ||
+        props.services.find(
+            (service) => service.public_slug === selectedSlug.value,
+        ) ||
+        null,
+);
+const selectorUrl = computed(
+    () =>
+        props.customer?.selector_url ||
+        selectedService.value?.selector_url ||
+        null,
+);
+const necoNoticeForService = (service?: PaygoResultService | null) => {
+    const board = String(service?.board || '').toLowerCase();
+
+    if (board === 'neco') {
+        return {
+            title: 'NECO Results Verification',
+            message:
+                'Use this for students with standard NECO result tokens or scratch cards. If the student bought or has a token from NECO e-Verify, choose NECO e-Verify instead.',
+        };
+    }
+
+    if (['neco-everify', 'neco_everify', 'necoeverify'].includes(board)) {
+        return {
+            title: 'NECO e-Verify',
+            message:
+                'Use this only for students who bought or already have a token from NECO e-Verify. Standard NECO result tokens or scratch cards should use NECO Results Verification.',
+        };
+    }
+
+    return null;
+};
+const selectedNecoNotice = computed(() =>
+    necoNoticeForService(selectedService.value),
+);
+const activeNecoNotice = computed(
+    () =>
+        necoNoticeForService(pendingNecoService.value) ||
+        selectedNecoNotice.value,
+);
 const confirmationEntries = computed(() => {
     const entries = props.fields
         .map((field) => {
@@ -77,16 +124,22 @@ const confirmationEntries = computed(() => {
                 return null;
             }
 
-            const displayValue = field.type === 'select'
-                ? optionsForField(field).find((option) => String(option.value) === String(value))?.title ?? String(value)
-                : String(value);
+            const displayValue =
+                field.type === 'select'
+                    ? (optionsForField(field).find(
+                          (option) => String(option.value) === String(value),
+                      )?.title ?? String(value))
+                    : String(value);
 
             return {
                 label: field.label,
                 value: displayValue,
             };
         })
-        .filter((entry): entry is { label: string; value: string } => entry !== null);
+        .filter(
+            (entry): entry is { label: string; value: string } =>
+                entry !== null,
+        );
 
     if (form.email) {
         entries.push({
@@ -120,18 +173,46 @@ const withPortalContext = (url?: string | null) => {
 
     const queryString = query.toString();
 
-    return queryString ? `${url}${url.includes('?') ? '&' : '?'}${queryString}` : url;
+    return queryString
+        ? `${url}${url.includes('?') ? '&' : '?'}${queryString}`
+        : url;
 };
 
-const normalizedOptions = (options?: any[]) => (options || []).map((option) => ({
-    title: option.title ?? option.label ?? option.name ?? option.value ?? option.id,
-    value: option.value ?? option.id ?? option.name ?? option.label,
-}));
+const normalizedOptions = (options?: any[]) =>
+    (options || []).map((option) => ({
+        title:
+            option.title ??
+            option.label ??
+            option.name ??
+            option.value ??
+            option.id,
+        value: option.value ?? option.id ?? option.name ?? option.label,
+    }));
 
-const optionsForField = (field: ResultField) => normalizedOptions(fieldOptions.value[field.name] || field.options);
+const optionsForField = (field: ResultField) =>
+    normalizedOptions(fieldOptions.value[field.name] || field.options);
 
 const chooseService = () => {
-    const service = props.services.find((item) => item.public_slug === selectedSlug.value);
+    const service = props.services.find(
+        (item) => item.public_slug === selectedSlug.value,
+    );
+
+    if (service) {
+        if (necoNoticeForService(service)) {
+            pendingNecoService.value = service;
+            necoNoticeOpen.value = true;
+            return;
+        }
+
+        window.location.href = withPortalContext(service.result_url);
+    }
+};
+
+const continueAfterNecoNotice = () => {
+    const service = pendingNecoService.value;
+
+    necoNoticeOpen.value = false;
+    pendingNecoService.value = null;
 
     if (service) {
         window.location.href = withPortalContext(service.result_url);
@@ -147,10 +228,15 @@ const loadDependentOptions = async (field: ResultField) => {
 
     if (!parentValue) return;
 
-    const params = new URLSearchParams({ [field.depends_on]: String(parentValue) });
-    const response = await fetch(`${field.options_endpoint}?${params.toString()}`, {
-        headers: { Accept: 'application/json' },
+    const params = new URLSearchParams({
+        [field.depends_on]: String(parentValue),
     });
+    const response = await fetch(
+        `${field.options_endpoint}?${params.toString()}`,
+        {
+            headers: { Accept: 'application/json' },
+        },
+    );
     const payload = await response.json();
 
     if (!response.ok || !payload.success) {
@@ -179,23 +265,37 @@ const submit = () => {
 };
 
 watch(
-    () => props.fields.map((field) => field.depends_on ? form[field.depends_on] : null),
+    () =>
+        props.fields.map((field) =>
+            field.depends_on ? form[field.depends_on] : null,
+        ),
     async () => {
         for (const field of props.fields) {
             if (field.depends_on && field.options_endpoint) {
                 try {
                     await loadDependentOptions(field);
                 } catch (error) {
-                    fieldLoadError.value = error instanceof Error ? error.message : 'Unable to load options.';
+                    fieldLoadError.value =
+                        error instanceof Error
+                            ? error.message
+                            : 'Unable to load options.';
                 }
             }
         }
     },
 );
+
+onMounted(() => {
+    if (selectedNecoNotice.value) {
+        necoNoticeOpen.value = true;
+    }
+});
 </script>
 
 <template>
-    <Head :title="`${selectedService?.name || 'Result Verification'} - PayGo`" />
+    <Head
+        :title="`${selectedService?.name || 'Result Verification'} - PayGo`"
+    />
 
     <v-app>
         <v-main class="paygo-main">
@@ -204,43 +304,104 @@ watch(
                     <v-col cols="12" md="8" lg="6">
                         <v-card class="paygo-card" elevation="0">
                             <v-card-text class="pa-6">
-                                <v-chip color="secondary" variant="flat" class="mb-4">Result Verification</v-chip>
-                                <h1 class="text-h4 font-weight-bold mb-2">{{ selectedService?.name || 'Select exam result' }}</h1>
-                                
+                                <v-chip
+                                    color="secondary"
+                                    variant="flat"
+                                    class="mb-4"
+                                    >Result Verification</v-chip
+                                >
+                                <h1 class="text-h4 font-weight-bold mb-2">
+                                    {{
+                                        selectedService?.name ||
+                                        'Select exam result'
+                                    }}
+                                </h1>
 
                                 <v-btn
-                                    v-if="paygoService && selectorUrl && services.length > 1"
+                                    v-if="
+                                        paygoService &&
+                                        selectorUrl &&
+                                        services.length > 1
+                                    "
                                     :href="withPortalContext(selectorUrl)"
                                     variant="text"
                                     color="primary"
                                     prepend-icon="mdi-arrow-left"
-                                    class="px-0 mb-4"
+                                    class="mb-4 px-0"
                                 >
                                     Change exam
                                 </v-btn>
 
-                                <v-alert v-if="flash?.error" type="error" variant="tonal" class="mb-4">{{ flash.error }}</v-alert>
-                                <v-alert v-if="fieldLoadError" type="error" variant="tonal" class="mb-4">{{ fieldLoadError }}</v-alert>
-                                <v-alert v-if="form.errors.result" type="error" variant="tonal" class="mb-4">{{ form.errors.result }}</v-alert>
+                                <v-alert
+                                    v-if="flash?.error"
+                                    type="error"
+                                    variant="tonal"
+                                    class="mb-4"
+                                    >{{ flash.error }}</v-alert
+                                >
+                                <v-alert
+                                    v-if="fieldLoadError"
+                                    type="error"
+                                    variant="tonal"
+                                    class="mb-4"
+                                    >{{ fieldLoadError }}</v-alert
+                                >
+                                <v-alert
+                                    v-if="form.errors.result"
+                                    type="error"
+                                    variant="tonal"
+                                    class="mb-4"
+                                    >{{ form.errors.result }}</v-alert
+                                >
+                                <v-alert
+                                    v-if="selectedNecoNotice"
+                                    type="info"
+                                    variant="tonal"
+                                    class="mb-4"
+                                >
+                                    <v-alert-title>{{
+                                        selectedNecoNotice.title
+                                    }}</v-alert-title>
+                                    {{ selectedNecoNotice.message }}
+                                </v-alert>
 
                                 <v-select
                                     v-if="!paygoService"
                                     v-model="selectedSlug"
-                                    :items="services.map(service => ({ title: `${service.board} - ${formatCurrency(service.price)}`, value: service.public_slug }))"
+                                    :items="
+                                        services.map((service) => ({
+                                            title: `${service.board} - ${formatCurrency(service.price)}`,
+                                            value: service.public_slug,
+                                        }))
+                                    "
                                     label="Exam"
                                     variant="outlined"
                                     class="mb-4"
                                     @update:model-value="chooseService"
                                 />
 
-                                <template v-if="selectedService && fields.length">
+                                <template
+                                    v-if="selectedService && fields.length"
+                                >
                                     <div class="price-strip mb-5">
-                                        <span>{{ selectedService.board }} amount</span>
-                                        <strong>{{ formatCurrency(selectedService.price) }}</strong>
+                                        <span
+                                            >{{
+                                                selectedService.board
+                                            }}
+                                            amount</span
+                                        >
+                                        <strong>{{
+                                            formatCurrency(
+                                                selectedService.price,
+                                            )
+                                        }}</strong>
                                     </div>
 
                                     <v-form @submit.prevent="openConfirmation">
-                                        <template v-for="field in fields" :key="field.name">
+                                        <template
+                                            v-for="field in fields"
+                                            :key="field.name"
+                                        >
                                             <v-autocomplete
                                                 v-if="field.type === 'select'"
                                                 v-model="form[field.name]"
@@ -252,8 +413,13 @@ watch(
                                                 clearable
                                                 auto-select-first
                                                 no-data-text="No matching option found"
-                                                :disabled="!!field.depends_on && !form[field.depends_on]"
-                                                :error-messages="form.errors[field.name]"
+                                                :disabled="
+                                                    !!field.depends_on &&
+                                                    !form[field.depends_on]
+                                                "
+                                                :error-messages="
+                                                    form.errors[field.name]
+                                                "
                                                 class="mb-4"
                                             />
                                             <v-text-field
@@ -262,7 +428,9 @@ watch(
                                                 :label="field.label"
                                                 :type="field.type || 'text'"
                                                 variant="outlined"
-                                                :error-messages="form.errors[field.name]"
+                                                :error-messages="
+                                                    form.errors[field.name]
+                                                "
                                                 class="mb-4"
                                             />
                                         </template>
@@ -293,22 +461,40 @@ watch(
                                         </v-btn>
                                     </v-form>
 
-                                    <v-dialog v-model="confirmationOpen" max-width="560">
+                                    <v-dialog
+                                        v-model="confirmationOpen"
+                                        max-width="560"
+                                    >
                                         <v-card>
                                             <v-card-text class="pa-6">
-                                                <h2 class="text-h6 font-weight-bold mb-2">Confirm your details</h2>
-                                                <p class="text-body-2 text-grey-darken-1 mb-4">
-                                                    Please confirm that the result-check details below are correct before we continue to payment.
+                                                <h2
+                                                    class="text-h6 font-weight-bold mb-2"
+                                                >
+                                                    Confirm your details
+                                                </h2>
+                                                <p
+                                                    class="text-body-2 text-grey-darken-1 mb-4"
+                                                >
+                                                    Please confirm that the
+                                                    result-check details below
+                                                    are correct before we
+                                                    continue to payment.
                                                 </p>
 
-                                                <div class="confirmation-list mb-4">
+                                                <div
+                                                    class="confirmation-list mb-4"
+                                                >
                                                     <div
                                                         v-for="entry in confirmationEntries"
                                                         :key="entry.label"
                                                         class="confirmation-row"
                                                     >
-                                                        <span>{{ entry.label }}</span>
-                                                        <strong>{{ entry.value }}</strong>
+                                                        <span>{{
+                                                            entry.label
+                                                        }}</span>
+                                                        <strong>{{
+                                                            entry.value
+                                                        }}</strong>
                                                     </div>
                                                 </div>
 
@@ -320,20 +506,28 @@ watch(
                                                     label="I confirm that the information provided is correct and belongs to me."
                                                 />
 
-                                                <div class="d-flex flex-column flex-sm-row ga-3">
+                                                <div
+                                                    class="d-flex flex-column flex-sm-row ga-3"
+                                                >
                                                     <v-btn
                                                         variant="outlined"
                                                         color="primary"
                                                         class="confirmation-action"
-                                                        @click="confirmationOpen = false"
+                                                        @click="
+                                                            confirmationOpen = false
+                                                        "
                                                     >
                                                         Review again
                                                     </v-btn>
                                                     <v-btn
                                                         color="secondary"
                                                         class="confirmation-action"
-                                                        :disabled="!consentChecked"
-                                                        :loading="form.processing"
+                                                        :disabled="
+                                                            !consentChecked
+                                                        "
+                                                        :loading="
+                                                            form.processing
+                                                        "
                                                         @click="submit"
                                                     >
                                                         Confirm and Pay
@@ -344,8 +538,13 @@ watch(
                                     </v-dialog>
                                 </template>
 
-                                <v-alert v-else-if="!services.length" type="warning" variant="tonal">
-                                    No PayGo result verification service is available for this customer.
+                                <v-alert
+                                    v-else-if="!services.length"
+                                    type="warning"
+                                    variant="tonal"
+                                >
+                                    No PayGo result verification service is
+                                    available for this customer.
                                 </v-alert>
                             </v-card-text>
                         </v-card>
@@ -353,6 +552,29 @@ watch(
                 </v-row>
             </v-container>
         </v-main>
+
+        <v-dialog v-model="necoNoticeOpen" max-width="560">
+            <v-card v-if="activeNecoNotice">
+                <v-card-title class="d-flex align-center">
+                    <v-icon color="primary" class="mr-2"
+                        >mdi-information</v-icon
+                    >
+                    {{ activeNecoNotice.title }}
+                </v-card-title>
+                <v-card-text class="text-body-1">
+                    {{ activeNecoNotice.message }}
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        @click="continueAfterNecoNotice"
+                        >Continue</v-btn
+                    >
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-app>
 </template>
 

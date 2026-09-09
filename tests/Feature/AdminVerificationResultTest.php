@@ -45,6 +45,12 @@ it('lets admins view verification results with the provided inputs', function ()
             'board' => 'neco-everify',
             'action' => 'fetch',
             'parameters' => [
+                'token' => 'real-token',
+                'examno' => '2410896226BC',
+                'exam_year' => '2024',
+                'exam_type' => 'SSCEInt',
+            ],
+            'customer_parameters' => [
                 'token' => '***REDACTED***',
                 'examno' => '2410896226BC',
                 'exam_year' => '2024',
@@ -66,7 +72,7 @@ it('lets admins view verification results with the provided inputs', function ()
             ->component('Admin/Verifications/Show')
             ->where('verification.reference', 'VER-ADMIN-INPUTS-001')
             ->where('service.name', 'NECO e-Verify Result Fetch')
-            ->where('providedInputs.token', '***REDACTED***')
+            ->where('providedInputs.token', 'real-token')
             ->where('providedInputs.examno', '2410896226BC')
             ->where('providedInputs.exam_year', '2024')
             ->where('result.error_message', 'Invalid token or token has not been verified!')

@@ -93,6 +93,12 @@ it('shows the provided inputs on the customer verification result page', functio
             'board' => 'neco-everify',
             'action' => 'fetch',
             'parameters' => [
+                'token' => 'real-token',
+                'examno' => '2410896226BC',
+                'exam_year' => '2024',
+                'exam_type' => 'SSCEInt',
+            ],
+            'customer_parameters' => [
                 'token' => '***REDACTED***',
                 'examno' => '2410896226BC',
                 'exam_year' => '2024',
