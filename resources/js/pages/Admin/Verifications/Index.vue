@@ -13,8 +13,6 @@ const props = defineProps<{
 const search = ref(props.filters?.search || '');
 const filterStatus = ref(props.filters?.status || '');
 const currentPage = ref(props.verifications?.current_page || 1);
-const detailDialog = ref(false);
-const selectedVerification = ref<any>(null);
 
 const totalPages = computed(() => props.verifications?.last_page || 1);
 const exportUrl = computed(() => {
@@ -40,11 +38,6 @@ const goToPage = (page: number) => {
         status: filterStatus.value || undefined,
         page
     }, { preserveState: true, replace: true });
-};
-
-const openDetail = (v: any) => {
-    selectedVerification.value = v;
-    detailDialog.value = true;
 };
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
@@ -139,7 +132,9 @@ const headers = [
                         {{ new Date(item.created_at).toLocaleString() }}
                     </template>
                     <template #item.actions="{ item }">
-                        <v-btn icon variant="text" size="small" @click="openDetail(item)"><v-icon>mdi-eye</v-icon></v-btn>
+                        <v-btn icon variant="text" size="small" :href="`/admin/verifications/${item.id}`">
+                            <v-icon>mdi-eye</v-icon>
+                        </v-btn>
                     </template>
                     <template #bottom></template>
                 </v-data-table>
@@ -161,26 +156,5 @@ const headers = [
                 </div>
             </v-card-text>
         </v-card>
-
-        <!-- Detail Dialog -->
-        <v-dialog v-model="detailDialog" max-width="600">
-            <v-card v-if="selectedVerification">
-                <v-card-title class="d-flex align-center">
-                    <v-icon color="primary" class="mr-2">mdi-shield-check</v-icon>
-                    Verification Details
-                </v-card-title>
-                <v-card-text>
-                    <v-list density="compact">
-                        <v-list-item><v-list-item-title class="text-caption">Reference</v-list-item-title><v-list-item-subtitle>{{ selectedVerification.reference }}</v-list-item-subtitle></v-list-item>
-                        <v-list-item><v-list-item-title class="text-caption">Customer</v-list-item-title><v-list-item-subtitle>{{ selectedVerification.user?.name }}</v-list-item-subtitle></v-list-item>
-                        <v-list-item><v-list-item-title class="text-caption">Service</v-list-item-title><v-list-item-subtitle>{{ selectedVerification.verification_service?.name }}</v-list-item-subtitle></v-list-item>
-                        <v-list-item><v-list-item-title class="text-caption">Search Parameter</v-list-item-title><v-list-item-subtitle>{{ selectedVerification.search_parameter }}</v-list-item-subtitle></v-list-item>
-                        <v-list-item><v-list-item-title class="text-caption">Provider</v-list-item-title><v-list-item-subtitle>{{ selectedVerification.service_provider?.name || 'N/A' }}</v-list-item-subtitle></v-list-item>
-                        <v-list-item><v-list-item-title class="text-caption">Response Time</v-list-item-title><v-list-item-subtitle>{{ selectedVerification.response_time_ms }}ms</v-list-item-subtitle></v-list-item>
-                    </v-list>
-                </v-card-text>
-                <v-card-actions><v-spacer /><v-btn variant="text" @click="detailDialog = false">Close</v-btn></v-card-actions>
-            </v-card>
-        </v-dialog>
     </AdminLayout>
 </template>

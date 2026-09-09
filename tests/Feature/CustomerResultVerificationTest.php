@@ -79,3 +79,41 @@ it('loads result board form fields internally without charging the customer', fu
     expect((float) $customer->wallet()->first()->fresh()->balance)->toBe(500.0)
         ->and(VerificationRequest::count())->toBe(0);
 });
+
+it('shows the provided inputs on the customer verification result page', function () {
+    $customer = createResultCustomer();
+    $service = createCustomerResultService('neco-everify-result-fetch', 'NECO e-Verify Result Fetch');
+
+    $verification = VerificationRequest::create([
+        'user_id' => $customer->id,
+        'verification_service_id' => $service->id,
+        'reference' => 'VER-INPUTS-001',
+        'search_parameter' => '2410896226BC',
+        'request_data' => [
+            'board' => 'neco-everify',
+            'action' => 'fetch',
+            'parameters' => [
+                'token' => '***REDACTED***',
+                'examno' => '2410896226BC',
+                'exam_year' => '2024',
+                'exam_type' => 'SSCEInt',
+            ],
+        ],
+        'amount_charged' => 100,
+        'status' => 'failed',
+        'source' => 'web',
+        'error_message' => 'Invalid token or token has not been verified!',
+        'completed_at' => now(),
+    ]);
+
+    $this->actingAs($customer)
+        ->get(route('customer.verification.result', $verification))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Customer/Verification/Result')
+            ->where('providedInputs.token', '***REDACTED***')
+            ->where('providedInputs.examno', '2410896226BC')
+            ->where('providedInputs.exam_year', '2024')
+            ->where('result.error_message', 'Invalid token or token has not been verified!')
+        );
+});
