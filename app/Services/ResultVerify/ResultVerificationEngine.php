@@ -434,7 +434,7 @@ class ResultVerificationEngine
         $data = [
             'board' => strtoupper($board),
             'candidate' => $parsed['candidate'] ?? [],
-            'subjects' => array_values($parsed['subjects'] ?? []),
+            'subjects' => $this->normalizeSubjects($parsed['subjects'] ?? []),
             'overall' => $parsed['overall'] ?? null,
             '_sandbox' => false,
         ];
@@ -444,6 +444,34 @@ class ResultVerificationEngine
         }
 
         return $data;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $subjects
+     * @return array<int, array<string, mixed>>
+     */
+    protected function normalizeSubjects(array $subjects): array
+    {
+        $uniqueSubjects = [];
+
+        foreach ($subjects as $subjectResult) {
+            $subject = trim((string) ($subjectResult['subject'] ?? $subjectResult['name'] ?? ''));
+            $grade = strtoupper(trim((string) ($subjectResult['grade'] ?? '')));
+
+            if ($subject === '' || $grade === '') {
+                continue;
+            }
+
+            $subjectResult['subject'] = preg_replace('/\s+/', ' ', $subject);
+            $subjectResult['grade'] = $grade;
+            $key = mb_strtolower($subjectResult['subject']);
+
+            if (! isset($uniqueSubjects[$key])) {
+                $uniqueSubjects[$key] = $subjectResult;
+            }
+        }
+
+        return array_values($uniqueSubjects);
     }
 
     protected function mockResult(string $board, array $params): array
