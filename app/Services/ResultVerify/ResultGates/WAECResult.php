@@ -66,48 +66,38 @@ class WAECResult implements ResultInterface
         try {
             $this->initSession($cookieJar);
 
-            $query = http_build_query([
-                'ExamNumber' => trim((string) ($params['txtExamNumber'] ?? $params['ExamNumber'] ?? '')),
-                'ExamYear' => trim((string) ($params['ExamYear'] ?? '')),
-                'serial' => trim((string) ($params['txtCardSerialNo'] ?? $params['serial'] ?? '')),
-                'pin' => trim((string) ($params['txtPIN'] ?? $params['pin'] ?? '')),
-                'ExamType' => trim((string) ($params['ExamType'] ?? '')),
-            ]);
+            $payload = $this->resultPayload($params);
+            $encryptedQuery = $this->encryptPayload($payload, $cookieJar);
 
-            $ch = curl_init();
-            curl_setopt_array($ch, [
-                CURLOPT_URL => $this->baseUrl . '/DisplayResult.aspx?' . $query,
-                CURLOPT_HTTPGET => true,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_HEADER => false,
-                CURLOPT_COOKIEJAR => $cookieJar,
-                CURLOPT_COOKIEFILE => $cookieJar,
-                CURLOPT_USERAGENT => $this->userAgent,
-                CURLOPT_HTTPHEADER => array_merge($this->commonHeaders, [
-                    'Referer: ' . $this->baseUrl . '/',
+            if ($encryptedQuery !== null) {
+                return $this->request(
+                    url: $this->baseUrl.'/Result/Display?q='.rawurlencode($encryptedQuery),
+                    method: 'GET',
+                    payload: null,
+                    headers: array_merge($this->commonHeaders, [
+                        'Referer: '.$this->baseUrl.'/',
+                    ]),
+                    cookieJar: $cookieJar,
+                    timeout: 90,
+                );
+            }
+
+            return $this->request(
+                url: $this->baseUrl.'/Result/Display?'.http_build_query([
+                    'ExamNumber' => $payload['examNumber'],
+                    'ExamYear' => $payload['examYear'],
+                    'serial' => $payload['serial'],
+                    'pin' => $payload['pin'],
+                    'ExamType' => $payload['examType'],
                 ]),
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_SSL_VERIFYHOST => 2,
-                CURLOPT_CONNECTTIMEOUT => 20,
-                CURLOPT_TIMEOUT => 90,
-                CURLOPT_ENCODING => '',
-            ]);
-
-            $html = curl_exec($ch);
-            $error = curl_error($ch);
-            $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($error) {
-                throw new RuntimeException("cURL error: {$error}");
-            }
-
-            if ($status < 200 || $status >= 400) {
-                throw new RuntimeException("HTTP error {$status} from WAEC");
-            }
-            \Log::debug($html);
-            return (string) $html;
+                method: 'GET',
+                payload: null,
+                headers: array_merge($this->commonHeaders, [
+                    'Referer: '.$this->baseUrl.'/',
+                ]),
+                cookieJar: $cookieJar,
+                timeout: 90,
+            );
         } finally {
             @unlink($cookieJar);
         }
@@ -154,8 +144,8 @@ class WAECResult implements ResultInterface
             ];
         }
 
-        $dom = new \DOMDocument();
-        @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+        $dom = new \DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new \DOMXPath($dom);
 
         $candidate = [
@@ -184,19 +174,20 @@ class WAECResult implements ResultInterface
             $first = strtolower((string) ($values[0] ?? ''));
             $second = trim((string) ($values[1] ?? ''));
 
-            if ($this->looksLikeWaecGrade($second) && !$this->looksLikeMetadataLabel($first)) {
+            if ($this->looksLikeWaecGrade($second) && ! $this->looksLikeMetadataLabel($first)) {
                 $subjects[] = [
                     'subject' => $values[0],
                     'grade' => $second,
                     'score' => $values[2] ?? null,
                 ];
+
                 continue;
             }
 
             $this->mapCandidateField($candidate, $first, $second);
         }
 
-        if (!$subjects) {
+        if (! $subjects) {
             $text = trim(preg_replace('/\s+/', ' ', strip_tags($html)));
             preg_match_all('/([A-Z][A-Z&\-\',\.\/\(\) ]{2,})\s+(A1|B2|B3|C4|C5|C6|D7|E8|F9)/u', $text, $matches, PREG_SET_ORDER);
 
@@ -238,22 +229,95 @@ class WAECResult implements ResultInterface
 
     private function initSession(string $cookieJar): string
     {
+        return $this->request(
+            url: $this->baseUrl.'/',
+            method: 'GET',
+            payload: null,
+            headers: $this->commonHeaders,
+            cookieJar: $cookieJar,
+            timeout: 30,
+        );
+    }
+
+    /**
+     * @return array{examNumber: string, examYear: string, serial: string, pin: string, examType: string}
+     */
+    private function resultPayload(array $params): array
+    {
+        return [
+            'examNumber' => trim((string) ($params['txtExamNumber'] ?? $params['ExamNumber'] ?? '')),
+            'examYear' => trim((string) ($params['ExamYear'] ?? '')),
+            'serial' => trim((string) ($params['txtCardSerialNo'] ?? $params['serial'] ?? '')),
+            'pin' => trim((string) ($params['txtPIN'] ?? $params['pin'] ?? '')),
+            'examType' => trim((string) ($params['ExamType'] ?? '')),
+        ];
+    }
+
+    private function encryptPayload(array $payload, string $cookieJar): ?string
+    {
+        $response = $this->request(
+            url: $this->baseUrl.'/Result/EncryptPayload',
+            method: 'POST',
+            payload: json_encode($payload, JSON_UNESCAPED_SLASHES) ?: '{}',
+            headers: [
+                'Accept: application/json, text/plain, */*',
+                'Content-Type: application/json',
+                'Referer: '.$this->baseUrl.'/',
+                'Origin: '.$this->baseUrl,
+                'X-Requested-With: XMLHttpRequest',
+            ],
+            cookieJar: $cookieJar,
+            timeout: 30,
+            failOnHttpError: false,
+        );
+
+        $data = json_decode($response, true);
+
+        if (
+            ! is_array($data)
+            || ($data['success'] ?? false) !== true
+            || blank($data['q'] ?? null)
+        ) {
+            return null;
+        }
+
+        return (string) $data['q'];
+    }
+
+    protected function request(
+        string $url,
+        string $method,
+        string|array|null $payload,
+        array $headers,
+        string $cookieJar,
+        int $timeout,
+        bool $failOnHttpError = true,
+    ): string {
         $ch = curl_init();
+        $method = strtoupper($method);
+
         curl_setopt_array($ch, [
-            CURLOPT_URL => $this->baseUrl . '/',
-            CURLOPT_HTTPGET => true,
+            CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HEADER => false,
             CURLOPT_COOKIEJAR => $cookieJar,
             CURLOPT_COOKIEFILE => $cookieJar,
             CURLOPT_USERAGENT => $this->userAgent,
-            CURLOPT_HTTPHEADER => $this->commonHeaders,
+            CURLOPT_HTTPHEADER => $headers,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_CONNECTTIMEOUT => 20,
-            CURLOPT_TIMEOUT => 30,
+            CURLOPT_TIMEOUT => $timeout,
             CURLOPT_ENCODING => '',
         ]);
+
+        if ($method === 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+        } else {
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
+        }
 
         $response = curl_exec($ch);
         $error = curl_error($ch);
@@ -261,11 +325,11 @@ class WAECResult implements ResultInterface
         curl_close($ch);
 
         if ($error) {
-            throw new RuntimeException("Session init error: {$error}");
+            throw new RuntimeException("cURL error: {$error}");
         }
 
-        if ($status < 200 || $status >= 400) {
-            throw new RuntimeException("Session init HTTP error {$status} from WAEC");
+        if ($failOnHttpError && ($status < 200 || $status >= 400)) {
+            throw new RuntimeException("HTTP error {$status} from WAEC");
         }
 
         return (string) $response;
@@ -283,12 +347,12 @@ class WAECResult implements ResultInterface
 
     private function extractHiddenValue(string $html, string $name): string
     {
-        $pattern = '/<input[^>]+name=["\']' . preg_quote($name, '/') . '["\'][^>]*value=["\']([^"\']*)["\']/i';
+        $pattern = '/<input[^>]+name=["\']'.preg_quote($name, '/').'["\'][^>]*value=["\']([^"\']*)["\']/i';
         if (preg_match($pattern, $html, $matches)) {
             return html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5);
         }
 
-        $patternById = '/<input[^>]+id=["\']' . preg_quote($name, '/') . '["\'][^>]*value=["\']([^"\']*)["\']/i';
+        $patternById = '/<input[^>]+id=["\']'.preg_quote($name, '/').'["\'][^>]*value=["\']([^"\']*)["\']/i';
         if (preg_match($patternById, $html, $matches)) {
             return html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5);
         }
@@ -304,21 +368,25 @@ class WAECResult implements ResultInterface
 
         if (str_contains($key, 'candidate name') || str_contains($key, 'name')) {
             $candidate['name'] ??= $value;
+
             return;
         }
 
         if (str_contains($key, 'exam number') || str_contains($key, 'examination number') || str_contains($key, 'candidate number') || str_contains($key, 'index number')) {
             $candidate['exam_number'] ??= $value;
+
             return;
         }
 
         if (str_contains($key, 'exam year') || str_contains($key, 'year')) {
             $candidate['exam_year'] ??= $value;
+
             return;
         }
 
         if (str_contains($key, 'exam type') || str_contains($key, 'type of exam') || str_contains($key, 'type of examination')) {
             $candidate['exam_type'] ??= $value;
+
             return;
         }
 
@@ -376,10 +444,10 @@ class WAECResult implements ResultInterface
     private function parseWaecErrorPage(string $html, string $lowerHtml): ?array
     {
         if (
-            !str_contains($lowerHtml, 'resulterror.aspx')
-            && !str_contains($lowerHtml, '<title> error page')
-            && !str_contains($lowerHtml, 'id="lblerrortitle"')
-            && !str_contains($lowerHtml, 'id="lblerrormsg"')
+            ! str_contains($lowerHtml, 'resulterror.aspx')
+            && ! str_contains($lowerHtml, '<title> error page')
+            && ! str_contains($lowerHtml, 'id="lblerrortitle"')
+            && ! str_contains($lowerHtml, 'id="lblerrormsg"')
         ) {
             return null;
         }
@@ -403,8 +471,8 @@ class WAECResult implements ResultInterface
 
     private function extractWaecErrorMessage(string $html): ?string
     {
-        $dom = new \DOMDocument();
-        @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+        $dom = new \DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new \DOMXPath($dom);
 
         foreach ([
@@ -478,8 +546,8 @@ class WAECResult implements ResultInterface
 
     private function extractGenericHtmlErrorMessage(string $html): ?string
     {
-        $dom = new \DOMDocument();
-        @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+        $dom = new \DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new \DOMXPath($dom);
 
         $queries = [
@@ -520,7 +588,7 @@ class WAECResult implements ResultInterface
             return false;
         }
 
-        if (mb_strlen($message) > 500 && !str_contains($lower, 'error') && !str_contains($lower, 'invalid') && !str_contains($lower, 'not found')) {
+        if (mb_strlen($message) > 500 && ! str_contains($lower, 'error') && ! str_contains($lower, 'invalid') && ! str_contains($lower, 'not found')) {
             return false;
         }
 

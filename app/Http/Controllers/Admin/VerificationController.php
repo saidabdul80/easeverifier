@@ -71,6 +71,14 @@ class VerificationController extends Controller
 
         return Inertia::render('Admin/Verifications/Show', [
             'verification' => $verification,
+            'service' => $verification->verificationService,
+            'result' => [
+                'success' => $verification->status === 'completed',
+                'data' => $verification->response_data,
+                'error_message' => $verification->error_message,
+            ],
+            'searchParameter' => $verification->search_parameter,
+            'providedInputs' => $this->providedInputsForResult($verification),
         ]);
     }
 
@@ -139,5 +147,19 @@ class VerificationController extends Controller
             })
             ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
             ->when($request->filled('date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('date_to')));
+    }
+
+    private function providedInputsForResult(VerificationRequest $verification): array
+    {
+        $parameters = $verification->request_data['parameters'] ?? null;
+
+        if (is_array($parameters) && $parameters !== []) {
+            return collect($parameters)
+                ->reject(fn ($value, string $key) => $key === 'branch_id' || str_starts_with($key, '_'))
+                ->map(fn ($value) => is_scalar($value) || $value === null ? $value : json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))
+                ->all();
+        }
+
+        return filled($verification->search_parameter) ? ['search_parameter' => $verification->search_parameter] : [];
     }
 }

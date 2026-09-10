@@ -11,6 +11,7 @@ use App\Services\ResultVerify\ResultGates\NecoEVerify;
 use App\Services\ResultVerify\ResultGates\NECOResult;
 use App\Services\ResultVerify\ResultGates\WAECResult;
 use App\Services\ResultVerify\ResultInterface;
+use App\Services\ResultVerify\ResultVerificationEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -143,7 +144,77 @@ it('charges the fetch service independently from the form service', function () 
     $request = VerificationRequest::where('verification_service_id', $fetchService->id)->first();
     expect((float) $request->amount_charged)->toBe(23.0)
         ->and($request->request_data['action'])->toBe('fetch')
-        ->and($request->request_data['parameters']['txtPIN'])->toBe('***REDACTED***');
+        ->and($request->request_data['parameters']['txtPIN'])->toBe('123456789012')
+        ->and($request->request_data['customer_parameters']['txtPIN'])->toBe('***REDACTED***');
+});
+
+it('stores raw result inputs for admin review and redacted inputs for customer display', function () {
+    $user = createResultApiUser(100);
+    createResultService('waec-result-form', 5);
+    $fetchService = createResultService('waec-result-fetch', 10);
+
+    app()->instance(WAECResult::class, new class implements ResultInterface
+    {
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamYear', 'label' => 'Examination Year', 'type' => 'select', 'required' => true],
+                ['name' => 'ExamType', 'label' => 'Examination Type', 'type' => 'select', 'required' => true],
+                ['name' => 'txtPIN', 'label' => 'PIN', 'type' => 'text', 'required' => true],
+                ['name' => 'txtCardSerialNo', 'label' => 'Card Serial Number', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '<html>result</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'success',
+                'candidate' => ['name' => 'Admin Candidate', 'exam_number' => '4141607071'],
+                'subjects' => [['subject' => 'COMMERCE', 'grade' => 'C4', 'score' => null]],
+                'overall' => null,
+            ];
+        }
+    });
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+
+    $this->withHeaders([
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
+    ])->postJson('/api/v1/results/waec/fetch', [
+        'txtExamNumber' => '4141607071',
+        'ExamYear' => '2026',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '123456789012',
+        'txtCardSerialNo' => 'WRN123456789',
+    ])->assertOk();
+
+    $request = VerificationRequest::where('verification_service_id', $fetchService->id)->first();
+
+    expect($request)->not->toBeNull()
+        ->and($request->request_data['parameters']['txtPIN'])->toBe('123456789012')
+        ->and($request->request_data['parameters']['txtCardSerialNo'])->toBe('WRN123456789')
+        ->and($request->request_data['customer_parameters']['txtPIN'])->toBe('***REDACTED***')
+        ->and($request->request_data['customer_parameters']['txtCardSerialNo'])->toBe('***REDACTED***');
+});
+
+it('stores NECO e-Verify exam type in the exact upstream case', function () {
+    $engine = new class(app(\App\Services\ResultVerify\ResultFactory::class)) extends ResultVerificationEngine
+    {
+        public function record(array $params, ?string $board = null): array
+        {
+            return $this->recordableParams($params, $board);
+        }
+    };
+
+    expect($engine->record(['exam_type' => 'ssce_int'], 'neco-everify')['exam_type'])->toBe('SSCEInt')
+        ->and($engine->record(['exam_type' => 'ssce_ext'], 'neco-everify')['exam_type'])->toBe('SSCEExt')
+        ->and($engine->record(['exam_type' => 'ssce_int'], 'neco')['exam_type'])->toBe('ssce_int');
 });
 
 it('does not charge sandbox API keys for NECO form or fetch', function () {
@@ -357,6 +428,89 @@ it('uses the new NBAIS check and pin session flow', function () {
         ]);
 });
 
+it('uses WAEC encrypted display flow instead of the retired DisplayResult endpoint', function () {
+    $gateway = new class extends WAECResult
+    {
+        public array $calls = [];
+
+        protected function request(
+            string $url,
+            string $method,
+            string|array|null $payload,
+            array $headers,
+            string $cookieJar,
+            int $timeout,
+            bool $failOnHttpError = true,
+        ): string {
+            $this->calls[] = compact('url', 'method', 'payload', 'headers', 'timeout', 'failOnHttpError');
+
+            return match (count($this->calls)) {
+                1 => '<html>WAEC form</html>',
+                2 => '{"success":true,"q":"encrypted-token"}',
+                3 => '<html>WAEC result</html>',
+                default => throw new RuntimeException('Unexpected WAEC request'),
+            };
+        }
+    };
+
+    $html = $gateway->fetchResult([
+        'txtExamNumber' => '4141607071',
+        'ExamYear' => '2026',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '123456789012',
+        'txtCardSerialNo' => 'WRN123456789',
+    ]);
+
+    expect($html)->toBe('<html>WAEC result</html>')
+        ->and($gateway->calls)->toHaveCount(3)
+        ->and($gateway->calls[0]['method'])->toBe('GET')
+        ->and($gateway->calls[0]['url'])->toBe('https://www.waecdirect.org/')
+        ->and($gateway->calls[1]['method'])->toBe('POST')
+        ->and($gateway->calls[1]['url'])->toBe('https://www.waecdirect.org/Result/EncryptPayload')
+        ->and(json_decode($gateway->calls[1]['payload'], true))->toBe([
+            'examNumber' => '4141607071',
+            'examYear' => '2026',
+            'serial' => 'WRN123456789',
+            'pin' => '123456789012',
+            'examType' => 'MAY/JUN',
+        ])
+        ->and($gateway->calls[2]['method'])->toBe('GET')
+        ->and($gateway->calls[2]['url'])->toBe('https://www.waecdirect.org/Result/Display?q=encrypted-token');
+});
+
+it('parses WAEC current result display tables', function () {
+    $html = <<<'HTML'
+<html>
+<body>
+    <table id="tbCandidInfo">
+        <tr><td>Examination Number</td><td>4141607071</td></tr>
+        <tr><td>Candidate's Name</td><td>Sample Candidate</td></tr>
+        <tr><td>Examination</td><td>WASSCE FOR SCHOOL CANDIDATES 2026</td></tr>
+        <tr><td>Centre</td><td>Sample School</td></tr>
+    </table>
+    <table id="tbSubjectGrades">
+        <tr><td>COMMERCE</td><td>C4</td></tr>
+        <tr><td>ACCOUNTING</td><td>A1</td></tr>
+        <tr><td>ENGLISH LANGUAGE</td><td>C6</td></tr>
+    </table>
+</body>
+</html>
+HTML;
+
+    $parsed = app(WAECResult::class)->parseResult($html);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['exam_number'])->toBe('4141607071')
+        ->and($parsed['candidate']['name'])->toBe('Sample Candidate')
+        ->and($parsed['candidate']['centre'])->toBe('Sample School')
+        ->and($parsed['subjects'])->toHaveCount(3)
+        ->and($parsed['subjects'][0])->toBe([
+            'subject' => 'COMMERCE',
+            'grade' => 'C4',
+            'score' => null,
+        ]);
+});
+
 it('returns a clear NBAIS internal second stage error when a pin form is returned', function () {
     $html = <<<'HTML'
 <!doctype html>
@@ -451,6 +605,105 @@ JSON;
             'score' => null,
         ])
         ->and($parsed['result']['raw']['numberOfSubjects'])->toBe(9);
+});
+
+it('matches the working outside NECO e-Verify request flow', function () {
+    config()->set('services.neco_everify.base_url', 'https://everify.neco.gov.ng/api_core');
+    config()->set('services.neco_everify.bearer_token', 'test-bearer');
+    config()->set('services.neco_everify.timeout', 45);
+
+    $gateway = new class extends NecoEVerify
+    {
+        public array $calls = [];
+
+        protected function postJson(string $url, array $payload, string $bearerToken, int $timeout): array
+        {
+            $this->calls[] = compact('url', 'payload', 'bearerToken', 'timeout');
+
+            return [
+                'status' => 200,
+                'response' => 'NECO notice {"status":"200","details":{"candidateName":"Sample Candidate","candidateNo":"30231645GF","results":[{"subject":"English Language","grade":"C5"}]}}',
+            ];
+        }
+    };
+
+    $response = $gateway->fetchResult([
+        'token' => 'rrr-token',
+        'reg_no' => '30231645GF',
+        'exam_year' => '2013',
+        'exam_type' => 'ssce_int',
+    ]);
+
+    expect($gateway->calls)->toHaveCount(1)
+        ->and($gateway->calls[0]['url'])->toBe('https://everify.neco.gov.ng/api_core/rrr')
+        ->and($gateway->calls[0]['bearerToken'])->toBe('test-bearer')
+        ->and($gateway->calls[0]['timeout'])->toBe(45)
+        ->and($gateway->calls[0]['payload'])->toBe([
+            'token' => 'rrr-token',
+            'payref' => 'rrr-token',
+            'examno' => '30231645GF',
+            'exam_year' => '2013',
+            'exam_type' => 'SSCEInt',
+        ]);
+
+    $parsed = $gateway->parseResult($response);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['candidate_name'])->toBe('Sample Candidate')
+        ->and($parsed['subjects'][0]['subject'])->toBe('English Language');
+});
+
+it('sends NECO e-Verify exam type in the exact upstream case during verification', function () {
+    config()->set('services.neco_everify.base_url', 'https://everify.neco.gov.ng/api_core');
+    config()->set('services.neco_everify.bearer_token', 'test-bearer');
+    config()->set('services.neco_everify.timeout', 45);
+
+    $user = createResultApiUser(100);
+    $fetchService = createResultService('neco-everify-result-fetch', 25);
+
+    $gateway = new class extends NecoEVerify
+    {
+        public array $calls = [];
+
+        protected function postJson(string $url, array $payload, string $bearerToken, int $timeout): array
+        {
+            $this->calls[] = compact('url', 'payload', 'bearerToken', 'timeout');
+
+            return [
+                'status' => 200,
+                'response' => '{"status":"200","details":{"candidateName":"Sample Candidate","candidateNo":"30231645GF","results":[{"subject":"English Language","grade":"C5"}]}}',
+            ];
+        }
+    };
+
+    app()->instance(NecoEVerify::class, $gateway);
+
+    $result = app(ResultVerificationEngine::class)->verify($user, 'neco-everify', [
+        'token' => 'rrr-token',
+        'reg_no' => '30231645GF',
+        'exam_year' => '2013',
+        'exam_type' => 'ssce_int',
+    ]);
+
+    $request = VerificationRequest::where('verification_service_id', $fetchService->id)->first();
+
+    expect($result->success)->toBeTrue()
+        ->and($gateway->calls)->toHaveCount(1)
+        ->and($gateway->calls[0]['payload']['examno'])->toBe('30231645GF')
+        ->and($gateway->calls[0]['payload']['exam_type'])->toBe('SSCEInt')
+        ->and($request->search_parameter)->toBe('30231645GF')
+        ->and($request->request_data['parameters']['exam_type'])->toBe('SSCEInt');
+});
+
+it('keeps NECO year options aligned with the outside gateway', function () {
+    $necoYears = collect(app(NECOResult::class)->formFields())
+        ->firstWhere('name', 'exam_year')['options'];
+
+    $everifyYears = collect(app(NecoEVerify::class)->formFields())
+        ->firstWhere('name', 'exam_year')['options'];
+
+    expect($necoYears)->toContain(['value' => '1980', 'label' => '1980'])
+        ->and($everifyYears)->toContain(['value' => '1980', 'label' => '1980']);
 });
 
 it('defines NABTEB eWorld form fields from the live checker flow', function () {
@@ -625,6 +878,8 @@ it('charges NABTEB fetch separately and returns candidate plus result data', fun
     expect($request)->not->toBeNull()
         ->and((float) $request->amount_charged)->toBe(21.0)
         ->and($request->search_parameter)->toBe('38001178')
-        ->and($request->request_data['parameters']['pin'])->toBe('***REDACTED***')
-        ->and($request->request_data['parameters']['serial'])->toBe('***REDACTED***');
+        ->and($request->request_data['parameters']['pin'])->toBe('012345678912')
+        ->and($request->request_data['parameters']['serial'])->toBe('N123456789')
+        ->and($request->request_data['customer_parameters']['pin'])->toBe('***REDACTED***')
+        ->and($request->request_data['customer_parameters']['serial'])->toBe('***REDACTED***');
 });

@@ -8,11 +8,26 @@ const props = defineProps<{
     service: any;
     result: { success: boolean; data?: any; error_message?: string; reference?: string };
     searchParameter: string;
+    providedInputs?: Record<string, any>;
     verification?: any;
     cached?: boolean;
 }>();
 
 const downloadUrl = computed(() => props.verification?.id ? `/customer/verification/${props.verification.id}/download` : null);
+const providedInputRows = computed(() => Object.entries(props.providedInputs || {}));
+
+const formatInputLabel = (key: string) => key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+const formatInputValue = (value: any) => {
+    if (value === null || value === undefined || value === '') {
+        return '-';
+    }
+
+    if (typeof value === 'object') {
+        return JSON.stringify(value, null, 2);
+    }
+
+    return String(value);
+};
 </script>
 
 <template>
@@ -43,6 +58,29 @@ const downloadUrl = computed(() => props.verification?.id ? `/customer/verificat
                         <p class="text-body-2 text-grey">
                             {{ result.success ? 'The identity has been verified successfully.' : (result.error_message || 'Unable to verify the provided information.') }}
                         </p>
+                    </v-card-text>
+                </v-card>
+
+                <!-- Provided Inputs -->
+                <v-card v-if="providedInputRows.length" class="mb-6">
+                    <v-card-title class="d-flex align-center">
+                        <v-icon color="primary" class="mr-2">mdi-form-textbox</v-icon>
+                        Provided Inputs
+                    </v-card-title>
+                    <v-card-text>
+                        <v-table density="comfortable">
+                            <tbody>
+                                <tr v-for="[key, value] in providedInputRows" :key="key">
+                                    <td class="font-weight-medium" style="width: 220px;">{{ formatInputLabel(key) }}</td>
+                                    <td class="text-break">
+                                        <template v-if="typeof value === 'object' && value !== null">
+                                            <pre class="text-body-2 bg-grey-lighten-4 pa-2 rounded">{{ formatInputValue(value) }}</pre>
+                                        </template>
+                                        <template v-else>{{ formatInputValue(value) }}</template>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </v-table>
                     </v-card-text>
                 </v-card>
 

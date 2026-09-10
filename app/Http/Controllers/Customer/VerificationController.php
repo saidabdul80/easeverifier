@@ -146,6 +146,7 @@ class VerificationController extends Controller
                 'result' => $result->toArray(),
                 'searchParameter' => $validated['search_parameter'],
                 'verification' => $verification,
+                'providedInputs' => $this->providedInputsForResult($verification, $validated['search_parameter']),
             ]);
         }
 
@@ -264,6 +265,7 @@ class VerificationController extends Controller
             ],
             'searchParameter' => $verification->search_parameter,
             'verification' => $verification,
+            'providedInputs' => $this->providedInputsForResult($verification),
         ]);
     }
 
@@ -394,6 +396,10 @@ class VerificationController extends Controller
 
         $params = $request->except(['_token', 'branch_id']);
         $board = $this->boardFromService($service);
+        $latestRequestIdBeforeVerify = VerificationRequest::query()
+            ->where('user_id', $request->user()->id)
+            ->where('verification_service_id', $service->id)
+            ->max('id');
 
         $result = $this->resultVerificationEngine->verify(
             user: $request->user(),
@@ -408,6 +414,7 @@ class VerificationController extends Controller
             $verification = VerificationRequest::query()
                 ->where('user_id', $request->user()->id)
                 ->where('verification_service_id', $service->id)
+                ->when($latestRequestIdBeforeVerify, fn ($query) => $query->where('id', '>', $latestRequestIdBeforeVerify))
                 ->latest('id')
                 ->first();
 
@@ -416,6 +423,24 @@ class VerificationController extends Controller
                 'result' => $result->toArray(),
                 'searchParameter' => $verification?->search_parameter ?? $this->resultSearchParameter($board, $params),
                 'verification' => $verification,
+                'providedInputs' => $this->providedInputsForResult($verification, $this->resultSearchParameter($board, $params)),
+            ]);
+        }
+
+        $verification = VerificationRequest::query()
+            ->where('user_id', $request->user()->id)
+            ->where('verification_service_id', $service->id)
+            ->when($latestRequestIdBeforeVerify, fn ($query) => $query->where('id', '>', $latestRequestIdBeforeVerify))
+            ->latest('id')
+            ->first();
+
+        if ($verification) {
+            return Inertia::render('Customer/Verification/Result', [
+                'service' => tap($service, fn (VerificationService $service) => $this->applyResultBoardDisplayName($service)),
+                'result' => $result->toArray(),
+                'searchParameter' => $verification->search_parameter,
+                'verification' => $verification,
+                'providedInputs' => $this->providedInputsForResult($verification, $this->resultSearchParameter($board, $params)),
             ]);
         }
 
@@ -448,9 +473,39 @@ class VerificationController extends Controller
         return match ($board) {
             'waec' => trim((string) ($params['txtExamNumber'] ?? $params['ExamNumber'] ?? '')),
             'neco' => trim((string) ($params['reg_no'] ?? $params['exam_number'] ?? '')),
+            'neco-everify', 'neco_everify', 'necoeverify' => trim((string) ($params['examno'] ?? $params['reg_no'] ?? $params['exam_number'] ?? '')),
             'nbais' => trim((string) ($params['exam_no'] ?? $params['exam_number'] ?? '')),
             'nabteb' => trim((string) ($params['candid'] ?? $params['candidate_number'] ?? '')),
             default => '',
         };
+    }
+
+    private function providedInputsForResult(?VerificationRequest $verification, ?string $fallbackSearchParameter = null): array
+    {
+        $parameters = $verification?->request_data['customer_parameters']
+            ?? $verification?->request_data['parameters']
+            ?? null;
+
+        if (is_array($parameters) && $parameters !== []) {
+            return collect($this->redactSensitiveResultInputs($parameters))
+                ->reject(fn ($value, string $key) => $key === 'branch_id' || str_starts_with($key, '_'))
+                ->map(fn ($value) => is_scalar($value) || $value === null ? $value : json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))
+                ->all();
+        }
+
+        $searchParameter = $verification?->search_parameter ?: $fallbackSearchParameter;
+
+        return filled($searchParameter) ? ['search_parameter' => $searchParameter] : [];
+    }
+
+    private function redactSensitiveResultInputs(array $parameters): array
+    {
+        $sensitiveKeys = ['pin', 'txtpin', 'token', 'bearer_token', 'api_token', 'payref', 'payment_reference', 'txtcardserialno', 'serial', 'card_serial', 'cardserialno'];
+
+        return collect($parameters)
+            ->mapWithKeys(fn ($value, string $key) => [
+                $key => in_array(strtolower($key), $sensitiveKeys, true) ? '***REDACTED***' : $value,
+            ])
+            ->all();
     }
 }

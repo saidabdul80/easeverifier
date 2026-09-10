@@ -171,7 +171,8 @@ class ResultVerificationEngine
                 requestData: [
                     'board' => $board,
                     'action' => 'fetch',
-                    'parameters' => $this->sanitizeParams($params),
+                    'parameters' => $this->recordableParams($params, $board),
+                    'customer_parameters' => $this->sanitizeParams($params, $board),
                 ],
                 shouldCharge: $shouldCharge,
                 source: $source,
@@ -215,7 +216,7 @@ class ResultVerificationEngine
             'endpoint' => "result-board:{$board}",
             'method' => 'POST',
             'request_headers' => [],
-            'request_body' => ApiLog::requestSummary($this->sanitizeParams($params)),
+            'request_body' => ApiLog::requestSummary($this->sanitizeParams($params, $board)),
             'ip_address' => request()?->ip(),
         ]);
 
@@ -373,7 +374,7 @@ class ResultVerificationEngine
             }
 
             $name = (string) ($field['name'] ?? '');
-            if ($name === '' || filled($params[$name] ?? null)) {
+            if ($name === '' || $this->hasRequiredFieldValue($name, $params)) {
                 continue;
             }
 
@@ -388,24 +389,37 @@ class ResultVerificationEngine
         return $user->hasResultFetchAccess();
     }
 
+    protected function hasRequiredFieldValue(string $name, array $params): bool
+    {
+        if (filled($params[$name] ?? null)) {
+            return true;
+        }
+
+        return match ($name) {
+            'examno', 'reg_no', 'exam_number' => filled($params['examno'] ?? null)
+                || filled($params['reg_no'] ?? null)
+                || filled($params['exam_number'] ?? null),
+            default => false,
+        };
+    }
+
     protected function searchParameter(string $board, array $params): string
     {
         return match (strtolower($board)) {
             'waec' => trim((string) ($params['txtExamNumber'] ?? $params['ExamNumber'] ?? '')),
             'neco' => trim((string) ($params['reg_no'] ?? $params['exam_number'] ?? '')),
-            'neco-everify', 'neco_everify', 'necoeverify' => trim((string) ($params['examno'] ?? $params['exam_number'] ?? '')),
+            'neco-everify', 'neco_everify', 'necoeverify' => trim((string) ($params['examno'] ?? $params['reg_no'] ?? $params['exam_number'] ?? '')),
             'nbais' => trim((string) ($params['exam_no'] ?? $params['exam_number'] ?? '')),
             'nabteb' => trim((string) ($params['candid'] ?? $params['candidate_number'] ?? '')),
             default => trim((string) ($params['exam_number'] ?? $params['reg_no'] ?? $params['txtExamNumber'] ?? '')),
         };
     }
 
-    protected function sanitizeParams(array $params): array
+    protected function sanitizeParams(array $params, ?string $board = null): array
     {
         $sensitiveKeys = ['pin', 'txtpin', 'token', 'bearer_token', 'api_token', 'payref', 'payment_reference', 'txtcardserialno', 'serial', 'card_serial', 'cardserialno'];
 
-        return collect($params)
-            ->reject(fn ($value, string $key) => in_array($key, ['api_key', 'branch'], true))
+        return collect($this->recordableParams($params, $board))
             ->mapWithKeys(function ($value, string $key) use ($sensitiveKeys) {
                 if (in_array(strtolower($key), $sensitiveKeys, true)) {
                     return [$key => '***REDACTED***'];
@@ -414,6 +428,32 @@ class ResultVerificationEngine
                 return [$key => $value];
             })
             ->toArray();
+    }
+
+    protected function recordableParams(array $params, ?string $board = null): array
+    {
+        $recordable = collect($params)
+            ->reject(fn ($value, string $key) => in_array($key, ['api_key', 'branch'], true))
+            ->toArray();
+
+        if (in_array(strtolower((string) $board), ['neco-everify', 'neco_everify', 'necoeverify'], true) && array_key_exists('exam_type', $recordable)) {
+            $recordable['exam_type'] = $this->normalizeNecoEVerifyExamType((string) $recordable['exam_type']);
+        }
+
+        return $recordable;
+    }
+
+    protected function normalizeNecoEVerifyExamType(string $examType): string
+    {
+        $value = trim($examType);
+        $compact = strtoupper(str_replace([' ', '-', '_'], '', $value));
+
+        return match ($compact) {
+            'SSCEINTERNAL', 'SSCEINT', 'INTERNAL' => 'SSCEInt',
+            'SSCEEXTERNAL', 'SSCEEXT', 'EXTERNAL' => 'SSCEExt',
+            default => $value,
+        };
+
     }
 
     protected function sanitizeParsedResponse(array $parsed): array

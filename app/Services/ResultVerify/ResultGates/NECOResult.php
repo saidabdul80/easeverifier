@@ -33,7 +33,7 @@ class NECOResult implements ResultInterface
                 'label' => 'Examination Year',
                 'type' => 'select',
                 'required' => true,
-                'options' => $this->yearOptions(2000),
+                'options' => $this->yearOptions(1980),
             ],
             [
                 'name' => 'exam_type',
@@ -74,7 +74,7 @@ class NECOResult implements ResultInterface
 
         $ch = curl_init();
         curl_setopt_array($ch, [
-            CURLOPT_URL => $this->baseUrl . '?' . $query,
+            CURLOPT_URL => $this->baseUrl.'?'.$query,
             CURLOPT_HTTPGET => true,
             CURLOPT_CUSTOMREQUEST => 'GET',
             CURLOPT_RETURNTRANSFER => true,
@@ -103,18 +103,18 @@ class NECOResult implements ResultInterface
             throw new RuntimeException("HTTP error {$status} from NECO");
         }
 
-        if (($status < 200 || $status >= 400) && !$this->looksLikeJson((string) $response)) {
+        if (($status < 200 || $status >= 400) && ! $this->looksLikeJson((string) $response)) {
             $message = $this->extractHtmlErrorMessage((string) $response) ?? "HTTP error {$status} from NECO";
             throw new RuntimeException($message);
         }
-        \Log::debug($response);
+
         return (string) $response;
     }
 
     public function parseResult(string $html): array
     {
         $decoded = $this->decodeResponse($html);
-        if (!is_array($decoded)) {
+        if (! is_array($decoded)) {
             $message = $this->extractHtmlErrorMessage($html);
 
             return [
@@ -210,7 +210,7 @@ class NECOResult implements ResultInterface
     private function extractErrorMessage(array $decoded): string
     {
         foreach (['info', 'message', 'error', 'detail', 'status'] as $key) {
-            if (!empty($decoded[$key]) && is_string($decoded[$key])) {
+            if (! empty($decoded[$key]) && is_string($decoded[$key])) {
                 return $decoded[$key];
             }
         }
@@ -225,8 +225,8 @@ class NECOResult implements ResultInterface
             return null;
         }
 
-        $dom = new \DOMDocument();
-        @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+        $dom = new \DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new \DOMXPath($dom);
 
         $queries = [
@@ -286,7 +286,7 @@ class NECOResult implements ResultInterface
             return false;
         }
 
-        if (mb_strlen($message) > 500 && !str_contains($lower, 'error') && !str_contains($lower, 'invalid') && !str_contains($lower, 'not found')) {
+        if (mb_strlen($message) > 500 && ! str_contains($lower, 'error') && ! str_contains($lower, 'invalid') && ! str_contains($lower, 'not found')) {
             return false;
         }
 
@@ -314,7 +314,7 @@ class NECOResult implements ResultInterface
     private function extractPayload(array $decoded): array
     {
         foreach (['data', 'result', 'payload', 'results'] as $key) {
-            if (!array_key_exists($key, $decoded)) {
+            if (! array_key_exists($key, $decoded)) {
                 continue;
             }
 
@@ -415,13 +415,13 @@ class NECOResult implements ResultInterface
         ];
 
         foreach ($containers as $container) {
-            if (!is_array($container)) {
+            if (! is_array($container)) {
                 continue;
             }
 
             $subjects = [];
             foreach ($container as $row) {
-                if (!is_array($row)) {
+                if (! is_array($row)) {
                     continue;
                 }
 
@@ -526,7 +526,7 @@ class NECOResult implements ResultInterface
         return null;
     }
 
-    private function yearOptions(int $startYear = 2000): array
+    private function yearOptions(int $startYear = 1980): array
     {
         $currentYear = (int) date('Y');
         $options = [];
