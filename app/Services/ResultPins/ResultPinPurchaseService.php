@@ -31,13 +31,13 @@ class ResultPinPurchaseService
         $this->validateQuantity($product, $quantity);
 
         $wallet = $branch?->wallet ?? $user->wallet;
-        if (!$wallet) {
+        if (! $wallet) {
             throw new \RuntimeException('Customer wallet was not found.');
         }
 
         $unitPrice = $this->unitPriceFor($product, $user);
         $totalAmount = $this->totalAmount($product, $quantity, $user);
-        if (!$wallet->hasSufficientFunds($totalAmount)) {
+        if (! $wallet->hasSufficientFunds($totalAmount)) {
             throw new \RuntimeException('Insufficient wallet balance.');
         }
 
@@ -131,7 +131,7 @@ class ResultPinPurchaseService
     public function fulfillPendingOrderForUser(ResultPinOrder $order, User $user, ?Branch $branch = null): ResultPinOrder
     {
         $product = $order->product;
-        if (!$product) {
+        if (! $product) {
             throw new \RuntimeException('Result PIN product was not found for this order.');
         }
 
@@ -142,11 +142,11 @@ class ResultPinPurchaseService
         }
 
         $wallet = $branch?->wallet ?? $user->wallet;
-        if (!$wallet) {
+        if (! $wallet) {
             throw new \RuntimeException('Customer wallet was not found.');
         }
 
-        if (!$wallet->hasSufficientFunds((float) $order->total_amount)) {
+        if (! $wallet->hasSufficientFunds((float) $order->total_amount)) {
             throw new \RuntimeException('Insufficient wallet balance.');
         }
 
@@ -205,7 +205,7 @@ class ResultPinPurchaseService
         if (
             $order->channel !== 'public' ||
             $order->status !== 'completed' ||
-            !$order->referred_by_user_id ||
+            ! $order->referred_by_user_id ||
             $order->referral_bonus_transaction_id
         ) {
             return null;
@@ -221,14 +221,14 @@ class ResultPinPurchaseService
             $referrer = User::with('wallet')->find($lockedOrder->referred_by_user_id);
             $wallet = $referrer?->wallet;
 
-            if (!$wallet) {
+            if (! $wallet) {
                 return null;
             }
 
             $transaction = $wallet->credit(
                 self::REFERRAL_BONUS_AMOUNT,
                 'bonus',
-                'Result PIN referral bonus for order ' . $lockedOrder->reference,
+                'Result PIN referral bonus for order '.$lockedOrder->reference,
                 [
                     'service' => 'result_pin_referral',
                     'order_id' => $lockedOrder->id,
@@ -278,7 +278,7 @@ class ResultPinPurchaseService
     public function fulfillPaidProviderOrder(ResultPinOrder $order): ResultPinOrder
     {
         $product = $order->product;
-        if (!$product) {
+        if (! $product) {
             throw new \RuntimeException('Result PIN product was not found for this order.');
         }
 
@@ -306,6 +306,7 @@ class ResultPinPurchaseService
 
             return $order->fresh(['product']);
         } catch (Throwable $exception) {
+            Log::error($exception);
             $order->markFailed(
                 $exception->getMessage(),
                 $exception instanceof ResultPinProviderException ? $exception->providerResponse() : null,
@@ -466,7 +467,7 @@ class ResultPinPurchaseService
 
     private function validateQuantity(ResultPinProduct $product, int $quantity): void
     {
-        if (!$product->is_active) {
+        if (! $product->is_active) {
             throw new \RuntimeException('Result PIN product is not available.');
         }
 

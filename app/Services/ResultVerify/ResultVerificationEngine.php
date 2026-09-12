@@ -225,18 +225,41 @@ class ResultVerificationEngine
             $parsed = $resultGate->parseResult($rawResponse);
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
 
-            $apiLog->update([
-                'response_status' => ($parsed['status'] ?? null) === 'success' ? 200 : 400,
-                'response_body' => ApiLog::responseSummary($this->sanitizeParsedResponse($parsed), ($parsed['status'] ?? null) === 'success' ? 200 : 400),
-                'response_time' => $responseTime,
-            ]);
-
             if (($parsed['status'] ?? null) === 'success') {
+                $apiLog->update([
+                    'response_status' => 200,
+                    'response_body' => ApiLog::responseSummary($this->sanitizeParsedResponse($parsed), 200),
+                    'response_time' => $responseTime,
+                ]);
+
                 $data = $this->formatSuccessData($board, $parsed);
                 $verificationRequest->markAsCompleted($data);
 
                 return VerificationResult::success($data, $responseTime);
             }
+
+            $fallback = $this->tryNecoFallback($board, $params, $verificationRequest);
+            $responseTime = (int) ((microtime(true) - $startTime) * 1000);
+
+            if ($fallback && ($fallback['parsed']['status'] ?? null) === 'success') {
+                $apiLog->update([
+                    'response_status' => 200,
+                    'response_body' => ApiLog::responseSummary($this->sanitizeParsedResponse($fallback['parsed']), 200),
+                    'response_time' => $responseTime,
+                ]);
+
+                $data = $this->formatSuccessData($board, $fallback['parsed']);
+                $data['result_source'] = $fallback['board'];
+                $verificationRequest->markAsCompleted($data);
+
+                return VerificationResult::success($data, $responseTime);
+            }
+
+            $apiLog->update([
+                'response_status' => 400,
+                'response_body' => ApiLog::responseSummary($this->sanitizeParsedResponse($parsed), 400),
+                'response_time' => $responseTime,
+            ]);
 
             $errorCode = (string) ($parsed['code'] ?? 'UNKNOWN_ERROR');
             $errorMessage = (string) ($parsed['message'] ?? 'Result verification failed.');
@@ -249,7 +272,22 @@ class ResultVerificationEngine
 
             return VerificationResult::failure($errorMessage, $errorCode, $responseTime);
         } catch (Throwable $exception) {
+            $fallback = $this->tryNecoFallback($board, $params, $verificationRequest);
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
+
+            if ($fallback && ($fallback['parsed']['status'] ?? null) === 'success') {
+                $apiLog->update([
+                    'response_status' => 200,
+                    'response_body' => ApiLog::responseSummary($this->sanitizeParsedResponse($fallback['parsed']), 200),
+                    'response_time' => $responseTime,
+                ]);
+
+                $data = $this->formatSuccessData($board, $fallback['parsed']);
+                $data['result_source'] = $fallback['board'];
+                $verificationRequest->markAsCompleted($data);
+
+                return VerificationResult::success($data, $responseTime);
+            }
 
             $apiLog->update([
                 'response_status' => 500,
@@ -454,6 +492,114 @@ class ResultVerificationEngine
             default => $value,
         };
 
+    }
+
+    protected function tryNecoFallback(string $board, array $params, VerificationRequest $verificationRequest): ?array
+    {
+        $fallbackBoard = $this->necoFallbackBoard($board);
+        if (! $fallbackBoard) {
+            return null;
+        }
+
+        if (! $this->hasSsCeNecoExamType($params)) {
+            Log::info('NECO result fallback skipped for non-SSCE exam type', [
+                'selected_board' => $board,
+                'fallback_board' => $fallbackBoard,
+                'reference' => $verificationRequest->reference,
+            ]);
+
+            return null;
+        }
+
+        try {
+            $fallbackGate = $this->factory->create($fallbackBoard);
+            $fallbackParams = $this->necoFallbackParams($fallbackBoard, $params);
+            $rawResponse = $fallbackGate->fetchResult($fallbackParams);
+            $parsed = $fallbackGate->parseResult($rawResponse);
+
+            if (($parsed['status'] ?? null) === 'success') {
+                Log::info('NECO result fallback succeeded', [
+                    'selected_board' => $board,
+                    'fallback_board' => $fallbackBoard,
+                    'reference' => $verificationRequest->reference,
+                ]);
+
+                return [
+                    'board' => $fallbackBoard,
+                    'parsed' => $parsed,
+                ];
+            }
+
+            Log::info('NECO result fallback did not return a result', [
+                'selected_board' => $board,
+                'fallback_board' => $fallbackBoard,
+                'reference' => $verificationRequest->reference,
+                'code' => $parsed['code'] ?? null,
+                'message' => $parsed['message'] ?? null,
+            ]);
+        } catch (Throwable $exception) {
+            Log::info('NECO result fallback failed', [
+                'selected_board' => $board,
+                'fallback_board' => $fallbackBoard,
+                'reference' => $verificationRequest->reference,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        return null;
+    }
+
+    protected function necoFallbackBoard(string $board): ?string
+    {
+        return match (strtolower($board)) {
+            'neco' => 'neco-everify',
+            'neco-everify', 'neco_everify', 'necoeverify' => 'neco',
+            default => null,
+        };
+    }
+
+    protected function necoFallbackParams(string $fallbackBoard, array $params): array
+    {
+        $mapped = $params;
+
+        if ($fallbackBoard === 'neco-everify') {
+            $mapped['examno'] = $params['examno'] ?? $params['reg_no'] ?? $params['exam_number'] ?? '';
+            $mapped['payref'] = $params['payref'] ?? $params['token'] ?? '';
+            $mapped['exam_type'] = $this->normalizeNecoEVerifyExamType((string) ($params['exam_type'] ?? ''));
+
+            return $mapped;
+        }
+
+        $mapped['reg_no'] = $params['reg_no'] ?? $params['examno'] ?? $params['exam_number'] ?? '';
+        $mapped['exam_type'] = $this->normalizeStandardNecoExamType((string) ($params['exam_type'] ?? ''));
+
+        return $mapped;
+    }
+
+    protected function hasSsCeNecoExamType(array $params): bool
+    {
+        $compact = strtoupper(str_replace([' ', '-', '_'], '', trim((string) ($params['exam_type'] ?? ''))));
+
+        return in_array($compact, [
+            'SSCEINTERNAL',
+            'SSCEINT',
+            'INTERNAL',
+            'SSCEEXTERNAL',
+            'SSCEEXT',
+            'EXTERNAL',
+        ], true);
+    }
+
+    protected function normalizeStandardNecoExamType(string $examType): string
+    {
+        $value = trim($examType);
+        $compact = strtoupper(str_replace([' ', '-', '_'], '', $value));
+
+        return match ($compact) {
+            'SSCEINTERNAL', 'SSCEINT', 'INTERNAL' => 'ssce_int',
+            'SSCEEXTERNAL', 'SSCEEXT', 'EXTERNAL' => 'ssce_ext',
+            default => $value,
+        };
     }
 
     protected function sanitizeParsedResponse(array $parsed): array

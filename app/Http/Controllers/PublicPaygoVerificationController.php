@@ -54,6 +54,7 @@ class PublicPaygoVerificationController extends Controller
 
         $validator = Validator::make($request->all(), [
             'nin' => ['required', 'string', 'regex:/^\d{11}$/'],
+            'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:30',
         ]);
 
@@ -108,7 +109,7 @@ class PublicPaygoVerificationController extends Controller
             return back()->with('error', $exception->getMessage());
         }
 
-        $payment = $this->initializePaygoPayment($paygoService, $intent, $paygoService->user->email);
+        $payment = $this->initializePaygoPayment($paygoService, $intent, $validated['email'] ?? $paygoService->user->email);
 
         if (! $payment['success']) {
             $intent->update([
@@ -512,6 +513,7 @@ class PublicPaygoVerificationController extends Controller
             ],
             'prefill' => [
                 'nin' => $request->string('nin')->value(),
+                'email' => $request->string('email')->value(),
                 'phone' => $request->string('phone')->value(),
             ],
             'error' => $error,

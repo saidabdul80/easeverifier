@@ -1,9 +1,10 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\CustomerPaygoService;
 use App\Models\CustomerPaystackSplitAccount;
 use App\Models\CustomerPaystackSplitLedger;
-use App\Models\CustomerPaygoService;
+use App\Models\PaygoVerificationIntent;
 use App\Models\PaygoWallet;
 use App\Models\ServiceProvider;
 use App\Models\Transaction;
@@ -471,6 +472,63 @@ it('allows a customer to publish a paygo result verification page', function () 
             ->where('paygoService.board', 'WAEC')
             ->where('fields.0.name', 'txtExamNumber')
         );
+});
+
+it('lets admins manage PayGo users collected from verification intents', function () {
+    $this->withoutVite();
+
+    Role::findOrCreate('admin');
+    $admin = User::factory()->create([
+        'email_verified_at' => now(),
+    ]);
+    $admin->assignRole('admin');
+
+    $user = createPaygoCustomer();
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+
+    app(PaygoVerificationService::class)->createIntent($paygoService, [
+        'params' => [
+            'txtExamNumber' => '1234567890',
+            'ExamYear' => '2025',
+            'ExamType' => 'MAY/JUN',
+            'txtPIN' => '123456789012',
+            'txtCardSerialNo' => 'WRN123456789',
+        ],
+        'email' => 'student@example.com',
+        'phone' => '08012345678',
+    ]);
+
+    PaygoVerificationIntent::query()->firstOrFail()->update(['status' => 'paid', 'paid_at' => now()]);
+
+    $this
+        ->actingAs($admin)
+        ->get('/admin/paygo-users?search=student@example.com')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/PaygoUsers/Index')
+            ->where('paygoUsers.data.0.email', 'student@example.com')
+            ->where('paygoUsers.data.0.phone', '08012345678')
+            ->where('paygoUsers.data.0.flow_type', 'result')
+            ->where('paygoUsers.data.0.status', 'paid')
+            ->where('stats.total', 1)
+            ->where('stats.paid', 1)
+        );
+});
+
+it('stores PayGo identity contact email and phone for admin management', function () {
+    $user = createPaygoCustomer();
+    $service = createPaygoNinService(100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+
+    $intent = app(PaygoVerificationService::class)->createIntent($paygoService, [
+        'nin' => '12345678901',
+        'email' => 'identity@example.com',
+        'phone' => '08098765432',
+    ]);
+
+    expect($intent->buyer_phone)->toBe('08098765432')
+        ->and($intent->metadata['buyer_email'])->toBe('identity@example.com');
 });
 
 it('exposes one generic result verification option when customers create paygo services', function () {

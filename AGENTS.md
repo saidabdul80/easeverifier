@@ -8,6 +8,7 @@
 - Do not add `RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation`, `DatabaseTransactions`, manual table truncation, destructive SQL, or migration-refresh logic to PHP tests unless the test is provably isolated to sqlite `:memory:` before Laravel boots and the user has approved that testing approach.
 - Before running any test, migration, seeder, tinker command, or Artisan command that may touch the database, first prove the active connection is a safe test database. For tests, this must be sqlite with `DB_DATABASE=:memory:` verified before Laravel test setup can run. Do not rely on cached config, `.env`, or `phpunit.xml` by assumption.
 - Do not run `php artisan test`, `pest`, `phpunit`, `migrate:fresh`, `migrate:refresh`, `migrate:reset`, `db:wipe`, `schema:dump --prune`, destructive SQL, or any similar command against MySQL, production, staging, or local development databases.
+- In this repository, the only approved test commands are `composer test`, `composer test:safe`, or `APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test ...`. Do not run raw `php artisan test` unless those environment variables are present in the same command.
 - If verification needs database access and safety cannot be proven first, stop and ask the user instead of running the command.
 
 # Laravel Boost Guidelines

@@ -5,8 +5,9 @@ use App\Http\Controllers\Admin\CampaignEmailController as AdminCampaignEmailCont
 use App\Http\Controllers\Admin\CustomerController as AdminCustomerController;
 // Controllers
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
-use App\Http\Controllers\Admin\ProviderController as AdminProviderController;
+use App\Http\Controllers\Admin\PaygoUserController as AdminPaygoUserController;
 use App\Http\Controllers\Admin\PaystackSplitLedgerController as AdminPaystackSplitLedgerController;
+use App\Http\Controllers\Admin\ProviderController as AdminProviderController;
 use App\Http\Controllers\Admin\ResultPinController as AdminResultPinController;
 use App\Http\Controllers\Admin\ServiceController as AdminServiceController;
 use App\Http\Controllers\Admin\TransactionController as AdminTransactionController;
@@ -171,6 +172,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::get('transactions/export', [AdminTransactionController::class, 'export'])->name('transactions.export');
     Route::get('transactions/{transaction}', [AdminTransactionController::class, 'show'])->name('transactions.show');
     Route::get('paystack-splits', [AdminPaystackSplitLedgerController::class, 'index'])->name('paystack-splits.index');
+    Route::get('paygo-users', [AdminPaygoUserController::class, 'index'])->name('paygo-users.index');
 
     // Verifications
     Route::get('verifications', [AdminVerificationController::class, 'index'])->name('verifications.index');
