@@ -727,8 +727,8 @@ class PublicPaygoVerificationController extends Controller
     {
         $intent->loadMissing('paygoService');
         $url = $success
-            ? ($intent->metadata['success_url_snapshot'] ?? $intent->paygoService?->success_url)
-            : ($intent->metadata['failure_url_snapshot'] ?? $intent->paygoService?->failure_url);
+            ? ($intent->paygoService?->success_url ?? $intent->metadata['success_url_snapshot'] ?? null)
+            : ($intent->paygoService?->failure_url ?? $intent->metadata['failure_url_snapshot'] ?? null);
 
         if ($url) {
             $query = array_filter([

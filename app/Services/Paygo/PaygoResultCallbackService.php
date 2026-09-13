@@ -60,8 +60,8 @@ class PaygoResultCallbackService
         }
 
         $url = $successUrl
-            ? ($intent->metadata['success_url_snapshot'] ?? $intent->paygoService?->success_url)
-            : ($intent->metadata['failure_url_snapshot'] ?? $intent->paygoService?->failure_url);
+            ? ($intent->paygoService?->success_url ?? $intent->metadata['success_url_snapshot'] ?? null)
+            : ($intent->paygoService?->failure_url ?? $intent->metadata['failure_url_snapshot'] ?? null);
 
         if (blank($url)) {
             return null;

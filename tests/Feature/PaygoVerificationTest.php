@@ -530,6 +530,9 @@ it('reuses a paid paygo result intent instead of initializing another payment wh
         'paid_at' => now(),
         'reference_fetches' => 1,
         'verification_request_id' => $verification->id,
+        'metadata' => array_merge($intent->metadata ?? [], [
+            'success_url_snapshot' => 'https://school.test',
+        ]),
     ]);
 
     $this->post("/paygo/results/{$paygoService->public_slug}", array_merge($params, [
