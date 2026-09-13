@@ -2,8 +2,8 @@
 
 namespace App\Services\Paygo;
 
-use App\Models\CustomerPaygoService;
 use App\Models\Customer;
+use App\Models\CustomerPaygoService;
 use App\Models\CustomerPaystackSplitLedger;
 use App\Models\PaygoVerificationIntent;
 use App\Models\PaygoWallet;
@@ -101,6 +101,32 @@ class PaygoVerificationService
             })
             ->latest('id')
             ->first();
+    }
+
+    public function findPaidReusableResultIntent(CustomerPaygoService $paygoService, array $params): ?PaygoVerificationIntent
+    {
+        if (! $paygoService->isResultVerification()) {
+            return null;
+        }
+
+        $lookup = $this->resultSearchParameter($paygoService, $params);
+
+        if ($lookup === '') {
+            return null;
+        }
+
+        return PaygoVerificationIntent::query()
+            ->where('customer_paygo_service_id', $paygoService->id)
+            ->where('flow_type', 'result')
+            ->where('lookup_hash', PaygoVerificationIntent::hashLookup($paygoService->id.':'.$lookup))
+            ->where('status', 'paid')
+            ->whereColumn('reference_fetches', '<', 'max_fetches_snapshot')
+            ->where(function ($query) {
+                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->latest('id')
+            ->get()
+            ->first(fn (PaygoVerificationIntent $intent) => $this->resultPayloadMatches($intent->payload ?? [], $params));
     }
 
     public function completePayment(string $reference, array $paymentData): PaygoVerificationIntent
@@ -673,6 +699,23 @@ class PaygoVerificationService
     protected function maxFetchesForIntent(PaygoVerificationIntent $intent): int
     {
         return max(1, (int) ($intent->max_fetches_snapshot ?: self::MAX_VERIFICATION_ATTEMPTS));
+    }
+
+    protected function resultPayloadMatches(array $storedParams, array $submittedParams): bool
+    {
+        return $this->normalizedResultPayload($storedParams) === $this->normalizedResultPayload($submittedParams);
+    }
+
+    protected function normalizedResultPayload(array $params): array
+    {
+        $normalized = collect($params)
+            ->filter(fn ($value) => filled($value))
+            ->map(fn ($value) => trim((string) $value))
+            ->toArray();
+
+        ksort($normalized);
+
+        return $normalized;
     }
 
     protected function portalContextForIntent(CustomerPaygoService $paygoService, array $context): array

@@ -206,6 +206,7 @@ it('shows paid paygo payment intents and wallet ledger entries on the paygo tran
 
 it('initializes paygo payment with configured flat paystack split', function () {
     config([
+        'services.paystack.public_key' => 'paystack-public',
         'services.paystack.secret_key' => 'paystack-secret',
         'services.paystack.base_url' => 'https://api.paystack.co',
     ]);
@@ -472,6 +473,53 @@ it('allows a customer to publish a paygo result verification page', function () 
             ->where('paygoService.board', 'WAEC')
             ->where('fields.0.name', 'txtExamNumber')
         );
+});
+
+it('reuses a paid paygo result intent instead of initializing another payment while pulls remain', function () {
+    config([
+        'services.paystack.public_key' => 'paystack-public',
+        'services.paystack.secret_key' => 'paystack-secret',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
+    Http::fake();
+
+    $user = createPaygoCustomer();
+    $user->customer->update(['paygo_result_reference_fetch_limit' => 2]);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+    $params = [
+        'txtExamNumber' => '1234567890',
+        'ExamYear' => '2025',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '123456789012',
+        'txtCardSerialNo' => 'WRN123456789',
+    ];
+
+    $intent = app(PaygoVerificationService::class)->createIntent($paygoService->fresh(['user.customer', 'verificationService']), [
+        'params' => $params,
+        'email' => 'student@example.com',
+        'phone' => '08012345678',
+    ]);
+
+    $intent->update([
+        'status' => 'paid',
+        'paid_at' => now(),
+        'reference_fetches' => 1,
+    ]);
+
+    $this->post("/paygo/results/{$paygoService->public_slug}", array_merge($params, [
+        'email' => 'student@example.com',
+        'phone' => '08012345678',
+    ]))->assertRedirect(route('paygo.results.paid', $intent->reference));
+
+    expect(PaygoVerificationIntent::count())->toBe(1);
+    Http::assertNothingSent();
+
+    expect(app(PaygoVerificationService::class)->findPaidReusableResultIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        array_merge($params, ['txtPIN' => '000000000000']),
+    ))->toBeNull();
 });
 
 it('lets admins manage PayGo users collected from verification intents', function () {

@@ -200,6 +200,11 @@ class PublicPaygoVerificationController extends Controller
             ->filter(fn ($value) => filled($value))
             ->toArray();
 
+        $existingIntent = $this->paygo->findPaidReusableResultIntent($paygoService, $params);
+        if ($existingIntent) {
+            return redirect()->route('paygo.results.paid', $existingIntent->reference);
+        }
+
         try {
             $intent = $this->paygo->createIntent($paygoService, [
                 'params' => $params,
