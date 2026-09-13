@@ -34,7 +34,6 @@ const props = defineProps<{
         candidate_id?: string | null;
         portal_ref?: string | null;
         state?: string | null;
-        return_url?: string | null;
     };
 }>();
 
@@ -64,7 +63,6 @@ const form = useForm<Record<string, any>>({
     candidate_id: props.prefill?.candidate_id || '',
     portal_ref: props.prefill?.portal_ref || '',
     state: props.prefill?.state || '',
-    return_url: props.prefill?.return_url || '',
 });
 
 const formatCurrency = (amount: number) =>
@@ -165,14 +163,7 @@ const withPortalContext = (url?: string | null) => {
 
     const query = new URLSearchParams();
 
-    [
-        'candidate_id',
-        'portal_ref',
-        'state',
-        'return_url',
-        'email',
-        'phone',
-    ].forEach((key) => {
+    ['candidate_id', 'portal_ref', 'state', 'email', 'phone'].forEach((key) => {
         const value = form[key];
 
         if (value) {

@@ -231,7 +231,6 @@ class PublicPaygoVerificationController extends Controller
                     'candidate_id' => $validated['candidate_id'] ?? null,
                     'portal_ref' => $validated['portal_ref'] ?? null,
                     'state' => $validated['state'] ?? null,
-                    'return_url' => $validated['return_url'] ?? null,
                 ],
             ], $request->ip());
         } catch (RuntimeException $exception) {
@@ -437,7 +436,6 @@ class PublicPaygoVerificationController extends Controller
                 'candidate_id' => request()->string('candidate_id')->value(),
                 'portal_ref' => request()->string('portal_ref')->value(),
                 'state' => request()->string('state')->value(),
-                'return_url' => request()->string('return_url')->value(),
             ],
         ]);
     }
@@ -487,7 +485,6 @@ class PublicPaygoVerificationController extends Controller
             'candidate_id' => 'nullable|string|max:120',
             'portal_ref' => 'nullable|string|max:120',
             'state' => 'nullable|string|max:500',
-            'return_url' => 'nullable|url|max:2048',
         ];
 
         foreach ($fields as $field) {
@@ -519,10 +516,6 @@ class PublicPaygoVerificationController extends Controller
 
         if (filled($validated['state'] ?? null)) {
             $metadata['portal_state'] = (string) $validated['state'];
-        }
-
-        if (filled($validated['return_url'] ?? null)) {
-            $metadata['return_url'] = (string) $validated['return_url'];
         }
 
         if ($metadata === []) {
