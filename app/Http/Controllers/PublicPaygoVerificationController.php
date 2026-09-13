@@ -502,6 +502,7 @@ class PublicPaygoVerificationController extends Controller
         return $request->validate($rules);
     }
 
+    
     protected function syncResultPortalContext(PaygoVerificationIntent $intent, array $validated): void
     {
         $metadata = [];
