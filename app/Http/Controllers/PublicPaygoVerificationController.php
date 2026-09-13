@@ -202,6 +202,18 @@ class PublicPaygoVerificationController extends Controller
 
         $existingIntent = $this->paygo->findPaidReusableResultIntent($paygoService, $params);
         if ($existingIntent) {
+            $existingIntent->loadMissing(['paygoService.user.customer', 'verificationRequest']);
+
+            $redirect = $this->resultCallbacks->redirectToConfiguredUrl($existingIntent, true, [
+                'status' => 'paid',
+                'payment_status' => 'paid',
+                'result_status' => $existingIntent->verificationRequest?->status === 'completed' ? 'ready' : 'paid',
+            ]);
+
+            if ($redirect) {
+                return $redirect;
+            }
+
             return redirect()->route('paygo.results.paid', $existingIntent->reference);
         }
 

@@ -488,6 +488,11 @@ it('reuses a paid paygo result intent instead of initializing another payment wh
     $user->customer->update(['paygo_result_reference_fetch_limit' => 2]);
     $service = createPaygoResultService(price: 100);
     $paygoService = createPaygoServiceFor($user, $service, price: 150);
+    $paygoService->update([
+        'success_url' => 'https://school.test/verify/success',
+        'failure_url' => 'https://school.test/verify/failure',
+        'callback_mode' => 'redirect',
+    ]);
     $params = [
         'txtExamNumber' => '1234567890',
         'ExamYear' => '2025',
@@ -502,16 +507,38 @@ it('reuses a paid paygo result intent instead of initializing another payment wh
         'phone' => '08012345678',
     ]);
 
+    $verification = VerificationRequest::create([
+        'user_id' => $user->id,
+        'verification_service_id' => $service->id,
+        'reference' => VerificationRequest::generateReference(),
+        'search_parameter' => '1234567890',
+        'request_data' => ['board' => 'waec', 'action' => 'fetch'],
+        'response_data' => [
+            'candidate' => [
+                'name' => 'Paid Candidate',
+                'exam_number' => '1234567890',
+            ],
+        ],
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'paygo',
+        'completed_at' => now(),
+    ]);
+
     $intent->update([
         'status' => 'paid',
         'paid_at' => now(),
         'reference_fetches' => 1,
+        'verification_request_id' => $verification->id,
     ]);
 
     $this->post("/paygo/results/{$paygoService->public_slug}", array_merge($params, [
         'email' => 'student@example.com',
         'phone' => '08012345678',
-    ]))->assertRedirect(route('paygo.results.paid', $intent->reference));
+    ]))->assertRedirect(
+        'https://school.test/verify/success?reference='.$intent->reference
+        .'&status=paid&payment_status=paid&result_status=ready'
+    );
 
     expect(PaygoVerificationIntent::count())->toBe(1);
     Http::assertNothingSent();
