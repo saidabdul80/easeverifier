@@ -507,12 +507,13 @@ onMounted(() => {
                                                 />
 
                                                 <div
-                                                    class="d-flex flex-column flex-sm-row ga-3"
+                                                    class="confirmation-actions"
                                                 >
                                                     <v-btn
                                                         variant="outlined"
                                                         color="primary"
                                                         class="confirmation-action"
+                                                        size="large"
                                                         @click="
                                                             confirmationOpen = false
                                                         "
@@ -522,6 +523,7 @@ onMounted(() => {
                                                     <v-btn
                                                         color="secondary"
                                                         class="confirmation-action"
+                                                        size="large"
                                                         :disabled="
                                                             !consentChecked
                                                         "
@@ -631,16 +633,56 @@ onMounted(() => {
 }
 
 .confirmation-row span {
+    flex: 0 0 auto;
     color: #5f6f65;
 }
 
 .confirmation-row strong {
+    min-width: 0;
     color: #0f3e20;
     text-align: right;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.confirmation-actions {
+    display: flex;
+    gap: 0.75rem;
 }
 
 .confirmation-action {
     flex: 1 1 0;
     min-width: 0;
+    min-height: 44px;
+}
+
+@media (max-width: 600px) {
+    .paygo-container {
+        padding: 1rem;
+    }
+
+    .confirmation-row {
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .confirmation-row span {
+        flex: 0 1 46%;
+    }
+
+    .confirmation-row strong {
+        flex: 1 1 54%;
+        font-size: 0.95rem;
+        line-height: 1.35;
+    }
+
+    .confirmation-actions {
+        flex-direction: column;
+    }
+
+    .confirmation-action {
+        width: 100%;
+        flex-basis: auto;
+    }
 }
 </style>
