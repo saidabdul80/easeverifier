@@ -202,6 +202,7 @@ class PublicPaygoVerificationController extends Controller
 
         $existingIntent = $this->paygo->findPaidReusableResultIntent($paygoService, $params);
         if ($existingIntent) {
+            $this->syncResultPortalContext($existingIntent, $validated);
             $existingIntent->loadMissing(['paygoService.user.customer', 'verificationRequest']);
 
             $redirect = $this->resultCallbacks->redirectToConfiguredUrl($existingIntent, true, [
@@ -230,6 +231,7 @@ class PublicPaygoVerificationController extends Controller
                     'candidate_id' => $validated['candidate_id'] ?? null,
                     'portal_ref' => $validated['portal_ref'] ?? null,
                     'state' => $validated['state'] ?? null,
+                    'return_url' => $validated['return_url'] ?? null,
                 ],
             ], $request->ip());
         } catch (RuntimeException $exception) {
@@ -435,6 +437,7 @@ class PublicPaygoVerificationController extends Controller
                 'candidate_id' => request()->string('candidate_id')->value(),
                 'portal_ref' => request()->string('portal_ref')->value(),
                 'state' => request()->string('state')->value(),
+                'return_url' => request()->string('return_url')->value(),
             ],
         ]);
     }
@@ -484,6 +487,7 @@ class PublicPaygoVerificationController extends Controller
             'candidate_id' => 'nullable|string|max:120',
             'portal_ref' => 'nullable|string|max:120',
             'state' => 'nullable|string|max:500',
+            'return_url' => 'nullable|url|max:2048',
         ];
 
         foreach ($fields as $field) {
@@ -499,6 +503,35 @@ class PublicPaygoVerificationController extends Controller
         }
 
         return $request->validate($rules);
+    }
+
+    protected function syncResultPortalContext(PaygoVerificationIntent $intent, array $validated): void
+    {
+        $metadata = [];
+
+        if (filled($validated['candidate_id'] ?? null)) {
+            $metadata['candidate_id'] = (string) $validated['candidate_id'];
+        }
+
+        if (filled($validated['portal_ref'] ?? null)) {
+            $metadata['portal_ref'] = (string) $validated['portal_ref'];
+        }
+
+        if (filled($validated['state'] ?? null)) {
+            $metadata['portal_state'] = (string) $validated['state'];
+        }
+
+        if (filled($validated['return_url'] ?? null)) {
+            $metadata['return_url'] = (string) $validated['return_url'];
+        }
+
+        if ($metadata === []) {
+            return;
+        }
+
+        $intent->update([
+            'metadata' => array_merge($intent->metadata ?? [], $metadata),
+        ]);
     }
 
     protected function alreadyPaid(CustomerPaygoService $paygoService, \App\Models\PaygoVerificationIntent $intent): Response

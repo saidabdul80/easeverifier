@@ -726,6 +726,7 @@ class PaygoVerificationService
             'candidate_id' => filled($context['candidate_id'] ?? null) ? (string) $context['candidate_id'] : null,
             'portal_ref' => filled($context['portal_ref'] ?? null) ? (string) $context['portal_ref'] : null,
             'portal_state' => filled($context['state'] ?? null) ? (string) $context['state'] : null,
+            'return_url' => filled($context['return_url'] ?? null) ? (string) $context['return_url'] : null,
             'referral_code' => $customer?->referral_code,
             'callback_mode' => $paygoService->callback_mode ?? 'redirect',
             'success_url_snapshot' => $paygoService->success_url,

@@ -15,8 +15,7 @@ class PaygoResultCallbackService
         ?array $resultData = null,
         ?string $errorMessage = null,
         ?string $errorCode = null
-    ): void
-    {
+    ): void {
         if (! $this->usesWebhookCallback($intent)) {
             return;
         }
@@ -60,13 +59,15 @@ class PaygoResultCallbackService
             return null;
         }
 
-        $url = $successUrl
+        $configuredUrl = $successUrl
             ? ($intent->metadata['success_url_snapshot'] ?? $intent->paygoService?->success_url)
             : ($intent->metadata['failure_url_snapshot'] ?? $intent->paygoService?->failure_url);
 
-        if (blank($url)) {
+        if (blank($configuredUrl)) {
             return null;
         }
+
+        $url = $this->targetRedirectUrl($intent, $configuredUrl, $successUrl);
 
         $context = [
             'reference' => $intent->reference,
@@ -81,6 +82,38 @@ class PaygoResultCallbackService
         ));
 
         return redirect()->away($url.(str_contains($url, '?') ? '&' : '?').$queryString);
+    }
+
+    protected function targetRedirectUrl(PaygoVerificationIntent $intent, string $configuredUrl, bool $successUrl): string
+    {
+        $returnUrl = $intent->metadata['return_url'] ?? null;
+
+        if (! $successUrl || blank($returnUrl)) {
+            return $configuredUrl;
+        }
+
+        return $this->isAllowedReturnUrl($returnUrl, $configuredUrl)
+            ? $returnUrl
+            : $configuredUrl;
+    }
+
+    protected function isAllowedReturnUrl(string $returnUrl, string $configuredUrl): bool
+    {
+        $returnParts = parse_url($returnUrl);
+        $configuredParts = parse_url($configuredUrl);
+
+        if (! in_array(strtolower((string) ($returnParts['scheme'] ?? '')), ['http', 'https'], true)) {
+            return false;
+        }
+
+        $returnHost = strtolower((string) ($returnParts['host'] ?? ''));
+        $configuredHost = strtolower((string) ($configuredParts['host'] ?? ''));
+
+        if ($returnHost === '' || $configuredHost === '' || $returnHost !== $configuredHost) {
+            return false;
+        }
+
+        return (int) ($returnParts['port'] ?? 0) === (int) ($configuredParts['port'] ?? 0);
     }
 
     protected function buildWebhookPayload(

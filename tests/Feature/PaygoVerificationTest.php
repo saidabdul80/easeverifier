@@ -489,10 +489,11 @@ it('reuses a paid paygo result intent instead of initializing another payment wh
     $service = createPaygoResultService(price: 100);
     $paygoService = createPaygoServiceFor($user, $service, price: 150);
     $paygoService->update([
-        'success_url' => 'https://school.test/verify/success',
+        'success_url' => 'https://school.test',
         'failure_url' => 'https://school.test/verify/failure',
         'callback_mode' => 'redirect',
     ]);
+    $returnUrl = 'https://school.test/students/verification/result';
     $params = [
         'txtExamNumber' => '1234567890',
         'ExamYear' => '2025',
@@ -535,8 +536,9 @@ it('reuses a paid paygo result intent instead of initializing another payment wh
     $this->post("/paygo/results/{$paygoService->public_slug}", array_merge($params, [
         'email' => 'student@example.com',
         'phone' => '08012345678',
+        'return_url' => $returnUrl,
     ]))->assertRedirect(
-        'https://school.test/verify/success?reference='.$intent->reference
+        $returnUrl.'?reference='.$intent->reference
         .'&status=paid&payment_status=paid&result_status=ready'
     );
 
@@ -545,11 +547,12 @@ it('reuses a paid paygo result intent instead of initializing another payment wh
         ->post("/paygo/results/{$paygoService->public_slug}", array_merge($params, [
             'email' => 'student@example.com',
             'phone' => '08012345678',
+            'return_url' => $returnUrl,
         ]))
         ->assertStatus(409)
         ->assertHeader(
             'X-Inertia-Location',
-            'https://school.test/verify/success?reference='.$intent->reference
+            $returnUrl.'?reference='.$intent->reference
             .'&status=paid&payment_status=paid&result_status=ready',
         );
 
