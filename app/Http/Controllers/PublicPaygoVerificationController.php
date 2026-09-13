@@ -211,6 +211,10 @@ class PublicPaygoVerificationController extends Controller
             ]);
 
             if ($redirect) {
+                if ($request->header('X-Inertia')) {
+                    return Inertia::location($redirect->getTargetUrl());
+                }
+
                 return $redirect;
             }
 

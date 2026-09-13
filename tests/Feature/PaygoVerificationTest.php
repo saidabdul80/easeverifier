@@ -540,6 +540,19 @@ it('reuses a paid paygo result intent instead of initializing another payment wh
         .'&status=paid&payment_status=paid&result_status=ready'
     );
 
+    $this
+        ->withHeaders(['X-Inertia' => 'true'])
+        ->post("/paygo/results/{$paygoService->public_slug}", array_merge($params, [
+            'email' => 'student@example.com',
+            'phone' => '08012345678',
+        ]))
+        ->assertStatus(409)
+        ->assertHeader(
+            'X-Inertia-Location',
+            'https://school.test/verify/success?reference='.$intent->reference
+            .'&status=paid&payment_status=paid&result_status=ready',
+        );
+
     expect(PaygoVerificationIntent::count())->toBe(1);
     Http::assertNothingSent();
 
