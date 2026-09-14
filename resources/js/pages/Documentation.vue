@@ -8,6 +8,45 @@ const copied = ref(false);
 const baseUrl = 'https://verify.ashlabtech.ng/api/v1';
 const testNin = '11111111111';
 
+const identityServices = [
+    {
+        name: 'NIN Verification',
+        endpoint: 'POST /verify/nin',
+        searchValue: 'NIN',
+        request: `curl -X POST ${baseUrl}/verify/nin \\
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"nin":"${testNin}","consent":true}'`,
+    },
+    {
+        name: 'BVN Verification',
+        endpoint: 'POST /verify/bvn',
+        searchValue: 'BVN',
+        request: `curl -X POST ${baseUrl}/verify/bvn \\
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"nin":"22123456789","consent":true}'`,
+    },
+    {
+        name: 'CAC Verification',
+        endpoint: 'POST /verify/cac',
+        searchValue: 'RC Number',
+        request: `curl -X POST ${baseUrl}/verify/cac \\
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"nin":"RC1234567","consent":true}'`,
+    },
+    {
+        name: "Driver's License Verification",
+        endpoint: 'POST /verify/drivers-license',
+        searchValue: "Driver's License Number",
+        request: `curl -X POST ${baseUrl}/verify/drivers-license \\
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"nin":"ABC123456789","consent":true}'`,
+    },
+];
+
 const sections = [
     { id: 'overview', title: 'Overview', icon: 'mdi-rocket-launch' },
     { id: 'authentication', title: 'Authentication', icon: 'mdi-lock' },
@@ -78,10 +117,6 @@ const copyCode = async (code: string) => {
 };
 
 const authHeader = `Authorization: Bearer YOUR_BEARER_TOKEN`;
-const ninRequest = `curl -X POST ${baseUrl}/verify/nin \\
-  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '{"nin":"${testNin}","consent":true}'`;
 
 const successResponse = `{
   "success": true,
@@ -233,22 +268,24 @@ const errorResponse = `{
                             <section v-show="activeSection === 'identity'" class="mb-12">
                                 <h1 class="text-h4 font-weight-bold mb-4">Identity Verification</h1>
                                 <p class="text-body-1 text-grey-darken-1 mb-6">
-                                    Identity endpoints verify a search parameter against the configured provider chain. The current request field is <code>nin</code> for <code>/verify/nin</code>, <code>/verify/bvn</code>, and <code>/verify/{service}</code>.
+                                    Identity endpoints verify a search value against the configured provider chain. The current request field is <code>nin</code> for all identity services, including BVN, CAC, and driver's license checks.
                                 </p>
                                 <v-alert type="info" variant="tonal" class="mb-4">
-                                    For test NIN verification, send <strong>{{ testNin }}</strong>. Other NIN values are rejected for test keys.
+                                    For test NIN verification, send <strong>{{ testNin }}</strong>. Other NIN values are rejected for test keys. Services disabled by admin settings return <code>SERVICE_UNAVAILABLE</code>.
                                 </v-alert>
                                 <v-table class="mb-6">
-                                    <thead><tr><th>Endpoint</th><th>Body</th></tr></thead>
+                                    <thead><tr><th>Service</th><th>Endpoint</th><th>Body</th></tr></thead>
                                     <tbody>
-                                        <tr><td><code>POST /verify/nin</code></td><td><code>{ "nin": "...", "consent": true }</code></td></tr>
-                                        <tr><td><code>POST /verify/bvn</code></td><td><code>{ "nin": "BVN_OR_SEARCH_VALUE", "consent": true }</code></td></tr>
-                                        <tr><td><code>POST /verify/{service}</code></td><td><code>{ "nin": "SEARCH_VALUE", "consent": true }</code></td></tr>
+                                        <tr v-for="service in identityServices" :key="service.endpoint">
+                                            <td>{{ service.name }}</td>
+                                            <td><code>{{ service.endpoint }}</code></td>
+                                            <td><code>{ "nin": "{{ service.searchValue }}", "consent": true }</code></td>
+                                        </tr>
                                     </tbody>
                                 </v-table>
-                                <v-card variant="outlined" class="mb-4">
-                                    <v-card-title>NIN Request</v-card-title>
-                                    <v-card-text class="bg-grey-darken-4"><pre class="text-green-lighten-1 text-body-2" style="white-space: pre-wrap;">{{ ninRequest }}</pre></v-card-text>
+                                <v-card v-for="service in identityServices" :key="service.name" variant="outlined" class="mb-4">
+                                    <v-card-title>{{ service.name }} Request</v-card-title>
+                                    <v-card-text class="bg-grey-darken-4"><pre class="text-green-lighten-1 text-body-2" style="white-space: pre-wrap;">{{ service.request }}</pre></v-card-text>
                                 </v-card>
                                 <v-card variant="outlined">
                                     <v-card-title>Success Response</v-card-title>
