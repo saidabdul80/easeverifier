@@ -48,9 +48,17 @@ class VerificationController extends Controller
     protected function performVerification(Request $request, string $serviceSlug): JsonResponse
     {
         $validated = $request->validate([
-            'nin' => 'required|string|max:255',
             'consent' => 'required|boolean',
         ]);
+
+        $searchParameter = $this->searchParameterFromRequest($request, $serviceSlug);
+        if ($searchParameter === '') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Missing required verification field: '.$this->primarySearchField($serviceSlug),
+                'error_code' => 'VALIDATION_ERROR',
+            ], 422);
+        }
 
         // Use caching for service lookup (faster)
         $service = VerificationService::where('slug', $serviceSlug)->first();
@@ -66,7 +74,7 @@ class VerificationController extends Controller
         $apiKey = $request->get('api_key'); // Set by ApiAuthentication middleware
         $branch = $request->get('branch');
 
-        if ($serviceSlug === 'nin' && $apiKey?->environment === 'test' && $validated['nin'] !== self::TEST_NIN) {
+        if ($serviceSlug === 'nin' && $apiKey?->environment === 'test' && $searchParameter !== self::TEST_NIN) {
             return response()->json([
                 'success' => false,
                 'error' => sprintf('Test API keys can only verify the test NIN %s.', self::TEST_NIN),
@@ -78,7 +86,8 @@ class VerificationController extends Controller
         $existingVerification = VerificationRequest::where('user_id', $user->id)
             ->when($branch, fn ($query) => $query->where('branch_id', $branch->id))
             ->when(!$branch, fn ($query) => $query->whereNull('branch_id'))
-            ->where('search_parameter', $validated['nin'])
+            ->where('verification_service_id', $service->id)
+            ->where('search_parameter', $searchParameter)
             ->where('status', 'completed')
             ->whereNotNull('response_data')
             ->with('serviceProvider:id,updated_at,environment')
@@ -96,7 +105,7 @@ class VerificationController extends Controller
                 'status' => 200,
                 'data' => $data,
                 'response_time' => 0,
-                'message' => 'NIN Verified Successfully',
+                'message' => $this->successMessage($service),
                 'sandbox' => $existingVerification->serviceProvider?->environment === 'test',
             ]);
         }
@@ -107,7 +116,7 @@ class VerificationController extends Controller
             ->verify(
                 user: $user,
                 service: $service,
-                searchParameter: $validated['nin'],
+                searchParameter: $searchParameter,
                 source: 'api',
                 ipAddress: $request->ip(),
                 branch: $branch,
@@ -120,7 +129,7 @@ class VerificationController extends Controller
                 'status'=>200,
                 'data' => $data,
                 'response_time' => $result->responseTime,
-                'message'=>'NIN Verified Successfully',
+                'message'=> $this->successMessage($service),
                 'sandbox' => $result->sandbox,
             ]);
         }
@@ -130,6 +139,44 @@ class VerificationController extends Controller
             'error' => $result->getErrorMessage(),
             'error_code' => $result->errorCode,
         ], 400);
+    }
+
+    protected function searchParameterFromRequest(Request $request, string $serviceSlug): string
+    {
+        foreach ($this->searchFieldsForService($serviceSlug) as $field) {
+            $value = trim((string) $request->input($field, ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function searchFieldsForService(string $serviceSlug): array
+    {
+        $fields = match ($serviceSlug) {
+            'nin' => ['nin'],
+            'bvn' => ['bvn'],
+            'cac' => ['rc_number', 'registration_number', 'cac'],
+            'drivers-license' => ['license_number', 'driver_license', 'drivers_license'],
+            default => [str_replace('-', '_', $serviceSlug), 'search_parameter'],
+        };
+
+        return in_array('nin', $fields, true) ? $fields : [...$fields, 'nin'];
+    }
+
+    protected function primarySearchField(string $serviceSlug): string
+    {
+        return $this->searchFieldsForService($serviceSlug)[0];
+    }
+
+    protected function successMessage(VerificationService $service): string
+    {
+        return "{$service->name} Verified Successfully";
     }
 
     /**

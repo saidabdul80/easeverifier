@@ -10,10 +10,10 @@ const baseUrl = 'https://verify.ashlabtech.ng/api/v1';
 const testNin = '11111111111';
 
 const identityServices = [
-    { name: 'NIN Verification', endpoint: 'POST /verify/nin', searchValue: 'NIN' },
-    { name: 'BVN Verification', endpoint: 'POST /verify/bvn', searchValue: 'BVN' },
-    { name: 'CAC Verification', endpoint: 'POST /verify/cac', searchValue: 'RC Number' },
-    { name: "Driver's License Verification", endpoint: 'POST /verify/drivers-license', searchValue: "Driver's License Number" },
+    { name: 'NIN Verification', endpoint: 'POST /verify/nin', field: 'nin', searchValue: 'NIN' },
+    { name: 'BVN Verification', endpoint: 'POST /verify/bvn', field: 'bvn', searchValue: 'BVN' },
+    { name: 'CAC Verification', endpoint: 'POST /verify/cac', field: 'rc_number', searchValue: 'RC Number' },
+    { name: "Driver's License Verification", endpoint: 'POST /verify/drivers-license', field: 'license_number', searchValue: "Driver's License Number" },
 ];
 
 const resultBoards = [
@@ -227,7 +227,7 @@ const errorResponse = `{
                     <v-card-text class="pa-6">
                         <h2 class="text-h5 font-weight-bold mb-4">Identity Verification</h2>
                         <p class="text-body-1 mb-4">
-                            Identity endpoints currently expect the search value in the <code>nin</code> field for every identity service, including BVN, CAC, and driver's license checks.
+                            Identity endpoints expect the search value in the field that matches the service you are calling.
                         </p>
                         <v-alert type="info" variant="tonal" class="mb-4">
                             For test NIN verification, send <strong>{{ testNin }}</strong>. Services disabled by admin settings return <code>SERVICE_UNAVAILABLE</code>.
@@ -240,7 +240,7 @@ const errorResponse = `{
                                 <tr v-for="service in identityServices" :key="service.endpoint">
                                     <td>{{ service.name }}</td>
                                     <td><code>{{ service.endpoint }}</code></td>
-                                    <td><code>{ "nin": "{{ service.searchValue }}", "consent": true }</code></td>
+                                    <td><code>{ "{{ service.field }}": "{{ service.searchValue }}", "consent": true }</code></td>
                                 </tr>
                             </tbody>
                         </v-table>

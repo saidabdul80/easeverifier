@@ -31,6 +31,19 @@ function createNinService(): VerificationService
     ]);
 }
 
+function createApiVerificationService(string $slug, string $name): VerificationService
+{
+    return VerificationService::create([
+        'name' => $name,
+        'slug' => $slug,
+        'description' => "Test {$name} service",
+        'default_price' => 100,
+        'cost_price' => 50,
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+}
+
 function attachApiProvider(VerificationService $service, ?array $responseMapping = null): ServiceProvider
 {
     return ServiceProvider::create([
@@ -95,6 +108,30 @@ it('allows the dedicated test nin for test api keys', function () {
             'sandbox' => true,
         ]);
 });
+
+it('accepts service-specific identity request fields', function (string $endpoint, string $field, string $value, string $slug, string $responseField) {
+    $user = createApiUser();
+    createApiVerificationService($slug, strtoupper(str_replace('-', ' ', $slug)).' Verification');
+
+    $apiKey = ApiKey::generate($user->id, 'Sandbox', 'test');
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+    ])->postJson($endpoint, [
+        $field => $value,
+        'consent' => true,
+    ]);
+
+    $response
+        ->assertOk()
+        ->assertJsonPath("data.{$responseField}", $value);
+
+    expect(VerificationRequest::query()->latest('id')->value('search_parameter'))->toBe($value);
+})->with([
+    'bvn' => ['/api/v1/verify/bvn', 'bvn', '22123456789', 'bvn', 'bvn'],
+    'cac' => ['/api/v1/verify/cac', 'rc_number', 'RC1234567', 'cac', 'rc_number'],
+    'drivers-license' => ['/api/v1/verify/drivers-license', 'license_number', 'ABC123456789', 'drivers-license', 'id'],
+]);
 
 it('does not require wallet balance for test api keys without test providers', function () {
     $user = createApiUser();

@@ -12,6 +12,7 @@ const identityServices = [
     {
         name: 'NIN Verification',
         endpoint: 'POST /verify/nin',
+        field: 'nin',
         searchValue: 'NIN',
         request: `curl -X POST ${baseUrl}/verify/nin \\
   -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
@@ -21,29 +22,32 @@ const identityServices = [
     {
         name: 'BVN Verification',
         endpoint: 'POST /verify/bvn',
+        field: 'bvn',
         searchValue: 'BVN',
         request: `curl -X POST ${baseUrl}/verify/bvn \\
   -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
   -H "Content-Type: application/json" \\
-  -d '{"nin":"22123456789","consent":true}'`,
+  -d '{"bvn":"22123456789","consent":true}'`,
     },
     {
         name: 'CAC Verification',
         endpoint: 'POST /verify/cac',
+        field: 'rc_number',
         searchValue: 'RC Number',
         request: `curl -X POST ${baseUrl}/verify/cac \\
   -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
   -H "Content-Type: application/json" \\
-  -d '{"nin":"RC1234567","consent":true}'`,
+  -d '{"rc_number":"RC1234567","consent":true}'`,
     },
     {
         name: "Driver's License Verification",
         endpoint: 'POST /verify/drivers-license',
+        field: 'license_number',
         searchValue: "Driver's License Number",
         request: `curl -X POST ${baseUrl}/verify/drivers-license \\
   -H "Authorization: Bearer YOUR_BEARER_TOKEN" \\
   -H "Content-Type: application/json" \\
-  -d '{"nin":"ABC123456789","consent":true}'`,
+  -d '{"license_number":"ABC123456789","consent":true}'`,
     },
 ];
 
@@ -268,7 +272,7 @@ const errorResponse = `{
                             <section v-show="activeSection === 'identity'" class="mb-12">
                                 <h1 class="text-h4 font-weight-bold mb-4">Identity Verification</h1>
                                 <p class="text-body-1 text-grey-darken-1 mb-6">
-                                    Identity endpoints verify a search value against the configured provider chain. The current request field is <code>nin</code> for all identity services, including BVN, CAC, and driver's license checks.
+                                    Identity endpoints verify a search value against the configured provider chain. Use the field name that matches the service you are calling.
                                 </p>
                                 <v-alert type="info" variant="tonal" class="mb-4">
                                     For test NIN verification, send <strong>{{ testNin }}</strong>. Other NIN values are rejected for test keys. Services disabled by admin settings return <code>SERVICE_UNAVAILABLE</code>.
@@ -279,7 +283,7 @@ const errorResponse = `{
                                         <tr v-for="service in identityServices" :key="service.endpoint">
                                             <td>{{ service.name }}</td>
                                             <td><code>{{ service.endpoint }}</code></td>
-                                            <td><code>{ "nin": "{{ service.searchValue }}", "consent": true }</code></td>
+                                            <td><code>{ "{{ service.field }}": "{{ service.searchValue }}", "consent": true }</code></td>
                                         </tr>
                                     </tbody>
                                 </v-table>
