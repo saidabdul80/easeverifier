@@ -6,6 +6,8 @@ interface PaygoResultService {
     name: string;
     public_slug: string;
     price: number;
+    reference_price?: number | null;
+    reference_success_limit?: number;
     service_name?: string | null;
     board: string;
     customer_name?: string | null;
@@ -34,6 +36,7 @@ const props = defineProps<{
         candidate_id?: string | null;
         portal_ref?: string | null;
         state?: string | null;
+        reference?: string | null;
     };
 }>();
 
@@ -63,6 +66,7 @@ const form = useForm<Record<string, any>>({
     candidate_id: props.prefill?.candidate_id || '',
     portal_ref: props.prefill?.portal_ref || '',
     state: props.prefill?.state || '',
+    reference: props.prefill?.reference || '',
 });
 
 const formatCurrency = (amount: number) =>
@@ -80,6 +84,14 @@ const selectedService = computed(
         ) ||
         null,
 );
+const usingPortalReference = computed(() => Boolean(form.reference));
+const selectedPrice = computed(() => {
+    if (!selectedService.value) return 0;
+
+    return usingPortalReference.value
+        ? Number(selectedService.value.reference_price || selectedService.value.price || 0)
+        : Number(selectedService.value.price || 0);
+});
 const selectorUrl = computed(
     () =>
         props.customer?.selector_url ||
@@ -163,7 +175,7 @@ const withPortalContext = (url?: string | null) => {
 
     const query = new URLSearchParams();
 
-    ['candidate_id', 'portal_ref', 'state', 'email', 'phone'].forEach((key) => {
+    ['candidate_id', 'portal_ref', 'state', 'reference', 'email', 'phone'].forEach((key) => {
         const value = form[key];
 
         if (value) {
@@ -392,7 +404,7 @@ onMounted(() => {
                                         >
                                         <strong>{{
                                             formatCurrency(
-                                                selectedService.price,
+                                                selectedPrice,
                                             )
                                         }}</strong>
                                     </div>

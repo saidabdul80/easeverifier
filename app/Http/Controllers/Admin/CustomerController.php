@@ -148,11 +148,15 @@ class CustomerController extends Controller
                     'service_slug' => $service->slug,
                     'board' => $this->boardFromResultFetchService($service),
                     'system_price' => $systemPrice,
+                    'reference_system_price' => $paygoService?->resultReferenceSystemPrice()
+                        ?? ($customer->customer?->paygoResultReferenceSystemPrice((float) $systemPrice) ?? max(1, (float) $systemPrice * 2)),
                     'suggested_price' => $paygoService ? (float) $paygoService->price : $systemPrice + 100,
+                    'suggested_reference_price' => $paygoService ? (float) $paygoService->resultReferencePrice() : max((float) $systemPrice + 100, ($customer->customer?->paygoResultReferenceSystemPrice((float) $systemPrice) ?? max(1, (float) $systemPrice * 2)) + 100),
                     'paygo_service' => $paygoService ? [
                         'id' => $paygoService->id,
                         'name' => $paygoService->name,
                         'price' => (float) $paygoService->price,
+                        'reference_price' => (float) $paygoService->resultReferencePrice(),
                         'is_active' => $paygoService->is_active,
                         'public_slug' => $paygoService->public_slug,
                         'result_url' => $paygoService->resultUrl(),
@@ -286,11 +290,13 @@ class CustomerController extends Controller
         $validated = $request->validate([
             'enabled' => 'required|boolean',
             'paygo_result_reference_fetch_limit' => 'required|integer|min:1|max:50',
+            'paygo_result_reference_system_price' => 'nullable|numeric|min:0',
         ]);
 
         $profile = $customer->customer()->firstOrNew(['user_id' => $customer->id]);
         $profile->result_fetch_enabled = $validated['enabled'];
         $profile->paygo_result_reference_fetch_limit = $validated['paygo_result_reference_fetch_limit'];
+        $profile->paygo_result_reference_system_price = $validated['paygo_result_reference_system_price'] ?? null;
 
         if (! $profile->account_type) {
             $profile->account_type = 'individual';
@@ -308,14 +314,22 @@ class CustomerController extends Controller
         $validated = $request->validate([
             'name' => 'nullable|string|max:120',
             'price' => 'required|numeric|min:1',
+            'reference_price' => 'nullable|numeric|min:1',
             'is_active' => 'required|boolean',
         ]);
 
         $minimum = (float) $customer->getPriceForService($service);
+        $referenceMinimum = $customer->customer?->paygoResultReferenceSystemPrice($minimum) ?? max(1, $minimum * 2);
 
         if ((float) $validated['price'] <= $minimum) {
             return back()->withErrors([
                 'price' => 'The public price must be above this customer system price of NGN '.number_format($minimum, 2).'.',
+            ]);
+        }
+
+        if (filled($validated['reference_price'] ?? null) && (float) $validated['reference_price'] <= $referenceMinimum) {
+            return back()->withErrors([
+                'reference_price' => 'The portal reference package price must be above NGN '.number_format($referenceMinimum, 2).'.',
             ]);
         }
 
@@ -335,6 +349,7 @@ class CustomerController extends Controller
         $paygoService->fill([
             'name' => $validated['name'] ?: strtoupper($this->boardFromResultFetchService($service)).' Result Verification',
             'price' => $validated['price'],
+            'reference_price' => $validated['reference_price'] ?? null,
             'is_active' => $validated['is_active'],
         ])->save();
 

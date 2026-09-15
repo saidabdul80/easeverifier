@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class PaygoVerificationIntent extends Model
@@ -69,7 +70,12 @@ class PaygoVerificationIntent extends Model
 
     public function isResultFlow(): bool
     {
-        return $this->flow_type === 'result';
+        return in_array($this->flow_type, ['result', 'result_reference'], true);
+    }
+
+    public function isResultReferenceFlow(): bool
+    {
+        return $this->flow_type === 'result_reference';
     }
 
     public function paygoService(): BelongsTo
@@ -95,5 +101,10 @@ class PaygoVerificationIntent extends Model
     public function verificationRequest(): BelongsTo
     {
         return $this->belongsTo(VerificationRequest::class);
+    }
+
+    public function resultAttempts(): HasMany
+    {
+        return $this->hasMany(PaygoResultAttempt::class);
     }
 }

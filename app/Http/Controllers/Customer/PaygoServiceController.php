@@ -34,6 +34,7 @@ class PaygoServiceController extends Controller
                 'name' => $service->name,
                 'public_slug' => $service->public_slug,
                 'price' => (float) $service->price,
+                'reference_price' => $service->isResultVerification() ? (float) $service->resultReferencePrice() : null,
                 'is_active' => $service->is_active,
                 'success_url' => $service->success_url,
                 'failure_url' => $service->failure_url,
@@ -44,6 +45,7 @@ class PaygoServiceController extends Controller
                 'service_type' => $service->isResultVerification() ? 'result' : 'identity',
                 'board' => $service->isResultVerification() ? strtoupper((string) $service->resultBoard()) : null,
                 'system_price' => (float) $request->user()->getPriceForService($service->verificationService),
+                'reference_system_price' => $service->isResultVerification() ? (float) $service->resultReferenceSystemPrice() : null,
                 'initiate_url' => $service->initiateUrl(),
                 'verify_url' => $service->verifyUrl(),
                 'result_url' => $service->isResultVerification() ? $service->resultUrl() : null,
@@ -284,6 +286,7 @@ class PaygoServiceController extends Controller
 
         $verificationService = VerificationService::active()->whereKey($validated['verification_service_id'])->firstOrFail();
         $minimum = (float) $request->user()->getPriceForService($verificationService);
+        $isResultFlow = $this->isResultBoardFetchService($verificationService);
 
         if ((float) $validated['price'] <= $minimum) {
             return back()->withErrors(['price' => 'The public price must be above your system service price of NGN '.number_format($minimum, 2).'.']);
@@ -296,6 +299,7 @@ class PaygoServiceController extends Controller
             'public_slug' => CustomerPaygoService::generatePublicSlug($validated['name']),
             'verify_secret_hash' => hash('sha256', CustomerPaygoService::generateSecret()),
             'price' => $validated['price'],
+            'reference_price' => $isResultFlow ? ($validated['reference_price'] ?? null) : null,
             'is_active' => true,
             'success_url' => $validated['success_url'] ?? null,
             'failure_url' => $validated['failure_url'] ?? null,
@@ -321,6 +325,7 @@ class PaygoServiceController extends Controller
 
         $verificationService = VerificationService::active()->whereKey($validated['verification_service_id'])->firstOrFail();
         $minimum = (float) $request->user()->getPriceForService($verificationService);
+        $isResultFlow = $this->isResultBoardFetchService($verificationService);
 
         if ((float) $validated['price'] <= $minimum) {
             return back()->withErrors(['price' => 'The public price must be above your system service price of NGN '.number_format($minimum, 2).'.']);
@@ -330,6 +335,7 @@ class PaygoServiceController extends Controller
             'verification_service_id' => $verificationService->id,
             'name' => $validated['name'],
             'price' => $validated['price'],
+            'reference_price' => $isResultFlow ? ($validated['reference_price'] ?? null) : null,
             'success_url' => $validated['success_url'] ?? null,
             'failure_url' => $validated['failure_url'] ?? null,
             'response_mode' => $validated['response_mode'] ?? $paygoService->response_mode ?? 'redirect',
@@ -337,9 +343,7 @@ class PaygoServiceController extends Controller
             'is_active' => $validated['is_active'] ?? $paygoService->is_active,
         ]);
 
-        if (! $paygoService->webhook_secret) {
-            $paygoService->update(['webhook_secret' => CustomerPaygoService::generateWebhookSecret()]);
-        }
+        $paygoService->ensureWebhookSecret();
 
         $this->syncCustomerWebhookUrl($request, $validated['webhook_url'] ?? null);
 
@@ -437,6 +441,7 @@ class PaygoServiceController extends Controller
                 },
             ],
             'price' => 'required|numeric|min:1',
+            'reference_price' => 'nullable|numeric|min:1',
             'success_url' => 'nullable|url|max:255',
             'failure_url' => 'nullable|url|max:255',
             'response_mode' => ['nullable', Rule::in(CustomerPaygoService::RESPONSE_MODES)],
@@ -447,6 +452,18 @@ class PaygoServiceController extends Controller
 
         $isResultFlow = $this->submissionTargetsResultFlow($request, $paygoService);
         $callbackMode = $validated['callback_mode'] ?? ($paygoService->callback_mode ?? 'redirect');
+
+        if ($isResultFlow && filled($validated['reference_price'] ?? null)) {
+            $referenceMinimum = $paygoService?->isResultVerification()
+                ? $paygoService->resultReferenceSystemPrice()
+                : $this->maxResultReferenceSystemPrice($request);
+
+            if ((float) $validated['reference_price'] <= $referenceMinimum) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'reference_price' => 'The portal reference package price must be above NGN '.number_format($referenceMinimum, 2).'.',
+                ]);
+            }
+        }
 
         if ($isResultFlow && in_array($callbackMode, ['redirect', 'hybrid'], true)) {
             if (blank($validated['success_url'] ?? null)) {
@@ -522,6 +539,17 @@ class PaygoServiceController extends Controller
             ->max();
     }
 
+    protected function maxResultReferenceSystemPrice(Request $request): float
+    {
+        return (float) $this->activeResultFetchServices()
+            ->map(function (VerificationService $service) use ($request) {
+                $fallback = (float) $request->user()->getPriceForService($service);
+
+                return $request->user()->customer?->paygoResultReferenceSystemPrice($fallback) ?? max(1, $fallback * 2);
+            })
+            ->max();
+    }
+
     protected function paygoVerificationServiceOptions(Request $request)
     {
         $services = VerificationService::active()
@@ -545,6 +573,7 @@ class PaygoServiceController extends Controller
                 'service_type' => 'result',
                 'board' => null,
                 'system_price' => $this->maxResultSystemPrice($request),
+                'reference_system_price' => $this->maxResultReferenceSystemPrice($request),
             ]);
         }
 
@@ -563,7 +592,7 @@ class PaygoServiceController extends Controller
             $sharedWebhookSecret = CustomerPaygoService::query()
                 ->where('user_id', $request->user()->id)
                 ->whereHas('verificationService', fn ($query) => $query->where('slug', 'like', '%-result-fetch'))
-                ->first()?->webhook_secret ?: CustomerPaygoService::generateWebhookSecret();
+                ->first()?->ensureWebhookSecret() ?: CustomerPaygoService::generateWebhookSecret();
 
             foreach ($this->activeResultFetchServices() as $service) {
                 $board = strtoupper($this->boardFromService($service));
@@ -581,12 +610,13 @@ class PaygoServiceController extends Controller
                 $paygoService->fill([
                     'name' => $board.' Result Verification',
                     'price' => $validated['price'],
+                    'reference_price' => $validated['reference_price'] ?? null,
                     'is_active' => true,
                     'success_url' => $validated['success_url'] ?? null,
                     'failure_url' => $validated['failure_url'] ?? null,
                     'response_mode' => $validated['response_mode'] ?? 'redirect',
                     'callback_mode' => $validated['callback_mode'] ?? 'redirect',
-                    'webhook_secret' => $paygoService->webhook_secret ?: $sharedWebhookSecret,
+                    'webhook_secret' => $paygoService->exists ? $paygoService->ensureWebhookSecret() : $sharedWebhookSecret,
                 ])->save();
             }
         });

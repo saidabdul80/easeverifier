@@ -152,6 +152,6 @@ class PaygoResultCallbackService
 
     protected function webhookSecret(PaygoVerificationIntent $intent): ?string
     {
-        return $intent->paygoService?->webhook_secret;
+        return $intent->paygoService?->ensureWebhookSecret();
     }
 }

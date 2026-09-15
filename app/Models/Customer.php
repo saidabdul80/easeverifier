@@ -46,6 +46,7 @@ class Customer extends Model
         'api_enabled',
         'result_fetch_enabled',
         'paygo_result_reference_fetch_limit',
+        'paygo_result_reference_system_price',
         'referral_code',
         'rate_limit',
         'allowed_ips',
@@ -58,6 +59,7 @@ class Customer extends Model
             'api_enabled' => 'boolean',
             'result_fetch_enabled' => 'boolean',
             'paygo_result_reference_fetch_limit' => 'integer',
+            'paygo_result_reference_system_price' => 'decimal:2',
             'rate_limit' => 'integer',
             'allowed_ips' => 'array',
             'metadata' => 'array',
@@ -176,6 +178,13 @@ class Customer extends Model
     public function paygoResultReferenceFetchLimit(): int
     {
         return max(1, (int) ($this->paygo_result_reference_fetch_limit ?: 3));
+    }
+
+    public function paygoResultReferenceSystemPrice(float $fallback): float
+    {
+        $configured = (float) ($this->paygo_result_reference_system_price ?? 0);
+
+        return $configured > 0 ? $configured : max(1, $fallback * 2);
     }
 
     public static function generateReferralCode(): string

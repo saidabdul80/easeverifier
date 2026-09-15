@@ -11,6 +11,7 @@ interface VerificationService {
     service_type?: 'identity' | 'result';
     board?: string | null;
     system_price: number;
+    reference_system_price?: number | null;
 }
 
 interface PaygoService {
@@ -18,6 +19,7 @@ interface PaygoService {
     name: string;
     public_slug: string;
     price: number;
+    reference_price?: number | null;
     is_active: boolean;
     success_url?: string | null;
     failure_url?: string | null;
@@ -27,6 +29,7 @@ interface PaygoService {
     service_type?: 'identity' | 'result';
     board?: string | null;
     system_price: number;
+    reference_system_price?: number | null;
     initiate_url: string;
     verify_url: string;
     result_url?: string | null;
@@ -131,7 +134,9 @@ const visiblePaygoServices = computed(() => {
                 slug: 'result-verification',
             },
             price: Math.max(...resultPaygoServices.value.map((service) => Number(service.price || 0))),
+            reference_price: Math.max(...resultPaygoServices.value.map((service) => Number(service.reference_price || 0))),
             system_price: Math.max(...resultPaygoServices.value.map((service) => Number(service.system_price || 0))),
+            reference_system_price: Math.max(...resultPaygoServices.value.map((service) => Number(service.reference_system_price || 0))),
             intents_count: resultPaygoServices.value.reduce((total, service) => total + service.intents_count, 0),
             paid_intents_count: resultPaygoServices.value.reduce((total, service) => total + service.paid_intents_count, 0),
             used_intents_count: resultPaygoServices.value.reduce((total, service) => total + service.used_intents_count, 0),
@@ -153,6 +158,7 @@ const form = useForm({
     name: '',
     verification_service_id: defaultServiceId.value as number | string | null,
     price: 0,
+    reference_price: 0,
     success_url: '',
     failure_url: '',
     response_mode: 'redirect' as 'redirect' | 'json',
@@ -184,6 +190,14 @@ const applySelectedServiceDefaults = () => {
     if (!editingService.value && selectedVerificationService.value && (!form.price || Number(form.price) <= selectedVerificationService.value.system_price)) {
         form.price = selectedVerificationService.value.system_price + 1;
     }
+
+    if (!editingService.value && selectedVerificationService.value?.service_type === 'result') {
+        const referenceMinimum = Number((selectedVerificationService.value as any).reference_system_price || selectedVerificationService.value.system_price * 2 || 0);
+
+        if (!form.reference_price || Number(form.reference_price) <= referenceMinimum) {
+            form.reference_price = referenceMinimum + 1;
+        }
+    }
 };
 
 const openCreateDialog = () => {
@@ -192,6 +206,7 @@ const openCreateDialog = () => {
     form.verification_service_id = defaultServiceId.value;
     form.webhook_url = props.customerWebhookUrl || '';
     form.callback_mode = 'redirect';
+    form.reference_price = 0;
     applySelectedServiceDefaults();
     form.is_active = true;
     showFormDialog.value = true;
@@ -204,6 +219,7 @@ const openEditDialog = (service: PaygoService) => {
     form.name = service.name;
     form.verification_service_id = service.is_group ? 'result' : service.service.id;
     form.price = service.price;
+    form.reference_price = service.reference_price || 0;
     form.success_url = service.success_url || '';
     form.failure_url = service.failure_url || '';
     form.response_mode = service.response_mode || 'redirect';
@@ -736,6 +752,16 @@ const verifyPostBody = `{
                         :error-messages="form.errors.verification_service_id"
                     />
                     <v-text-field v-model="form.price" label="Public Price (NGN)" type="number" variant="outlined" prepend-inner-icon="mdi-currency-ngn" class="mb-4" :error-messages="form.errors.price" />
+                    <v-text-field
+                        v-if="selectedVerificationService?.service_type === 'result' || editingService?.service_type === 'result'"
+                        v-model="form.reference_price"
+                        label="Portal Reference Package Price (NGN)"
+                        type="number"
+                        variant="outlined"
+                        prepend-inner-icon="mdi-currency-ngn"
+                        class="mb-4"
+                        :error-messages="form.errors.reference_price"
+                    />
                     <v-select
                         v-model="form.response_mode"
                         :items="[

@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 
 class CustomerPaygoService extends Model
@@ -22,6 +24,7 @@ class CustomerPaygoService extends Model
         'public_slug',
         'verify_secret_hash',
         'price',
+        'reference_price',
         'is_active',
         'success_url',
         'failure_url',
@@ -35,6 +38,7 @@ class CustomerPaygoService extends Model
     {
         return [
             'price' => 'decimal:2',
+            'reference_price' => 'decimal:2',
             'is_active' => 'boolean',
             'webhook_secret' => 'encrypted',
             'metadata' => 'array',
@@ -133,7 +137,7 @@ class CustomerPaygoService extends Model
                 'failure_url' => $template->failure_url,
                 'response_mode' => $template->response_mode ?? 'redirect',
                 'callback_mode' => $template->callback_mode ?? 'redirect',
-                'webhook_secret' => $template->webhook_secret ?: static::generateWebhookSecret(),
+                'webhook_secret' => $template->ensureWebhookSecret(),
             ]);
         }
     }
@@ -153,12 +157,24 @@ class CustomerPaygoService extends Model
 
     public function ensureWebhookSecret(): string
     {
-        if (filled($this->webhook_secret)) {
-            return $this->webhook_secret;
+        try {
+            if (filled($this->webhook_secret)) {
+                return $this->webhook_secret;
+            }
+        } catch (DecryptException) {
+            //
         }
 
         $secret = static::generateWebhookSecret();
-        $this->update(['webhook_secret' => $secret]);
+        $encryptedSecret = Crypt::encryptString($secret);
+
+        static::whereKey($this->getKey())->update([
+            'webhook_secret' => $encryptedSecret,
+        ]);
+
+        $this->setRawAttributes(array_merge($this->getAttributes(), [
+            'webhook_secret' => $encryptedSecret,
+        ]), true);
 
         return $secret;
     }
@@ -207,5 +223,32 @@ class CustomerPaygoService extends Model
         }
 
         return preg_replace('/-result-fetch$/', '', (string) $this->verificationService->slug);
+    }
+
+    public function resultReferenceSystemPrice(): float
+    {
+        if (! $this->isResultVerification()) {
+            return (float) $this->user?->getPriceForService($this->verificationService);
+        }
+
+        $this->loadMissing(['user.customer', 'verificationService']);
+        $fallback = (float) $this->user?->getPriceForService($this->verificationService);
+
+        return (float) ($this->user?->customer?->paygoResultReferenceSystemPrice($fallback) ?? max(1, $fallback * 2));
+    }
+
+    public function resultReferencePrice(): float
+    {
+        if (! $this->isResultVerification()) {
+            return (float) $this->price;
+        }
+
+        $configured = (float) ($this->reference_price ?? 0);
+
+        if ($configured > 0) {
+            return $configured;
+        }
+
+        return max((float) $this->price, $this->resultReferenceSystemPrice() + 1);
     }
 }

@@ -200,6 +200,78 @@ class PublicPaygoVerificationController extends Controller
             ->filter(fn ($value) => filled($value))
             ->toArray();
 
+        $externalReference = filled($validated['reference'] ?? null)
+            ? (string) $validated['reference']
+            : null;
+
+        if ($externalReference) {
+            try {
+                $intent = $this->paygo->createOrFindResultReferenceIntent($paygoService, $externalReference, [
+                    'params' => $params,
+                    'email' => $validated['email'] ?? null,
+                    'phone' => $validated['phone'] ?? null,
+                    'portal_context' => [
+                        'candidate_id' => $validated['candidate_id'] ?? null,
+                        'portal_ref' => $validated['portal_ref'] ?? null,
+                        'state' => $validated['state'] ?? null,
+                    ],
+                ], $request->ip());
+            } catch (RuntimeException $exception) {
+                return back()->withErrors(['result' => $exception->getMessage()])->withInput();
+            }
+
+            if ($intent->status === 'paid') {
+                try {
+                    $result = $this->paygo->fetchResultForPaidIntent($intent, $request->ip(), $params);
+                } catch (RuntimeException $exception) {
+                    return back()->withErrors(['result' => $exception->getMessage()])->withInput();
+                }
+
+                $intent = $intent->fresh(['paygoService.user.customer', 'verificationRequest']);
+
+                $this->resultCallbacks->sendResultWebhook(
+                    $intent,
+                    (bool) ($result['success'] ?? false),
+                    $result['data'] ?? null,
+                    $result['error'] ?? null,
+                    $result['error_code'] ?? null,
+                );
+
+                $redirect = $this->resultCallbacks->redirectToConfiguredUrl($intent, (bool) ($result['success'] ?? false), [
+                    'status' => 'paid',
+                    'payment_status' => 'paid',
+                    'result_status' => ($result['success'] ?? false) ? 'ready' : 'failed',
+                    'attempts_remaining' => $result['attempts_remaining'] ?? max(0, (int) $intent->max_fetches_snapshot - (int) $intent->verification_attempts),
+                ]);
+
+                if ($redirect) {
+                    if ($request->header('X-Inertia')) {
+                        return Inertia::location($redirect->getTargetUrl());
+                    }
+
+                    return $redirect;
+                }
+
+                return redirect()->route('paygo.results.paid', $intent->reference);
+            }
+
+            $payment = $this->initializePaygoPayment($paygoService, $intent, $validated['email'] ?? $paygoService->user->email);
+
+            if (! $payment['success']) {
+                $intent->update([
+                    'status' => 'failed',
+                    'metadata' => array_merge($intent->metadata ?? [], [
+                        'payment_status' => 'initialize_failed',
+                        'payment_error' => $payment['message'] ?? null,
+                    ]),
+                ]);
+
+                return back()->withErrors(['result' => $payment['message'] ?? 'Payment gateway initialization failed.'])->withInput();
+            }
+
+            return inertia()->location($payment['authorization_url']);
+        }
+
         $existingIntent = $this->paygo->findPaidReusableResultIntent($paygoService, $params);
         if ($existingIntent) {
             $this->syncResultPortalContext($existingIntent, $validated);
@@ -276,9 +348,9 @@ class PublicPaygoVerificationController extends Controller
                 'candidate_id' => $intent->metadata['candidate_id'] ?? null,
                 'portal_ref' => $intent->metadata['portal_ref'] ?? null,
                 'paid_at' => $intent->paid_at,
-                'fetches_used' => $intent->reference_fetches,
+                'fetches_used' => $intent->isResultReferenceFlow() ? $intent->verification_attempts : $intent->reference_fetches,
                 'fetches_allowed' => $intent->max_fetches_snapshot,
-                'fetches_remaining' => max(0, (int) $intent->max_fetches_snapshot - (int) $intent->reference_fetches),
+                'fetches_remaining' => max(0, (int) $intent->max_fetches_snapshot - (int) ($intent->isResultReferenceFlow() ? $intent->verification_attempts : $intent->reference_fetches)),
                 'pull_url' => url('/api/paygo/results/'.$intent->reference),
             ],
             'verification' => $intent->verificationRequest,
@@ -436,6 +508,7 @@ class PublicPaygoVerificationController extends Controller
                 'candidate_id' => request()->string('candidate_id')->value(),
                 'portal_ref' => request()->string('portal_ref')->value(),
                 'state' => request()->string('state')->value(),
+                'reference' => request()->string('reference')->value(),
             ],
         ]);
     }
@@ -447,6 +520,8 @@ class PublicPaygoVerificationController extends Controller
             'name' => $service->name,
             'public_slug' => $service->public_slug,
             'price' => (float) $service->price,
+            'reference_price' => (float) $service->resultReferencePrice(),
+            'reference_success_limit' => 2,
             'service_name' => $service->verificationService?->name,
             'board' => strtoupper((string) $service->resultBoard()),
             'customer_name' => $service->user?->customer?->company_name ?: $service->user?->name,
@@ -485,6 +560,7 @@ class PublicPaygoVerificationController extends Controller
             'candidate_id' => 'nullable|string|max:120',
             'portal_ref' => 'nullable|string|max:120',
             'state' => 'nullable|string|max:500',
+            'reference' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9._=-]+$/'],
         ];
 
         foreach ($fields as $field) {
@@ -641,6 +717,7 @@ class PublicPaygoVerificationController extends Controller
                 'status' => 'paid',
                 'payment_status' => 'paid',
                 'result_status' => ($result['success'] ?? false) ? 'ready' : 'failed',
+                'attempts_remaining' => $result['attempts_remaining'] ?? null,
             ]);
 
             if ($redirect) {

@@ -22,6 +22,7 @@ const resultPinPricingForm = useForm({ product_id: null, price: 0 });
 const resultFetchAccessForm = useForm({
     enabled: props.customer.customer?.result_fetch_enabled ?? true,
     paygo_result_reference_fetch_limit: props.customer.customer?.paygo_result_reference_fetch_limit ?? 3,
+    paygo_result_reference_system_price: props.customer.customer?.paygo_result_reference_system_price ?? '',
 });
 const buildPaystackSplitRows = (accounts: any[] = []) => accounts.map((account: any) => ({
     id: account.id || null,
@@ -68,6 +69,7 @@ const buildPaygoResultRows = (services: any[] = []) => services.map((row: any) =
     form: {
         name: row.paygo_service?.name || `${String(row.board).toUpperCase()} Result Verification`,
         price: row.paygo_service?.price ?? row.suggested_price,
+        reference_price: row.paygo_service?.reference_price ?? row.suggested_reference_price,
         is_active: row.paygo_service?.is_active ?? false,
     },
 }));
@@ -240,7 +242,7 @@ const savePaygoResultService = (row: any) => {
     router.post(`/admin/customers/${props.customer.id}/paygo-result-services/${row.service_id}`, row.form, {
         preserveScroll: true,
         onError: (errors) => {
-            paygoResultErrors.value[row.service_id] = errors.price || errors.name || 'Unable to save PayGo result page.';
+            paygoResultErrors.value[row.service_id] = errors.reference_price || errors.price || errors.name || 'Unable to save PayGo result page.';
         },
         onFinish: () => {
             savingPaygoServiceId.value = null;
@@ -333,6 +335,18 @@ onMounted(loadPaystackBanks);
                                     density="compact"
                                     class="mt-4"
                                     :error-messages="resultFetchAccessForm.errors.paygo_result_reference_fetch_limit"
+                                    :disabled="resultFetchAccessForm.processing"
+                                    @change="submitResultFetchAccess"
+                                />
+                                <v-text-field
+                                    v-model="resultFetchAccessForm.paygo_result_reference_system_price"
+                                    type="number"
+                                    min="0"
+                                    label="Portal reference system price"
+                                    variant="outlined"
+                                    density="compact"
+                                    class="mt-4"
+                                    :error-messages="resultFetchAccessForm.errors.paygo_result_reference_system_price"
                                     :disabled="resultFetchAccessForm.processing"
                                     @change="submitResultFetchAccess"
                                 />
@@ -619,91 +633,105 @@ onMounted(loadPaystackBanks);
                         >
                             Result fetch access is disabled for this customer.
                         </v-alert>
-                        <v-table density="comfortable">
-                            <thead>
-                                <tr>
-                                    <th>Board</th>
-                                    <th>System Price</th>
-                                    <th>Public Name</th>
-                                    <th>Public Price</th>
-                                    <th>Status</th>
-                                    <th>Links</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="row in paygoResultRows" :key="row.service_id">
-                                    <td>
-                                        <div class="font-weight-medium">{{ String(row.board).toUpperCase() }}</div>
-                                        <div class="text-caption text-grey">{{ row.service_name }}</div>
-                                    </td>
-                                    <td>{{ formatCurrency(row.system_price) }}</td>
-                                    <td style="min-width: 220px">
-                                        <v-text-field
-                                            v-model="row.form.name"
-                                            density="compact"
-                                            variant="outlined"
-                                            hide-details
-                                        />
-                                    </td>
-                                    <td style="width: 150px">
-                                        <v-text-field
-                                            v-model="row.form.price"
-                                            type="number"
-                                            density="compact"
-                                            variant="outlined"
-                                            hide-details
-                                        />
-                                    </td>
-                                    <td>
-                                        <v-switch
-                                            v-model="row.form.is_active"
-                                            color="primary"
-                                            inset
-                                            hide-details
-                                            density="compact"
-                                        />
-                                    </td>
-                                    <td>
-                                        <div v-if="row.paygo_service?.result_url" class="d-flex ga-2">
+                        <div class="paygo-result-table-wrap">
+                            <v-table density="comfortable" class="paygo-result-table">
+                                <thead>
+                                    <tr>
+                                        <th>Board</th>
+                                        <th>System Price</th>
+                                        <th>Portal Ref System</th>
+                                        <th>Public Name</th>
+                                        <th>Public Price</th>
+                                        <th>Portal Ref Price</th>
+                                        <th>Status</th>
+                                        <th>Links</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="row in paygoResultRows" :key="row.service_id">
+                                        <td class="board-cell">
+                                            <div class="font-weight-medium">{{ String(row.board).toUpperCase() }}</div>
+                                            <div class="text-caption text-grey">{{ row.service_name }}</div>
+                                        </td>
+                                        <td class="money-cell">{{ formatCurrency(row.system_price) }}</td>
+                                        <td class="money-cell">{{ formatCurrency(row.reference_system_price) }}</td>
+                                        <td class="name-input-cell">
+                                            <v-text-field
+                                                v-model="row.form.name"
+                                                density="compact"
+                                                variant="outlined"
+                                                hide-details
+                                            />
+                                        </td>
+                                        <td class="price-input-cell">
+                                            <v-text-field
+                                                v-model="row.form.price"
+                                                type="number"
+                                                density="compact"
+                                                variant="outlined"
+                                                hide-details
+                                            />
+                                        </td>
+                                        <td class="price-input-cell">
+                                            <v-text-field
+                                                v-model="row.form.reference_price"
+                                                type="number"
+                                                density="compact"
+                                                variant="outlined"
+                                                hide-details
+                                            />
+                                        </td>
+                                        <td class="status-cell">
+                                            <v-switch
+                                                v-model="row.form.is_active"
+                                                color="primary"
+                                                inset
+                                                hide-details
+                                                density="compact"
+                                            />
+                                        </td>
+                                        <td class="links-cell">
+                                            <div v-if="row.paygo_service?.result_url" class="d-flex ga-2">
+                                                <v-btn
+                                                    icon
+                                                    size="small"
+                                                    variant="text"
+                                                    title="Copy board page"
+                                                    @click="copyToClipboard(row.paygo_service.result_url)"
+                                                >
+                                                    <v-icon>mdi-link-variant</v-icon>
+                                                </v-btn>
+                                                <v-btn
+                                                    icon
+                                                    size="small"
+                                                    variant="text"
+                                                    title="Open board page"
+                                                    :href="row.paygo_service.result_url"
+                                                    target="_blank"
+                                                >
+                                                    <v-icon>mdi-open-in-new</v-icon>
+                                                </v-btn>
+                                            </div>
+                                            <span v-else class="text-grey text-caption">Not published</span>
+                                        </td>
+                                        <td class="text-right action-cell">
                                             <v-btn
-                                                icon
+                                                color="primary"
                                                 size="small"
-                                                variant="text"
-                                                title="Copy board page"
-                                                @click="copyToClipboard(row.paygo_service.result_url)"
+                                                :loading="savingPaygoServiceId === row.service_id"
+                                                @click="savePaygoResultService(row)"
                                             >
-                                                <v-icon>mdi-link-variant</v-icon>
+                                                Save
                                             </v-btn>
-                                            <v-btn
-                                                icon
-                                                size="small"
-                                                variant="text"
-                                                title="Open board page"
-                                                :href="row.paygo_service.result_url"
-                                                target="_blank"
-                                            >
-                                                <v-icon>mdi-open-in-new</v-icon>
-                                            </v-btn>
-                                        </div>
-                                        <span v-else class="text-grey text-caption">Not published</span>
-                                    </td>
-                                    <td class="text-right">
-                                        <v-btn
-                                            color="primary"
-                                            size="small"
-                                            :loading="savingPaygoServiceId === row.service_id"
-                                            @click="savePaygoResultService(row)"
-                                        >
-                                            Save
-                                        </v-btn>
-                                        <div v-if="paygoResultErrors[row.service_id]" class="text-error text-caption mt-1">
-                                            {{ paygoResultErrors[row.service_id] }}
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </v-table>
+                                            <div v-if="paygoResultErrors[row.service_id]" class="text-error text-caption mt-1">
+                                                {{ paygoResultErrors[row.service_id] }}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </v-table>
+                        </div>
                     </v-card-text>
                 </v-card>
 
@@ -748,3 +776,47 @@ onMounted(loadPaystackBanks);
         </v-dialog>
     </AdminLayout>
 </template>
+
+<style scoped>
+.paygo-result-table-wrap {
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+}
+
+.paygo-result-table {
+    min-width: 1180px;
+}
+
+.paygo-result-table th {
+    white-space: nowrap;
+}
+
+.board-cell {
+    min-width: 150px;
+}
+
+.money-cell {
+    min-width: 130px;
+    white-space: nowrap;
+}
+
+.name-input-cell {
+    min-width: 260px;
+}
+
+.price-input-cell {
+    min-width: 190px;
+}
+
+.status-cell {
+    min-width: 100px;
+}
+
+.links-cell {
+    min-width: 100px;
+}
+
+.action-cell {
+    min-width: 110px;
+}
+</style>

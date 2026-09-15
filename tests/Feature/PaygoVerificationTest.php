@@ -4,6 +4,7 @@ use App\Models\Customer;
 use App\Models\CustomerPaygoService;
 use App\Models\CustomerPaystackSplitAccount;
 use App\Models\CustomerPaystackSplitLedger;
+use App\Models\PaygoResultAttempt;
 use App\Models\PaygoVerificationIntent;
 use App\Models\PaygoWallet;
 use App\Models\ServiceProvider;
@@ -16,6 +17,7 @@ use App\Services\ResultVerify\ResultGates\WAECResult;
 use App\Services\ResultVerify\ResultInterface;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Role;
@@ -115,6 +117,57 @@ function createPaygoServiceFor(User $user, VerificationService $service, string 
     ]);
 }
 
+function paygoWaecParams(string $examNumber): array
+{
+    return [
+        'txtExamNumber' => $examNumber,
+        'ExamYear' => '2026',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '123456789012',
+        'txtCardSerialNo' => 'WRN123456789',
+    ];
+}
+
+function bindSuccessfulPaygoWaecResult(): void
+{
+    app()->instance(WAECResult::class, new class implements ResultInterface
+    {
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamYear', 'label' => 'Examination Year', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamType', 'label' => 'Examination Type', 'type' => 'text', 'required' => true],
+                ['name' => 'txtPIN', 'label' => 'PIN', 'type' => 'text', 'required' => true],
+                ['name' => 'txtCardSerialNo', 'label' => 'Card Serial Number', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '<html>'.$params['txtExamNumber'].'</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            preg_match('/>([^<]+)</', $html, $matches);
+            $examNumber = $matches[1] ?? 'UNKNOWN';
+
+            return [
+                'status' => 'success',
+                'candidate' => [
+                    'name' => 'Candidate '.$examNumber,
+                    'exam_number' => $examNumber,
+                ],
+                'subjects' => [
+                    ['subject' => 'MATHEMATICS', 'grade' => 'A1', 'score' => null],
+                ],
+                'overall' => null,
+            ];
+        }
+    });
+}
+
 it('does not allow a customer to create a paygo service at or below system price', function () {
     $user = createPaygoCustomer()->fresh('customer');
     $service = createPaygoNinService(100);
@@ -129,6 +182,26 @@ it('does not allow a customer to create a paygo service at or below system price
 
     $response->assertSessionHasErrors('price');
     expect(CustomerPaygoService::count())->toBe(0);
+});
+
+it('repairs an unreadable paygo webhook secret when listing paygo services', function () {
+    $user = createPaygoCustomer()->fresh('customer');
+    $service = createPaygoNinService(100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+
+    DB::table('customer_paygo_services')
+        ->whereKey($paygoService->id)
+        ->update(['webhook_secret' => 'not-a-valid-encrypted-value']);
+
+    $response = $this
+        ->actingAs($user)
+        ->get('/customer/paygo-services');
+
+    $response->assertOk();
+
+    $repairedSecret = $paygoService->fresh()->ensureWebhookSecret();
+
+    expect($repairedSecret)->toStartWith('pgw_');
 });
 
 it('completes paygo payment idempotently and credits the customer wallet once', function () {
@@ -567,6 +640,104 @@ it('reuses a paid paygo result intent instead of initializing another payment wh
         $paygoService->fresh(['user.customer', 'verificationService']),
         array_merge($params, ['txtPIN' => '000000000000']),
     ))->toBeNull();
+});
+
+it('initializes a result reference package with the school supplied reference and package price', function () {
+    config([
+        'services.paystack.public_key' => 'paystack-public',
+        'services.paystack.secret_key' => 'paystack-secret',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
+    Http::fake([
+        '*/transaction/initialize' => Http::response([
+            'status' => true,
+            'data' => [
+                'authorization_url' => 'https://checkout.paystack.test/portal-ref-1',
+                'access_code' => 'access-code',
+                'reference' => 'PORTAL-REF-1',
+            ],
+        ], 200),
+    ]);
+
+    $user = createPaygoCustomer();
+    $user->customer->update([
+        'paygo_result_reference_system_price' => 300,
+    ]);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+    $paygoService->update([
+        'reference_price' => 450,
+        'success_url' => 'https://school.test/result_verify_callback.php',
+        'failure_url' => 'https://school.test/result_verify_failed.php',
+    ]);
+
+    $this
+        ->withHeaders(['X-Inertia' => 'true'])
+        ->post("/paygo/results/{$paygoService->public_slug}", array_merge(paygoWaecParams('4310516058'), [
+            'email' => 'student@example.com',
+            'phone' => '08012345678',
+            'portal_ref' => 'APP-123',
+            'state' => 'signed-state',
+            'reference' => 'PORTAL-REF-1',
+        ]))
+        ->assertStatus(409)
+        ->assertHeader('X-Inertia-Location', 'https://checkout.paystack.test/portal-ref-1');
+
+    $intent = PaygoVerificationIntent::where('reference', 'PORTAL-REF-1')->firstOrFail();
+
+    expect($intent->flow_type)->toBe('result_reference')
+        ->and((float) $intent->amount)->toBe(450.0)
+        ->and((float) $intent->system_price_snapshot)->toBe(300.0)
+        ->and($intent->max_fetches_snapshot)->toBe(2)
+        ->and($intent->metadata['portal_state'])->toBe('signed-state');
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        return $request->url() === 'https://api.paystack.co/transaction/initialize'
+            && $request['reference'] === 'PORTAL-REF-1'
+            && $request['amount'] === 45000;
+    });
+});
+
+it('allows two successful result fetches under one paid portal reference and blocks the third', function () {
+    bindSuccessfulPaygoWaecResult();
+
+    $user = createPaygoCustomer();
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+    $paygoService->update(['reference_price' => 350]);
+
+    $intent = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent($paygoService->fresh(['user.customer', 'verificationService']), 'SCHOOL-REF-2', [
+        'params' => paygoWaecParams('4310516058'),
+        'email' => 'student@example.com',
+        'phone' => '08012345678',
+        'portal_context' => [
+            'state' => 'state-token',
+        ],
+    ]);
+
+    app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 350,
+        'reference' => $intent->reference,
+        'paid_at' => now(),
+        'channel' => 'card',
+    ]);
+
+    $first = app(PaygoVerificationService::class)->fetchResultForPaidIntent($intent->fresh(), '127.0.0.1', paygoWaecParams('4310516058'));
+    $second = app(PaygoVerificationService::class)->fetchResultForPaidIntent($intent->fresh(), '127.0.0.1', paygoWaecParams('4310516059'));
+
+    expect($first['success'])->toBeTrue()
+        ->and($first['attempts_remaining'])->toBe(1)
+        ->and($second['success'])->toBeTrue()
+        ->and($second['attempts_remaining'])->toBe(0)
+        ->and($intent->fresh()->verification_attempts)->toBe(2)
+        ->and(PaygoResultAttempt::where('paygo_verification_intent_id', $intent->id)->where('success_counted', true)->count())->toBe(2);
+
+    expect(fn () => app(PaygoVerificationService::class)->fetchResultForPaidIntent(
+        $intent->fresh(),
+        '127.0.0.1',
+        paygoWaecParams('4310516060'),
+    ))->toThrow(RuntimeException::class, 'successful fetch limit');
 });
 
 it('lets admins manage PayGo users collected from verification intents', function () {
