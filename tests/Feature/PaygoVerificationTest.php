@@ -790,6 +790,14 @@ it('allows two successful result fetches under one paid portal reference and blo
 });
 
 it('allows a paid portal reference package to fetch a second result from a different board', function () {
+    $this->withoutVite();
+
+    config([
+        'services.paystack.public_key' => 'paystack-public',
+        'services.paystack.secret_key' => 'paystack-secret',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
     bindSuccessfulPaygoWaecResult();
     bindSuccessfulPaygoNecoResult();
 
@@ -839,6 +847,28 @@ it('allows a paid portal reference package to fetch a second result from a diffe
         ->and($intent->fresh()->verification_attempts)->toBe(2)
         ->and(PaygoResultAttempt::where('paygo_verification_intent_id', $intent->id)->pluck('verification_service_id')->all())
         ->toContain($waecService->id, $necoService->id);
+
+    $intent->fresh()->update([
+        'verification_request_id' => $first['verification']->id,
+        'lookup_label' => 'WAEC 4310516058',
+    ]);
+
+    $this->get('/paygo/results/paid/SCHOOL-CROSS-REF')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Public/Paygo/ResultPaid')
+            ->where('paygoService.board', 'NECO')
+            ->where('intent.lookup_label', 'NECO NECO123456')
+            ->where('result.data.candidate.name', 'NECO Candidate NECO123456')
+            ->where('intent.fetches_used', 2)
+            ->where('intent.fetches_remaining', 0)
+        );
+
+    $this->getJson('/api/paygo/results/SCHOOL-CROSS-REF')
+        ->assertOk()
+        ->assertJsonPath('lookup_label', 'NECO NECO123456')
+        ->assertJsonPath('data.candidate.name', 'NECO Candidate NECO123456')
+        ->assertJsonPath('fetches_remaining', 0);
 });
 
 it('lets admins manage PayGo users collected from verification intents', function () {

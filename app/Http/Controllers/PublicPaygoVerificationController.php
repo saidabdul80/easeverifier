@@ -330,17 +330,22 @@ class PublicPaygoVerificationController extends Controller
     {
         try {
             $intent = $this->paygo->displayResultByReference($reference);
+            $verification = $this->paygo->displayVerificationForResultIntent($intent);
 
-            if ($intent->status === 'paid' && $intent->verificationRequest?->status !== 'completed') {
+            if ($intent->status === 'paid' && ! $verification) {
                 $this->paygo->fetchResultForPaidIntent($intent, $request->ip());
                 $intent = $this->paygo->displayResultByReference($reference);
+                $verification = $this->paygo->displayVerificationForResultIntent($intent);
             }
         } catch (RuntimeException $exception) {
             abort(404, $exception->getMessage());
         }
 
+        $usage = $this->paygo->resultFetchUsage($intent);
+        $displayService = $this->paygo->displayPaygoServiceForResultIntent($intent) ?? $intent->paygoService;
+
         return Inertia::render('Public/Paygo/ResultPaid', [
-            'paygoService' => $this->publicResultServicePayload($intent->paygoService),
+            'paygoService' => $this->publicResultServicePayload($displayService),
             'intent' => [
                 'reference' => $intent->reference,
                 'status' => $intent->status,
@@ -348,16 +353,16 @@ class PublicPaygoVerificationController extends Controller
                 'candidate_id' => $intent->metadata['candidate_id'] ?? null,
                 'portal_ref' => $intent->metadata['portal_ref'] ?? null,
                 'paid_at' => $intent->paid_at,
-                'fetches_used' => $intent->isResultReferenceFlow() ? $intent->verification_attempts : $intent->reference_fetches,
-                'fetches_allowed' => $intent->max_fetches_snapshot,
-                'fetches_remaining' => max(0, (int) $intent->max_fetches_snapshot - (int) ($intent->isResultReferenceFlow() ? $intent->verification_attempts : $intent->reference_fetches)),
+                'fetches_used' => $usage['used'],
+                'fetches_allowed' => $usage['allowed'],
+                'fetches_remaining' => $usage['remaining'],
                 'pull_url' => url('/api/paygo/results/'.$intent->reference),
             ],
-            'verification' => $intent->verificationRequest,
+            'verification' => $verification,
             'result' => [
-                'success' => $intent->verificationRequest?->status === 'completed',
-                'data' => $intent->verificationRequest?->response_data,
-                'error' => $intent->metadata['error_message'] ?? $intent->verificationRequest?->error_message,
+                'success' => $verification?->status === 'completed',
+                'data' => $verification?->response_data,
+                'error' => $intent->metadata['error_message'] ?? $verification?->error_message,
             ],
         ]);
     }
@@ -409,7 +414,7 @@ class PublicPaygoVerificationController extends Controller
             'success' => true,
             'status' => 200,
             'reference' => $intent->reference,
-            'lookup_label' => $intent->lookup_label,
+            'lookup_label' => $result['lookup_label'] ?? $intent->lookup_label,
             'candidate_id' => $intent->metadata['candidate_id'] ?? null,
             'portal_ref' => $intent->metadata['portal_ref'] ?? null,
             'data' => $result['data'],

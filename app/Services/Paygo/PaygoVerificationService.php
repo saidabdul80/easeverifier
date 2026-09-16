@@ -890,7 +890,73 @@ class PaygoVerificationService
             throw new RuntimeException('This reference is not for a PayGo result verification.');
         }
 
+        $verification = $this->displayVerificationForResultIntent($intent);
+
+        if ($verification) {
+            $intent->setRelation('verificationRequest', $verification);
+        }
+
         return $intent;
+    }
+
+    public function displayVerificationForResultIntent(PaygoVerificationIntent $intent): ?VerificationRequest
+    {
+        if (! $intent->isResultFlow()) {
+            return null;
+        }
+
+        if ($intent->isResultReferenceFlow()) {
+            $attempt = $this->latestCompletedResultAttempt($intent);
+
+            if ($attempt?->verificationRequest && $intent->verification_request_id !== $attempt->verificationRequest->id) {
+                $intent->update([
+                    'verification_request_id' => $attempt->verificationRequest->id,
+                    'lookup_label' => $attempt->lookup_label,
+                    'metadata' => array_merge($intent->metadata ?? [], [
+                        'verification_status' => 'completed',
+                        'verification_reference' => $attempt->verificationRequest->reference,
+                        'latest_lookup_label' => $attempt->lookup_label,
+                        'latest_customer_paygo_service_id' => $attempt->customer_paygo_service_id,
+                        'latest_verification_service_id' => $attempt->verification_service_id,
+                    ]),
+                ]);
+
+                $intent->verification_request_id = $attempt->verificationRequest->id;
+                $intent->lookup_label = $attempt->lookup_label;
+            }
+
+            return $attempt?->verificationRequest;
+        }
+
+        return $this->resolveCompletedResultVerification($intent);
+    }
+
+    public function displayPaygoServiceForResultIntent(PaygoVerificationIntent $intent): ?CustomerPaygoService
+    {
+        if ($intent->isResultReferenceFlow()) {
+            $attempt = $this->latestCompletedResultAttempt($intent);
+
+            if ($attempt?->paygoService) {
+                return $attempt->paygoService;
+            }
+        }
+
+        return $intent->paygoService;
+    }
+
+    public function resultFetchUsage(PaygoVerificationIntent $intent): array
+    {
+        $used = $intent->isResultReferenceFlow()
+            ? $this->successfulResultAttemptCount($intent)
+            : (int) $intent->reference_fetches;
+
+        $allowed = $this->maxFetchesForIntent($intent);
+
+        return [
+            'used' => $used,
+            'allowed' => $allowed,
+            'remaining' => max(0, $allowed - $used),
+        ];
     }
 
     public function pullResultByReference(string $reference): array
@@ -923,6 +989,7 @@ class PaygoVerificationService
                 return [
                     'intent' => $intent->fresh(['verificationRequest', 'paygoService']),
                     'data' => $attempt->verificationRequest->response_data,
+                    'lookup_label' => $attempt->lookup_label,
                     'fetches_remaining' => max(0, $this->maxFetchesForIntent($intent) - $successfulAttempts),
                     'served_from' => 'reference_attempt_cache',
                 ];
@@ -962,6 +1029,7 @@ class PaygoVerificationService
             return [
                 'intent' => $intent->fresh(['verificationRequest', 'paygoService']),
                 'data' => $verification->response_data,
+                'lookup_label' => $intent->lookup_label,
                 'fetches_remaining' => max(0, $maxFetches - $fetches),
                 'served_from' => 'local_cache',
             ];
@@ -1103,7 +1171,7 @@ class PaygoVerificationService
     protected function latestCompletedResultAttempt(PaygoVerificationIntent $intent): ?PaygoResultAttempt
     {
         return PaygoResultAttempt::query()
-            ->with('verificationRequest')
+            ->with(['verificationRequest', 'paygoService.user.customer', 'paygoService.verificationService'])
             ->where('paygo_verification_intent_id', $intent->id)
             ->where('status', 'completed')
             ->where('success_counted', true)

@@ -85,12 +85,14 @@ const selectedService = computed(
         null,
 );
 const usingPortalReference = computed(() => Boolean(form.reference));
+const priceForService = (service: PaygoResultService) =>
+    usingPortalReference.value
+        ? Number(service.reference_price || service.price || 0)
+        : Number(service.price || 0);
 const selectedPrice = computed(() => {
     if (!selectedService.value) return 0;
 
-    return usingPortalReference.value
-        ? Number(selectedService.value.reference_price || selectedService.value.price || 0)
-        : Number(selectedService.value.price || 0);
+    return priceForService(selectedService.value);
 });
 const selectorUrl = computed(
     () =>
@@ -382,7 +384,7 @@ onMounted(() => {
                                     v-model="selectedSlug"
                                     :items="
                                         services.map((service) => ({
-                                            title: `${service.board} - ${formatCurrency(service.price)}`,
+                                            title: `${service.board} - ${formatCurrency(priceForService(service))}`,
                                             value: service.public_slug,
                                         }))
                                     "
