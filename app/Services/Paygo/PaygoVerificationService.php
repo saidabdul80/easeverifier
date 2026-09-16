@@ -904,6 +904,7 @@ class PaygoVerificationService
             'metadata' => $attemptMetadata,
         ]);
 
+        $intent = $intent->fresh() ?? $intent;
         $intent->update([
             'status' => 'paid',
             'verification_request_id' => $verification?->id,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 interface PaygoResultService {
     name: string;
@@ -50,6 +50,7 @@ const confirmationOpen = ref(false);
 const consentChecked = ref(false);
 const necoNoticeOpen = ref(false);
 const pendingNecoService = ref<PaygoResultService | null>(null);
+const formTop = ref<HTMLElement | null>(null);
 
 const resultFieldDefaults = props.fields.reduce<Record<string, any>>(
     (defaults, field) => {
@@ -283,9 +284,20 @@ const submit = () => {
     consentChecked.value = false;
 
     form.post(selectedService.value.result_url, {
-        preserveScroll: true,
+        preserveScroll: false,
     });
 };
+
+watch(
+    () => [flash.value?.error, form.errors.result, Object.keys(form.errors).join('|')],
+    async ([flashError, resultError, errorKeys]) => {
+        if (!flashError && !resultError && !errorKeys) return;
+
+        await nextTick();
+        formTop.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    { immediate: true },
+);
 
 watch(
     () =>
@@ -324,6 +336,7 @@ onMounted(() => {
             <v-container class="paygo-container">
                 <v-row justify="center">
                     <v-col cols="12" md="8" lg="6">
+                        <div ref="formTop" class="form-top-anchor" />
                         <v-card class="paygo-card" elevation="0">
                             <v-card-text class="pa-6">
                                 <v-chip color="secondary" variant="flat" class="mb-4">Result Verification</v-chip>
@@ -489,6 +502,10 @@ onMounted(() => {
 .paygo-card {
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.form-top-anchor {
+    scroll-margin-top: 1rem;
 }
 
 .price-strip {

@@ -238,14 +238,23 @@ class PublicPaygoVerificationController extends Controller
                     'sitting' => $validated['sitting'] ?? null,
                 ];
 
-                $this->dispatchResultFetchAfterResponse($intent, $request, $params, $paygoService, $context);
+                $result = $this->fetchResultForResponse($intent, $request, $params, $paygoService, $context);
+
+                if (! ($result['success'] ?? false)) {
+                    return $this->redirectAfterFailedPayment(
+                        $intent->fresh(['paygoService']) ?? $intent,
+                        $result['error'] ?? 'Result verification failed.',
+                    )
+                        ->withInput();
+                }
+
                 $intent = $intent->fresh(['paygoService.user.customer', 'verificationRequest']);
 
                 $redirect = $this->resultCallbacks->redirectToConfiguredUrl($intent, true, [
                     'status' => 'paid',
                     'payment_status' => 'paid',
-                    'result_status' => 'pending',
-                    'attempts_remaining' => max(0, (int) $intent->max_fetches_snapshot - (int) $intent->verification_attempts),
+                    'result_status' => 'ready',
+                    'attempts_remaining' => $result['attempts_remaining'] ?? max(0, (int) $intent->max_fetches_snapshot - (int) $intent->verification_attempts),
                 ]);
 
                 if ($redirect) {
@@ -1019,14 +1028,22 @@ class PublicPaygoVerificationController extends Controller
         }
 
         if ($intent->isResultFlow()) {
-            $this->dispatchResultFetchAfterResponse($intent, $request);
+            $result = $this->fetchResultForResponse($intent, $request);
+
+            if (! ($result['success'] ?? false)) {
+                return $this->redirectAfterFailedPayment(
+                    $intent->fresh(['paygoService']) ?? $intent,
+                    $result['error'] ?? 'Result verification failed.',
+                );
+            }
+
             $intent = $intent->fresh(['paygoService.user.customer', 'verificationRequest']);
 
             $redirect = $this->resultCallbacks->redirectToConfiguredUrl($intent, true, [
                 'status' => 'paid',
                 'payment_status' => 'paid',
-                'result_status' => 'pending',
-                'attempts_remaining' => null,
+                'result_status' => 'ready',
+                'attempts_remaining' => $result['attempts_remaining'] ?? null,
             ]);
 
             if ($redirect) {
@@ -1170,6 +1187,52 @@ class PublicPaygoVerificationController extends Controller
                 'publicSlug' => $intent->paygoService->public_slug,
             ], $query))
             ->with('error', ResultVerificationErrorFormatter::publicMessage($message));
+    }
+
+    protected function fetchResultForResponse(
+        PaygoVerificationIntent $intent,
+        Request $request,
+        ?array $params = null,
+        ?CustomerPaygoService $paygoService = null,
+        array $context = [],
+    ): array {
+        try {
+            $result = $this->paygo->fetchResultForPaidIntent(
+                $intent,
+                $request->ip(),
+                $params,
+                $paygoService,
+                $context,
+            );
+        } catch (Throwable $exception) {
+            $publicMessage = ResultVerificationErrorFormatter::publicMessage($exception->getMessage());
+            $intent->update([
+                'status' => 'paid',
+                'metadata' => array_merge($intent->metadata ?? [], [
+                    'verification_status' => 'failed',
+                    'error_code' => 'RESULT_FETCH_FAILED',
+                    'error_message' => $publicMessage,
+                    'internal_error_message' => $exception->getMessage(),
+                ]),
+            ]);
+
+            $result = [
+                'success' => false,
+                'error' => $publicMessage,
+                'error_code' => 'RESULT_FETCH_FAILED',
+            ];
+        }
+
+        $freshIntent = $intent->fresh(['paygoService.user.customer', 'verificationRequest']) ?? $intent;
+        $this->resultCallbacks->sendResultWebhook(
+            $freshIntent,
+            (bool) ($result['success'] ?? false),
+            $result['data'] ?? null,
+            $result['error'] ?? null,
+            $result['error_code'] ?? null,
+        );
+
+        return $result;
     }
 
     protected function reconcileResultReferencePayment(PaygoVerificationIntent $intent): PaygoVerificationIntent

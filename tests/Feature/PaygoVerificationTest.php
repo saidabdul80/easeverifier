@@ -1059,7 +1059,7 @@ it('reconciles a paid reference package before returning to its cached checkout'
 
     $this->post("/paygo/results/{$paygoService->public_slug}", $payload)
         ->assertStatus(409)
-        ->assertHeader('X-Inertia-Location', 'http://quickapple.test/std/result_verify_callback.php?reference=APP-90210&candidate_id=STU-12345&sitting=1&state=signed-state&status=paid&payment_status=paid&result_status=pending&attempts_remaining=2');
+        ->assertHeader('X-Inertia-Location', 'http://quickapple.test/std/result_verify_callback.php?reference=APP-90210&candidate_id=STU-12345&sitting=1&state=signed-state&status=paid&payment_status=paid&result_status=ready&attempts_remaining=1');
 
     $intent = PaygoVerificationIntent::where('reference', 'APP-90210')->firstOrFail();
 
@@ -1504,7 +1504,7 @@ it('redirects back to the school portal and posts a webhook for hybrid paygo res
 
     $response->assertRedirect(
         'https://school.test/verify/success?reference='.$intent->reference
-        .'&candidate_id=STU-12345&portal_ref=APP-90210&state=signed-state-token&status=paid&payment_status=paid&result_status=pending'
+        .'&candidate_id=STU-12345&portal_ref=APP-90210&state=signed-state-token&status=paid&payment_status=paid&result_status=ready'
     );
 
     Http::assertSent(function (\Illuminate\Http\Client\Request $request) use ($intent) {
@@ -1559,4 +1559,71 @@ it('does not turn a successful result into a failure when webhook delivery fails
         ->and($intent->metadata['verification_status'])->toBe('completed')
         ->and($intent->metadata['webhook_last_status'])->toBe('failed')
         ->and($intent->metadata['webhook_last_error'])->toContain('404');
+});
+
+it('keeps provider result errors local instead of using the success redirect', function () {
+    $this->withoutVite();
+
+    $error = 'RESULT CHECKER CARD HAS BEEN USED BY ANOTHER CANDIDATE RESULT CHECKER CARD HAS BEEN USED BY ANOTHER CANDIDATE';
+    $user = createPaygoCustomer();
+    $user->customer->update(['paygo_result_reference_system_price' => 200]);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 200);
+    $paygoService->update([
+        'reference_price' => 400,
+        'success_url' => 'http://quickapple.test/std/result_verify_callback.php',
+    ]);
+
+    app()->instance(WAECResult::class, new class($error) implements ResultInterface
+    {
+        public function __construct(private readonly string $error) {}
+
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamYear', 'label' => 'Examination Year', 'type' => 'text', 'required' => true],
+                ['name' => 'ExamType', 'label' => 'Examination Type', 'type' => 'text', 'required' => true],
+                ['name' => 'txtPIN', 'label' => 'PIN', 'type' => 'text', 'required' => true],
+                ['name' => 'txtCardSerialNo', 'label' => 'Card Serial Number', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '<html>card used</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'error',
+                'code' => 'UNKNOWN_ERROR',
+                'message' => $this->error,
+            ];
+        }
+    });
+
+    $intent = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        'APP-CARD-USED',
+        ['params' => paygoWaecParams('4271710002')],
+    );
+    app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 400,
+        'reference' => $intent->reference,
+        'paid_at' => now(),
+        'channel' => 'card',
+    ]);
+
+    $formUrl = "/paygo/results/{$paygoService->public_slug}?reference=APP-CARD-USED";
+    $this->from($formUrl)
+        ->post("/paygo/results/{$paygoService->public_slug}", array_merge(paygoWaecParams('4271710002'), [
+            'reference' => 'APP-CARD-USED',
+        ]))
+        ->assertRedirect($formUrl)
+        ->assertSessionHas('error', $error);
+
+    expect($intent->fresh()->status)->toBe('paid')
+        ->and($intent->fresh()->verification_attempts)->toBe(0);
 });
