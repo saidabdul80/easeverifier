@@ -61,13 +61,13 @@ class VerificationController extends Controller
 
     public function show(VerificationRequest $verification)
     {
-        $relations = ['user', 'verificationService', 'serviceProvider', 'transaction'];
-
-        if (VerificationRequest::supportsSourceOverrides()) {
-            $relations[] = 'sourceOverride';
-        }
-
-        $verification->load($relations);
+        $verification->load(array_filter([
+            'user',
+            'verificationService',
+            'serviceProvider',
+            'transaction',
+            VerificationRequest::sourceOverrideTableExists() ? 'sourceOverride' : null,
+        ]));
 
         return Inertia::render('Admin/Verifications/Show', [
             'verification' => $verification,
@@ -111,7 +111,12 @@ class VerificationController extends Controller
                 'created_at',
                 'completed_at',
             ])
-            ->with($relations)
+            ->with(array_filter([
+                'user:id,name,email',
+                'verificationService:id,name',
+                'serviceProvider:id,name',
+                VerificationRequest::sourceOverrideTableExists() ? 'sourceOverride:id,verification_request_id,source' : null,
+            ]))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $nestedQuery) use ($search) {
                     $nestedQuery->where('reference', 'like', "%{$search}%")
@@ -126,6 +131,12 @@ class VerificationController extends Controller
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
             ->when($request->filled('source'), function (Builder $query) use ($request, $supportsSourceOverrides) {
                 $source = $request->string('source')->toString();
+
+                if (! VerificationRequest::sourceOverrideTableExists()) {
+                    $query->where('source', $source);
+
+                    return;
+                }
 
                 if ($source === 'paygo') {
                     if (! $supportsSourceOverrides) {

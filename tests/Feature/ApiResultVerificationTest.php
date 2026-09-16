@@ -695,6 +695,255 @@ it('sends NECO e-Verify exam type in the exact upstream case during verification
         ->and($request->request_data['parameters']['exam_type'])->toBe('SSCEInt');
 });
 
+it('tries NECO e-Verify when standard NECO result fetch returns no result', function () {
+    $user = createResultApiUser(100);
+    $fetchService = createResultService('neco-result-fetch', 25);
+
+    $standardGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'exam_year', 'label' => 'Examination Year', 'type' => 'select', 'required' => true],
+                ['name' => 'exam_type', 'label' => 'Examination Type', 'type' => 'select', 'required' => true],
+                ['name' => 'reg_no', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'token', 'label' => 'Result Checker Token', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '{"status":"error"}';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'error',
+                'code' => 'RESULT_NOT_FOUND',
+                'message' => 'No subject results were found. Please verify your details.',
+            ];
+        }
+    };
+
+    $everifyGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '{"status":"200"}';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'success',
+                'candidate' => ['candidate_name' => 'Fallback Candidate', 'exam_number' => '2410896226BC'],
+                'subjects' => [['subject' => 'English Language', 'grade' => 'C5', 'score' => null]],
+                'overall' => null,
+            ];
+        }
+    };
+
+    app()->instance(NECOResult::class, $standardGateway);
+    app()->instance(NecoEVerify::class, $everifyGateway);
+
+    $result = app(ResultVerificationEngine::class)->verify($user, 'neco', [
+        'token' => '362744610305233',
+        'reg_no' => '2410896226BC',
+        'exam_year' => '2024',
+        'exam_type' => 'ssce_int',
+    ]);
+
+    $request = VerificationRequest::where('verification_service_id', $fetchService->id)->first();
+
+    expect($result->success)->toBeTrue()
+        ->and($result->data['candidate']['candidate_name'])->toBe('Fallback Candidate')
+        ->and($result->data['result_source'])->toBe('neco-everify')
+        ->and($standardGateway->calls)->toHaveCount(1)
+        ->and($everifyGateway->calls)->toHaveCount(1)
+        ->and($everifyGateway->calls[0]['examno'])->toBe('2410896226BC')
+        ->and($everifyGateway->calls[0]['payref'])->toBe('362744610305233')
+        ->and($everifyGateway->calls[0]['exam_type'])->toBe('SSCEInt')
+        ->and((float) $user->wallet()->first()->fresh()->balance)->toBe(75.0)
+        ->and($request->status)->toBe('completed')
+        ->and($request->response_data['result_source'])->toBe('neco-everify');
+});
+
+it('keeps the selected NECO e-Verify error when the standard NECO fallback also fails', function () {
+    $user = createResultApiUser(100);
+    createResultService('neco-everify-result-fetch', 25);
+
+    $everifyGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'token', 'label' => 'Verification Token / RRR', 'type' => 'text', 'required' => true],
+                ['name' => 'examno', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'exam_year', 'label' => 'Examination Year', 'type' => 'select', 'required' => true],
+                ['name' => 'exam_type', 'label' => 'Examination Type', 'type' => 'select', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '{"status":"error"}';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'error',
+                'code' => 'INVALID_EVERIFY_TOKEN',
+                'message' => 'Invalid token or token has not been verified!',
+            ];
+        }
+    };
+
+    $standardGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '{"status":"error"}';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'error',
+                'code' => 'INVALID_PIN',
+                'message' => 'Invalid NECO result checker token.',
+            ];
+        }
+    };
+
+    app()->instance(NecoEVerify::class, $everifyGateway);
+    app()->instance(NECOResult::class, $standardGateway);
+
+    $result = app(ResultVerificationEngine::class)->verify($user, 'neco-everify', [
+        'token' => '362744610305233',
+        'examno' => '2410896226BC',
+        'exam_year' => '2024',
+        'exam_type' => 'SSCEInt',
+    ]);
+
+    $request = VerificationRequest::first();
+
+    expect($result->success)->toBeFalse()
+        ->and($result->errorCode)->toBe('INVALID_EVERIFY_TOKEN')
+        ->and($result->errorMessage)->toBe('Invalid token or token has not been verified!')
+        ->and($everifyGateway->calls)->toHaveCount(1)
+        ->and($standardGateway->calls)->toHaveCount(1)
+        ->and($standardGateway->calls[0]['reg_no'])->toBe('2410896226BC')
+        ->and($standardGateway->calls[0]['exam_type'])->toBe('ssce_int')
+        ->and($request->status)->toBe('failed')
+        ->and($request->error_message)->toBe('Invalid token or token has not been verified!');
+});
+
+it('does not try NECO e-Verify fallback for non-SSCE standard NECO exam types', function () {
+    $user = createResultApiUser(100);
+    createResultService('neco-result-fetch', 25);
+
+    $standardGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'exam_year', 'label' => 'Examination Year', 'type' => 'select', 'required' => true],
+                ['name' => 'exam_type', 'label' => 'Examination Type', 'type' => 'select', 'required' => true],
+                ['name' => 'reg_no', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'token', 'label' => 'Result Checker Token', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '{"status":"error"}';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'error',
+                'code' => 'RESULT_NOT_FOUND',
+                'message' => 'No subject results were found. Please verify your details.',
+            ];
+        }
+    };
+
+    $everifyGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '{"status":"200"}';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'success',
+                'candidate' => ['candidate_name' => 'Should Not Be Used'],
+                'subjects' => [['subject' => 'English Language', 'grade' => 'A1', 'score' => null]],
+                'overall' => null,
+            ];
+        }
+    };
+
+    app()->instance(NECOResult::class, $standardGateway);
+    app()->instance(NecoEVerify::class, $everifyGateway);
+
+    $result = app(ResultVerificationEngine::class)->verify($user, 'neco', [
+        'token' => '362744610305233',
+        'reg_no' => '2410896226BC',
+        'exam_year' => '2024',
+        'exam_type' => 'bece',
+    ]);
+
+    expect($result->success)->toBeFalse()
+        ->and($result->errorCode)->toBe('RESULT_NOT_FOUND')
+        ->and($standardGateway->calls)->toHaveCount(1)
+        ->and($everifyGateway->calls)->toHaveCount(0);
+});
+
 it('keeps NECO year options aligned with the outside gateway', function () {
     $necoYears = collect(app(NECOResult::class)->formFields())
         ->firstWhere('name', 'exam_year')['options'];

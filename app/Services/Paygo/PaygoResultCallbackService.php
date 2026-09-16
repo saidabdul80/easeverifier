@@ -15,8 +15,7 @@ class PaygoResultCallbackService
         ?array $resultData = null,
         ?string $errorMessage = null,
         ?string $errorCode = null
-    ): void
-    {
+    ): void {
         if (! $this->usesWebhookCallback($intent)) {
             return;
         }
@@ -61,8 +60,8 @@ class PaygoResultCallbackService
         }
 
         $url = $successUrl
-            ? ($intent->metadata['success_url_snapshot'] ?? $intent->paygoService?->success_url)
-            : ($intent->metadata['failure_url_snapshot'] ?? $intent->paygoService?->failure_url);
+            ? ($intent->paygoService?->success_url ?? $intent->metadata['success_url_snapshot'] ?? null)
+            : ($intent->paygoService?->failure_url ?? $intent->metadata['failure_url_snapshot'] ?? null);
 
         if (blank($url)) {
             return null;
@@ -153,6 +152,6 @@ class PaygoResultCallbackService
 
     protected function webhookSecret(PaygoVerificationIntent $intent): ?string
     {
-        return $intent->paygoService?->webhook_secret;
+        return $intent->paygoService?->ensureWebhookSecret();
     }
 }

@@ -62,7 +62,11 @@
         ],
         "test": [
             "@php artisan config:clear --ansi",
-            "@php artisan test"
+            "APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test"
+        ],
+        "test:safe": [
+            "@php artisan config:clear --ansi",
+            "APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

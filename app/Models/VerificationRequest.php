@@ -58,7 +58,7 @@ class VerificationRequest extends Model
                     return $this->pendingSourceOverride ?? $value;
                 }
 
-                if (! static::supportsSourceOverrides()) {
+                if (! static::sourceOverrideTableExists()) {
                     return $value;
                 }
 
@@ -82,7 +82,7 @@ class VerificationRequest extends Model
                 return;
             }
 
-            if (! static::supportsSourceOverrides()) {
+            if (! static::sourceOverrideTableExists()) {
                 $request->sourceWasAssigned = false;
                 $request->pendingSourceOverride = null;
 
@@ -105,9 +105,9 @@ class VerificationRequest extends Model
         });
     }
 
-    public static function supportsSourceOverrides(): bool
+    public static function sourceOverrideTableExists(): bool
     {
-        return Schema::hasTable((new VerificationRequestSourceOverride)->getTable());
+        return Schema::hasTable('verification_request_source_overrides');
     }
 
     /**
@@ -115,7 +115,7 @@ class VerificationRequest extends Model
      */
     public static function generateReference(): string
     {
-        return 'VER-' . strtoupper(Str::random(8)) . '-' . time();
+        return 'VER-'.strtoupper(Str::random(8)).'-'.time();
     }
 
     /**

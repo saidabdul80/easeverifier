@@ -13,6 +13,7 @@ const props = defineProps<{
     };
     prefill?: {
         nin?: string | null;
+        email?: string | null;
         phone?: string | null;
     };
     error?: string | null;
@@ -23,6 +24,7 @@ const flash = computed(() => page.props.flash as any);
 
 const form = useForm({
     nin: props.prefill?.nin || '',
+    email: props.prefill?.email || '',
     phone: props.prefill?.phone || '',
 });
 
@@ -76,6 +78,13 @@ const submit = () => {
                                         variant="outlined"
                                         :error-messages="form.errors.nin"
                                         required
+                                    />
+                                    <v-text-field
+                                        v-model="form.email"
+                                        label="Email"
+                                        type="email"
+                                        variant="outlined"
+                                        :error-messages="form.errors.email"
                                     />
                                     <v-text-field
                                         v-model="form.phone"

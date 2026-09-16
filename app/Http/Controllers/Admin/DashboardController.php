@@ -9,6 +9,7 @@ use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Models\Wallet;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -50,7 +51,7 @@ class DashboardController extends Controller
             ->where('verification_requests.created_at', '>=', now()->subMonths(6))
             ->join('transactions', 'verification_requests.transaction_id', '=', 'transactions.id')
             ->where('transactions.type', 'debit')
-            ->selectRaw('MONTH(verification_requests.created_at) as month, YEAR(verification_requests.created_at) as year, SUM(transactions.amount) as total')
+            ->selectRaw($this->monthlyRevenueSelect())
             ->groupBy('year', 'month')
             ->orderBy('year')
             ->orderBy('month')
@@ -70,5 +71,13 @@ class DashboardController extends Controller
             ->select('transaction_id')
             ->where('status', 'completed')
             ->whereNotNull('transaction_id');
+    }
+
+    private function monthlyRevenueSelect(): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => "CAST(strftime('%m', verification_requests.created_at) AS INTEGER) as month, CAST(strftime('%Y', verification_requests.created_at) AS INTEGER) as year, SUM(transactions.amount) as total",
+            default => 'MONTH(verification_requests.created_at) as month, YEAR(verification_requests.created_at) as year, SUM(transactions.amount) as total',
+        };
     }
 }
