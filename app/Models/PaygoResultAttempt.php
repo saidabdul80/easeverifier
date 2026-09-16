@@ -12,6 +12,8 @@ class PaygoResultAttempt extends Model
 
     protected $fillable = [
         'paygo_verification_intent_id',
+        'customer_paygo_service_id',
+        'verification_service_id',
         'verification_request_id',
         'lookup_hash',
         'lookup_label',
@@ -37,6 +39,16 @@ class PaygoResultAttempt extends Model
     public function intent(): BelongsTo
     {
         return $this->belongsTo(PaygoVerificationIntent::class, 'paygo_verification_intent_id');
+    }
+
+    public function paygoService(): BelongsTo
+    {
+        return $this->belongsTo(CustomerPaygoService::class, 'customer_paygo_service_id');
+    }
+
+    public function verificationService(): BelongsTo
+    {
+        return $this->belongsTo(VerificationService::class);
     }
 
     public function verificationRequest(): BelongsTo

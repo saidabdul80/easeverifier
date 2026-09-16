@@ -222,7 +222,7 @@ class PublicPaygoVerificationController extends Controller
 
             if ($intent->status === 'paid') {
                 try {
-                    $result = $this->paygo->fetchResultForPaidIntent($intent, $request->ip(), $params);
+                    $result = $this->paygo->fetchResultForPaidIntent($intent, $request->ip(), $params, $paygoService);
                 } catch (RuntimeException $exception) {
                     return back()->withErrors(['result' => $exception->getMessage()])->withInput();
                 }

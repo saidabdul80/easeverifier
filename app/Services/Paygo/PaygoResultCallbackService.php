@@ -98,7 +98,7 @@ class PaygoResultCallbackService
             'portal_ref' => $intent->metadata['portal_ref'] ?? null,
             'state' => $intent->metadata['portal_state'] ?? null,
             'school_referral_code' => $intent->metadata['referral_code'] ?? $intent->paygoService?->user?->customer?->referral_code,
-            'board' => strtoupper((string) $intent->paygoService?->resultBoard()),
+            'board' => strtoupper((string) ($intent->metadata['latest_board'] ?? $intent->paygoService?->resultBoard())),
             'payment_status' => in_array($intent->status, ['paid', 'used', 'verifying'], true) ? 'paid' : $intent->status,
             'result_status' => $success ? 'ready' : 'failed',
             'lookup_label' => $intent->lookup_label,

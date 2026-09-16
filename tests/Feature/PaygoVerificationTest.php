@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Services\Paygo\PaygoVerificationService;
+use App\Services\ResultVerify\ResultGates\NECOResult;
 use App\Services\ResultVerify\ResultGates\WAECResult;
 use App\Services\ResultVerify\ResultInterface;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
@@ -163,6 +164,54 @@ function bindSuccessfulPaygoWaecResult(): void
                     ['subject' => 'MATHEMATICS', 'grade' => 'A1', 'score' => null],
                 ],
                 'overall' => null,
+            ];
+        }
+    });
+}
+
+function paygoNecoParams(string $examNumber): array
+{
+    return [
+        'exam_year' => '2026',
+        'exam_type' => 'ssce_int',
+        'reg_no' => $examNumber,
+        'token' => '123456789012',
+    ];
+}
+
+function bindSuccessfulPaygoNecoResult(): void
+{
+    app()->instance(NECOResult::class, new class implements ResultInterface
+    {
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'exam_year', 'label' => 'Examination Year', 'type' => 'text', 'required' => true],
+                ['name' => 'exam_type', 'label' => 'Examination Type', 'type' => 'text', 'required' => true],
+                ['name' => 'reg_no', 'label' => 'Examination Number', 'type' => 'text', 'required' => true],
+                ['name' => 'token', 'label' => 'Result Checker Token', 'type' => 'text', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '<html>'.$params['reg_no'].'</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            preg_match('/>([^<]+)</', $html, $matches);
+            $examNumber = $matches[1] ?? 'UNKNOWN';
+
+            return [
+                'status' => 'success',
+                'candidate' => [
+                    'name' => 'NECO Candidate '.$examNumber,
+                    'exam_number' => $examNumber,
+                ],
+                'subjects' => [
+                    ['subject' => 'ENGLISH', 'grade' => 'A1', 'score' => null],
+                ],
             ];
         }
     });
@@ -738,6 +787,58 @@ it('allows two successful result fetches under one paid portal reference and blo
         '127.0.0.1',
         paygoWaecParams('4310516060'),
     ))->toThrow(RuntimeException::class, 'successful fetch limit');
+});
+
+it('allows a paid portal reference package to fetch a second result from a different board', function () {
+    bindSuccessfulPaygoWaecResult();
+    bindSuccessfulPaygoNecoResult();
+
+    $user = createPaygoCustomer();
+    $waecService = createPaygoResultService(price: 100);
+    $necoService = createPaygoResultService(slug: 'neco-result-fetch', price: 100);
+    $waecPaygoService = createPaygoServiceFor($user, $waecService, price: 150);
+    $necoPaygoService = createPaygoServiceFor($user, $necoService, price: 150);
+    $waecPaygoService->update(['reference_price' => 350]);
+    $necoPaygoService->update(['reference_price' => 350]);
+
+    $intent = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent($waecPaygoService->fresh(['user.customer', 'verificationService']), 'SCHOOL-CROSS-REF', [
+        'params' => paygoWaecParams('4310516058'),
+        'email' => 'student@example.com',
+    ]);
+
+    app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 350,
+        'reference' => $intent->reference,
+        'paid_at' => now(),
+        'channel' => 'card',
+    ]);
+
+    $first = app(PaygoVerificationService::class)->fetchResultForPaidIntent(
+        $intent->fresh(),
+        '127.0.0.1',
+        paygoWaecParams('4310516058'),
+        $waecPaygoService->fresh(['user.customer', 'verificationService']),
+    );
+
+    $sameReference = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent($necoPaygoService->fresh(['user.customer', 'verificationService']), 'SCHOOL-CROSS-REF', [
+        'params' => paygoNecoParams('NECO123456'),
+        'email' => 'student@example.com',
+    ]);
+
+    $second = app(PaygoVerificationService::class)->fetchResultForPaidIntent(
+        $sameReference->fresh(),
+        '127.0.0.1',
+        paygoNecoParams('NECO123456'),
+        $necoPaygoService->fresh(['user.customer', 'verificationService']),
+    );
+
+    expect($sameReference->id)->toBe($intent->id)
+        ->and($first['success'])->toBeTrue()
+        ->and($second['success'])->toBeTrue()
+        ->and($second['data']['candidate']['name'])->toBe('NECO Candidate NECO123456')
+        ->and($intent->fresh()->verification_attempts)->toBe(2)
+        ->and(PaygoResultAttempt::where('paygo_verification_intent_id', $intent->id)->pluck('verification_service_id')->all())
+        ->toContain($waecService->id, $necoService->id);
 });
 
 it('lets admins manage PayGo users collected from verification intents', function () {
