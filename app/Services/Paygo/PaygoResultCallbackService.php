@@ -3,11 +3,12 @@
 namespace App\Services\Paygo;
 
 use App\Models\PaygoVerificationIntent;
+use App\Support\ResultVerificationErrorFormatter;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use App\Support\ResultVerificationErrorFormatter;
+use Throwable;
 
 class PaygoResultCallbackService
 {
@@ -46,19 +47,56 @@ class PaygoResultCallbackService
             'lookup_label' => $payload['lookup_label'] ?? null,
             'board' => $payload['board'] ?? null,
             'result_status' => $payload['result_status'] ?? null,
+            'result' => $payload['result'] ?? null,
+            'error' => $payload['error'] ?? null,
+            'error_code' => $payload['error_code'] ?? null,
             'payload' => $payload,
         ]);
 
-        $response = Http::timeout(15)
-            ->retry(2, 500)
-            ->acceptJson()
-            ->asJson()
-            ->withHeaders([
-                'X-EaseVerifier-Event' => $payload['event'],
-                'X-EaseVerifier-Reference' => $intent->reference,
-                'X-EaseVerifier-Signature' => $signature,
-            ])
-            ->post($webhookUrl, $payload);
+        try {
+            $response = Http::timeout(15)
+                ->retry(2, 500)
+                ->acceptJson()
+                ->asJson()
+                ->withHeaders([
+                    'X-EaseVerifier-Event' => $payload['event'],
+                    'X-EaseVerifier-Reference' => $intent->reference,
+                    'X-EaseVerifier-Signature' => $signature,
+                ])
+                ->post($webhookUrl, $payload);
+        } catch (Throwable $exception) {
+            Log::warning('EaseVerifier PayGo result webhook delivery failed', [
+                'reference' => $intent->reference,
+                'webhook_url' => $webhookUrl,
+                'event' => $payload['event'],
+                'board' => $payload['board'] ?? null,
+                'portal_ref' => $payload['portal_ref'] ?? null,
+                'sitting' => $payload['sitting'] ?? null,
+                'result_status' => $payload['result_status'] ?? null,
+                'message' => $exception->getMessage(),
+            ]);
+
+            $this->updateWebhookMetadata($intent, [
+                'webhook_last_attempt_at' => now()->toISOString(),
+                'webhook_last_status' => 'failed',
+                'webhook_last_error' => $exception->getMessage(),
+            ]);
+
+            return;
+        }
+
+        Log::info('EaseVerifier PayGo result webhook delivered', [
+            'reference' => $intent->reference,
+            'webhook_url' => $webhookUrl,
+            'event' => $payload['event'],
+            'board' => $payload['board'] ?? null,
+            'portal_ref' => $payload['portal_ref'] ?? null,
+            'sitting' => $payload['sitting'] ?? null,
+            'result_status' => $payload['result_status'] ?? null,
+            'http_status' => $response->status(),
+            'successful' => $response->successful(),
+            'response' => $response->json() ?? $response->body(),
+        ]);
 
         $this->recordWebhookResponse($intent, $response);
     }

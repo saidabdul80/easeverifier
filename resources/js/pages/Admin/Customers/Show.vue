@@ -51,6 +51,9 @@ const paystackGatewayForm = useForm({
     system_bank_code: props.paystackGateway?.system_subaccount?.bank_code || '',
     system_account_number: '',
 });
+const selectedGatewayIsConfigured = computed(() =>
+    Boolean(props.paystackGateway && props.paystackGateway.environment === paystackGatewayForm.environment),
+);
 const paystackBanks = ref<any[]>([]);
 const loadingPaystackBanks = ref(false);
 const paystackBanksError = ref('');
@@ -340,20 +343,20 @@ onMounted(loadPaystackBanks);
                     <v-card-title class="d-flex align-center">
                         Customer Paystack Gateway
                         <v-spacer />
-                        <v-chip size="small" :color="paystackGateway?.verification_status === 'verified' ? 'success' : 'grey'" variant="tonal">
-                            {{ paystackGateway?.verification_status === 'verified' ? 'Verified' : 'Not configured' }}
+                        <v-chip size="small" :color="selectedGatewayIsConfigured && paystackGateway?.verification_status === 'verified' ? 'success' : 'grey'" variant="tonal">
+                            {{ selectedGatewayIsConfigured && paystackGateway?.verification_status === 'verified' ? 'Verified' : 'Not configured' }}
                         </v-chip>
                     </v-card-title>
                     <v-card-text>
                         <v-row dense>
                             <v-col cols="12" sm="4">
-                                <v-select v-model="paystackGatewayForm.environment" :items="[{ title: 'Live', value: 'live' }, { title: 'Test', value: 'test' }]" label="Environment" variant="outlined" density="compact" :disabled="Boolean(paystackGateway)" :error-messages="paystackGatewayForm.errors.environment" />
+                                <v-select v-model="paystackGatewayForm.environment" :items="[{ title: 'Live', value: 'live' }, { title: 'Test', value: 'test' }]" label="Environment" variant="outlined" density="compact" :error-messages="paystackGatewayForm.errors.environment" />
                             </v-col>
                             <v-col cols="12" sm="8">
-                                <v-text-field v-model="paystackGatewayForm.public_key" label="Paystack public key" variant="outlined" density="compact" autocomplete="off" :placeholder="paystackGateway ? 'Leave blank to keep current key' : 'pk_live_...'" :error-messages="paystackGatewayForm.errors.public_key" />
+                                <v-text-field v-model="paystackGatewayForm.public_key" label="Paystack public key" variant="outlined" density="compact" autocomplete="off" :placeholder="selectedGatewayIsConfigured ? 'Leave blank to keep current key' : `pk_${paystackGatewayForm.environment}_...`" :error-messages="paystackGatewayForm.errors.public_key" />
                             </v-col>
                             <v-col cols="12">
-                                <v-text-field v-model="paystackGatewayForm.secret_key" label="Paystack secret key" type="password" variant="outlined" density="compact" autocomplete="new-password" :placeholder="paystackGateway ? `Current: ${paystackGateway.key_fingerprint}` : 'sk_live_...'" :error-messages="paystackGatewayForm.errors.secret_key" />
+                                <v-text-field v-model="paystackGatewayForm.secret_key" label="Paystack secret key" type="password" variant="outlined" density="compact" autocomplete="new-password" :placeholder="selectedGatewayIsConfigured ? `Current: ${paystackGateway.key_fingerprint}` : `sk_${paystackGatewayForm.environment}_...`" :error-messages="paystackGatewayForm.errors.secret_key" />
                             </v-col>
                             <v-col cols="12">
                                 <v-autocomplete
@@ -377,7 +380,7 @@ onMounted(loadPaystackBanks);
                             <v-col cols="12" sm="6"><v-switch v-model="paystackGatewayForm.is_trusted" label="Trusted customer" color="primary" hide-details /></v-col>
                             <v-col cols="12" sm="6"><v-switch v-model="paystackGatewayForm.is_active" label="Use customer Paystack" color="primary" hide-details /></v-col>
                         </v-row>
-                        <div v-if="paystackGateway?.system_subaccount" class="text-caption text-grey mb-3">
+                        <div v-if="selectedGatewayIsConfigured && paystackGateway?.system_subaccount" class="text-caption text-grey mb-3">
                             System subaccount: {{ paystackGateway.system_subaccount.subaccount_code }} · {{ paystackGateway.system_subaccount.account_name }}
                         </div>
                         <v-btn color="primary" prepend-icon="mdi-shield-check-outline" :loading="paystackGatewayForm.processing" @click="submitPaystackGateway">Verify and save</v-btn>

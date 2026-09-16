@@ -870,6 +870,14 @@ it('initializes a result reference package with the school supplied reference an
                 'reference' => 'PORTAL-REF-1',
             ],
         ], 200),
+        '*/transaction/verify/PORTAL-REF-1' => Http::response([
+            'status' => true,
+            'data' => [
+                'status' => 'pending',
+                'amount' => 45000,
+                'reference' => 'PORTAL-REF-1',
+            ],
+        ]),
     ]);
 
     $user = createPaygoCustomer();
@@ -905,6 +913,8 @@ it('initializes a result reference package with the school supplied reference an
         ->and($intent->metadata['portal_state'])->toBe('signed-state')
         ->and($intent->metadata['paystack_checkout']['authorization_url'])->toBe('https://checkout.paystack.test/portal-ref-1');
 
+    $paygoService->update(['reference_price' => 1000]);
+
     $this
         ->withHeaders(['X-Inertia' => 'true'])
         ->post("/paygo/results/{$paygoService->public_slug}", array_merge(paygoWaecParams('4310516058'), [
@@ -922,7 +932,141 @@ it('initializes a result reference package with the school supplied reference an
             && $request['reference'] === 'PORTAL-REF-1'
             && $request['amount'] === 45000;
     });
-    Http::assertSentCount(1);
+    Http::assertSent(fn (\Illuminate\Http\Client\Request $request) => $request->url() === 'https://api.paystack.co/transaction/verify/PORTAL-REF-1');
+    Http::assertSentCount(2);
+
+    expect($intent->fresh()->amount)->toBe('450.00')
+        ->and($intent->fresh()->system_price_snapshot)->toBe('300.00');
+});
+
+it('keeps failed result reference payments on the local result form', function () {
+    config([
+        'services.paystack.public_key' => 'paystack-public',
+        'services.paystack.secret_key' => 'paystack-secret',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
+    Http::fake([
+        '*/transaction/verify/*' => Http::response([
+            'status' => true,
+            'data' => [
+                'status' => 'failed',
+                'amount' => 100000,
+                'reference' => 'APP-90210',
+            ],
+        ]),
+    ]);
+
+    $user = createPaygoCustomer();
+    $user->customer->update(['paygo_result_reference_system_price' => 300]);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 500);
+    $paygoService->update([
+        'reference_price' => 1000,
+        'failure_url' => 'http://quickapple.test/std/result_verify_callback.php',
+    ]);
+
+    app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        'APP-90210',
+        [
+            'params' => paygoWaecParams('4271710002'),
+            'email' => 'said@gmail.com',
+            'phone' => '080937282',
+            'portal_context' => [
+                'candidate_id' => 'STU-12345',
+                'state' => 'signed-state',
+                'sitting' => 1,
+            ],
+        ],
+    );
+
+    $response = $this->get('/paygo/callback?reference=APP-90210');
+
+    $response
+        ->assertRedirect(route('paygo.results.service', [
+            'publicSlug' => $paygoService->public_slug,
+            'reference' => 'APP-90210',
+            'candidate_id' => 'STU-12345',
+            'sitting' => 1,
+            'state' => 'signed-state',
+            'email' => 'said@gmail.com',
+            'phone' => '080937282',
+        ]))
+        ->assertSessionHas('error', 'Payment was not completed.');
+
+    expect(PaygoVerificationIntent::where('reference', 'APP-90210')->value('status'))->toBe('failed')
+        ->and($response->headers->get('Location'))->not->toContain('quickapple.test');
+});
+
+it('reconciles a paid reference package before returning to its cached checkout', function () {
+    $this->withoutVite();
+
+    config([
+        'services.paystack.public_key' => 'paystack-public',
+        'services.paystack.secret_key' => 'paystack-secret',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
+    bindSuccessfulPaygoWaecResult();
+
+    Http::fake(function ($request) {
+        if (str_contains($request->url(), '/transaction/verify/APP-90210')) {
+            return Http::response([
+                'status' => true,
+                'data' => [
+                    'status' => 'success',
+                    'amount' => 100000,
+                    'reference' => 'APP-90210',
+                    'paid_at' => now()->toISOString(),
+                    'channel' => 'card',
+                    'customer' => ['email' => 'said@gmail.com'],
+                ],
+            ]);
+        }
+
+        return Http::response([
+            'status' => true,
+            'data' => [
+                'authorization_url' => 'https://checkout.paystack.test/app-90210',
+                'access_code' => 'APP-90210-CODE',
+                'reference' => 'APP-90210',
+            ],
+        ]);
+    });
+
+    $user = createPaygoCustomer();
+    $user->customer->update(['paygo_result_reference_system_price' => 300]);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 500);
+    $paygoService->update([
+        'reference_price' => 1000,
+        'success_url' => 'http://quickapple.test/std/result_verify_callback.php',
+    ]);
+    $payload = array_merge(paygoWaecParams('4271710002'), [
+        'email' => 'said@gmail.com',
+        'phone' => '080937282',
+        'candidate_id' => 'STU-12345',
+        'state' => 'signed-state',
+        'sitting' => 1,
+        'reference' => 'APP-90210',
+    ]);
+
+    $this->withHeaders(['X-Inertia' => 'true'])
+        ->post("/paygo/results/{$paygoService->public_slug}", $payload)
+        ->assertStatus(409)
+        ->assertHeader('X-Inertia-Location', 'https://checkout.paystack.test/app-90210');
+
+    $this->post("/paygo/results/{$paygoService->public_slug}", $payload)
+        ->assertStatus(409)
+        ->assertHeader('X-Inertia-Location', 'http://quickapple.test/std/result_verify_callback.php?reference=APP-90210&candidate_id=STU-12345&sitting=1&state=signed-state&status=paid&payment_status=paid&result_status=pending&attempts_remaining=2');
+
+    $intent = PaygoVerificationIntent::where('reference', 'APP-90210')->firstOrFail();
+
+    expect($intent->status)->toBe('paid')
+        ->and($intent->paid_at)->not->toBeNull();
+
+    Http::assertSentCount(2);
 });
 
 it('allows two successful result fetches under one paid portal reference and blocks the third', function () {
@@ -1360,7 +1504,7 @@ it('redirects back to the school portal and posts a webhook for hybrid paygo res
 
     $response->assertRedirect(
         'https://school.test/verify/success?reference='.$intent->reference
-        .'&candidate_id=STU-12345&portal_ref=APP-90210&state=signed-state-token&status=paid&payment_status=paid&result_status=ready'
+        .'&candidate_id=STU-12345&portal_ref=APP-90210&state=signed-state-token&status=paid&payment_status=paid&result_status=pending'
     );
 
     Http::assertSent(function (\Illuminate\Http\Client\Request $request) use ($intent) {
@@ -1377,4 +1521,42 @@ it('redirects back to the school portal and posts a webhook for hybrid paygo res
     });
 
     expect($intent->fresh()->metadata['webhook_last_status'] ?? null)->toBe('delivered');
+});
+
+it('does not turn a successful result into a failure when webhook delivery fails', function () {
+    Http::fake([
+        'https://school.test/hooks/missing' => Http::response('Not Found', 404),
+    ]);
+
+    $user = createPaygoCustomer();
+    $user->customer->update(['webhook_url' => 'https://school.test/hooks/missing']);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+    $paygoService->update(['callback_mode' => 'webhook']);
+
+    $intent = app(PaygoVerificationService::class)->createIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        ['params' => paygoWaecParams('4271710002')],
+    );
+    $intent->update([
+        'status' => 'paid',
+        'paid_at' => now(),
+        'metadata' => array_merge($intent->metadata ?? [], [
+            'callback_mode' => 'webhook',
+            'verification_status' => 'completed',
+        ]),
+    ]);
+
+    app(\App\Services\Paygo\PaygoResultCallbackService::class)->sendResultWebhook(
+        $intent->fresh(['paygoService.user.customer']),
+        true,
+        ['candidate' => ['name' => 'Successful Candidate']],
+    );
+
+    $intent->refresh();
+
+    expect($intent->status)->toBe('paid')
+        ->and($intent->metadata['verification_status'])->toBe('completed')
+        ->and($intent->metadata['webhook_last_status'])->toBe('failed')
+        ->and($intent->metadata['webhook_last_error'])->toContain('404');
 });

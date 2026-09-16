@@ -149,9 +149,14 @@ class PaygoVerificationService
                     $updates = array_merge($updates, [
                         'customer_paygo_service_id' => $paygoService->id,
                         'verification_service_id' => $paygoService->verification_service_id,
-                        'amount' => $publicPrice,
-                        'system_price_snapshot' => $systemPrice,
                     ]);
+
+                    if (blank(data_get($existing->metadata, 'paystack_checkout.authorization_url'))) {
+                        $updates = array_merge($updates, [
+                            'amount' => $publicPrice,
+                            'system_price_snapshot' => $systemPrice,
+                        ]);
+                    }
                 }
 
                 $existing->update($updates);
@@ -678,8 +683,7 @@ class PaygoVerificationService
         ?string $ipAddress = null,
         ?CustomerPaygoService $paygoService = null,
         array $context = []
-    ): array
-    {
+    ): array {
         $intent->loadMissing(['paygoService.user.customer', 'verificationService']);
         $paygoService ??= $intent->paygoService;
 

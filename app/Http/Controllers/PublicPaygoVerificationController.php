@@ -7,8 +7,8 @@ use App\Models\PaygoVerificationIntent;
 use App\Models\User;
 use App\Services\Paygo\PaygoResultCallbackService;
 use App\Services\Paygo\PaygoVerificationService;
-use App\Services\PaystackService;
 use App\Services\PaystackGatewayResolver;
+use App\Services\PaystackService;
 use App\Services\PaystackSplitService;
 use App\Services\ResultVerify\ResultFactory;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
+use Throwable;
 
 class PublicPaygoVerificationController extends Controller
 {
@@ -210,7 +211,7 @@ class PublicPaygoVerificationController extends Controller
             : null;
 
         if ($externalReference) {
-            
+
             try {
                 $intent = $this->paygo->createOrFindResultReferenceIntent($paygoService, $externalReference, [
                     'params' => $params,
@@ -226,7 +227,9 @@ class PublicPaygoVerificationController extends Controller
             } catch (RuntimeException $exception) {
                 return back()->withErrors(['result' => $exception->getMessage()])->withInput();
             }
-        
+
+            $intent = $this->reconcileResultReferencePayment($intent);
+
             if ($intent->status === 'paid' || $intent->status === 'verifying') {
                 $context = [
                     'candidate_id' => $validated['candidate_id'] ?? null,
@@ -596,6 +599,8 @@ class PublicPaygoVerificationController extends Controller
                         'authorization_url' => $payment['authorization_url'] ?? null,
                         'access_code' => $payment['access_code'] ?? null,
                         'reference' => $payment['reference'] ?? $intent->reference,
+                        'amount' => (float) $intent->amount,
+                        'system_price' => (float) $intent->system_price_snapshot,
                         'initialized_at' => now()->toISOString(),
                     ],
                 ]),
@@ -716,9 +721,16 @@ class PublicPaygoVerificationController extends Controller
         $queuedAt = isset($metadata['result_fetch_queued_at'])
             ? strtotime((string) $metadata['result_fetch_queued_at'])
             : false;
+        $queueKey = hash('sha256', json_encode([
+            'service_id' => $paygoService?->id ?? $intent->customer_paygo_service_id,
+            'params' => $params ?? $intent->payload ?? [],
+            'portal_ref' => $context['portal_ref'] ?? null,
+            'sitting' => $context['sitting'] ?? null,
+        ], JSON_THROW_ON_ERROR));
 
         if (
             ($metadata['verification_status'] ?? null) === 'queued'
+            && ($metadata['result_fetch_queue_key'] ?? null) === $queueKey
             && $queuedAt
             && $queuedAt > (time() - 120)
         ) {
@@ -728,6 +740,7 @@ class PublicPaygoVerificationController extends Controller
         $queuedMetadata = [
             'verification_status' => 'queued',
             'result_fetch_queued_at' => now()->toISOString(),
+            'result_fetch_queue_key' => $queueKey,
         ];
 
         if ($paygoService) {
@@ -897,7 +910,6 @@ class PublicPaygoVerificationController extends Controller
         return $request->validate($rules);
     }
 
-    
     protected function syncResultPortalContext(PaygoVerificationIntent $intent, array $validated): void
     {
         $metadata = [];
@@ -979,11 +991,13 @@ class PublicPaygoVerificationController extends Controller
         try {
             $gateway = $this->paystackGateways->forIntent($intent);
             $payment = $this->paystackGateways->client($gateway)->verifyTransaction($reference);
-        } catch (RuntimeException $exception) {
-            return $this->redirectAfterPayment($intent, false, $exception->getMessage());
+        } catch (Throwable $exception) {
+            return $this->redirectAfterFailedPayment($intent, $exception->getMessage());
         }
         if (! $payment['success'] || ($payment['status'] ?? null) !== 'success') {
-            $intent->update(['status' => 'failed']);
+            if (! $intent->paid_at && ! in_array($intent->status, ['paid', 'verifying', 'used'], true)) {
+                $intent->update(['status' => 'failed']);
+            }
 
             if ($intent->isResultFlow()) {
                 $this->resultCallbacks->sendResultWebhook(
@@ -995,13 +1009,13 @@ class PublicPaygoVerificationController extends Controller
                 );
             }
 
-            return $this->redirectAfterPayment($intent, false, 'Payment was not completed.');
+            return $this->redirectAfterFailedPayment($intent, 'Payment was not completed.');
         }
 
         try {
             $intent = $this->paygo->completePayment($reference, $payment);
         } catch (RuntimeException $exception) {
-            return $this->redirectAfterPayment($intent, false, $exception->getMessage());
+            return $this->redirectAfterFailedPayment($intent, $exception->getMessage());
         }
 
         if ($intent->isResultFlow()) {
@@ -1127,5 +1141,61 @@ class PublicPaygoVerificationController extends Controller
         }
 
         return redirect()->route('home')->with($success ? 'success' : 'error', $message);
+    }
+
+    protected function redirectAfterFailedPayment(PaygoVerificationIntent $intent, string $message): RedirectResponse
+    {
+        if (! $intent->isResultFlow()) {
+            return $this->redirectAfterPayment($intent, false, $message);
+        }
+
+        $intent->loadMissing('paygoService');
+
+        if (! $intent->paygoService) {
+            return redirect()->route('home')->with('error', $message);
+        }
+
+        $query = array_filter([
+            'reference' => $intent->isResultReferenceFlow() ? $intent->reference : null,
+            'candidate_id' => $intent->metadata['candidate_id'] ?? null,
+            'portal_ref' => $intent->metadata['portal_ref'] ?? null,
+            'sitting' => $intent->metadata['result_sitting'] ?? null,
+            'state' => $intent->metadata['portal_state'] ?? null,
+            'email' => $intent->metadata['buyer_email'] ?? null,
+            'phone' => $intent->buyer_phone,
+        ], fn ($value) => $value !== null && $value !== '');
+
+        return redirect()
+            ->route('paygo.results.service', array_merge([
+                'publicSlug' => $intent->paygoService->public_slug,
+            ], $query))
+            ->with('error', ResultVerificationErrorFormatter::publicMessage($message));
+    }
+
+    protected function reconcileResultReferencePayment(PaygoVerificationIntent $intent): PaygoVerificationIntent
+    {
+        if (
+            ! $intent->isResultReferenceFlow()
+            || ! in_array($intent->status, ['pending', 'failed'], true)
+            || blank(data_get($intent->metadata, 'paystack_checkout.authorization_url'))
+        ) {
+            return $intent;
+        }
+
+        try {
+            $gateway = $this->paystackGateways->forIntent($intent);
+            $payment = $this->paystackGateways->client($gateway)->verifyTransaction($intent->reference);
+
+            if (($payment['success'] ?? false) && ($payment['status'] ?? null) === 'success') {
+                return $this->paygo->completePayment($intent->reference, $payment);
+            }
+        } catch (Throwable $exception) {
+            Log::warning('Unable to reconcile PayGo result reference payment before checkout reuse.', [
+                'reference' => $intent->reference,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        return $intent->fresh(['paygoService']);
     }
 }
