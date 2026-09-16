@@ -739,13 +739,27 @@ it('initializes a result reference package with the school supplied reference an
         ->and((float) $intent->amount)->toBe(450.0)
         ->and((float) $intent->system_price_snapshot)->toBe(300.0)
         ->and($intent->max_fetches_snapshot)->toBe(2)
-        ->and($intent->metadata['portal_state'])->toBe('signed-state');
+        ->and($intent->metadata['portal_state'])->toBe('signed-state')
+        ->and($intent->metadata['paystack_checkout']['authorization_url'])->toBe('https://checkout.paystack.test/portal-ref-1');
+
+    $this
+        ->withHeaders(['X-Inertia' => 'true'])
+        ->post("/paygo/results/{$paygoService->public_slug}", array_merge(paygoWaecParams('4310516058'), [
+            'email' => 'student@example.com',
+            'phone' => '08012345678',
+            'portal_ref' => 'APP-123',
+            'state' => 'signed-state',
+            'reference' => 'PORTAL-REF-1',
+        ]))
+        ->assertStatus(409)
+        ->assertHeader('X-Inertia-Location', 'https://checkout.paystack.test/portal-ref-1');
 
     Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
         return $request->url() === 'https://api.paystack.co/transaction/initialize'
             && $request['reference'] === 'PORTAL-REF-1'
             && $request['amount'] === 45000;
     });
+    Http::assertSentCount(1);
 });
 
 it('allows two successful result fetches under one paid portal reference and blocks the third', function () {

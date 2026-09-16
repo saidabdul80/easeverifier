@@ -441,6 +441,17 @@ class PublicPaygoVerificationController extends Controller
     protected function initializePaygoPayment(CustomerPaygoService $paygoService, PaygoVerificationIntent $intent, string $email): array
     {
         $amountInKobo = (int) round((float) $intent->amount * 100);
+        $checkout = $intent->metadata['paystack_checkout'] ?? [];
+
+        if ($intent->status === 'pending' && filled($checkout['authorization_url'] ?? null)) {
+            return [
+                'success' => true,
+                'authorization_url' => $checkout['authorization_url'],
+                'access_code' => $checkout['access_code'] ?? null,
+                'reference' => $checkout['reference'] ?? $intent->reference,
+                'served_from' => 'cached_checkout',
+            ];
+        }
 
         try {
             $split = $this->paystackSplits->buildDynamicFlatSplit(
@@ -463,13 +474,58 @@ class PublicPaygoVerificationController extends Controller
             ]);
         }
 
-        return $this->paystack->initializeTransaction(
+        $payment = $this->paystack->initializeTransaction(
             email: $email,
             amountInKobo: $amountInKobo,
             reference: $intent->reference,
             callbackUrl: route('paygo.callback'),
             options: $split ? $split['payment_options'] : [],
         );
+
+        if (! ($payment['success'] ?? false) && $this->isDuplicatePaystackReferenceMessage($payment['message'] ?? null)) {
+            $verifiedPayment = $this->paystack->verifyTransaction($intent->reference);
+
+            if (($verifiedPayment['success'] ?? false) && ($verifiedPayment['status'] ?? null) === 'success') {
+                try {
+                    $this->paygo->completePayment($intent->reference, $verifiedPayment);
+                } catch (RuntimeException $exception) {
+                    return [
+                        'success' => false,
+                        'message' => $exception->getMessage(),
+                    ];
+                }
+
+                return [
+                    'success' => true,
+                    'authorization_url' => route('paygo.callback', ['reference' => $intent->reference]),
+                    'access_code' => null,
+                    'reference' => $intent->reference,
+                    'served_from' => 'verified_duplicate_reference',
+                ];
+            }
+        }
+
+        if ($payment['success'] ?? false) {
+            $intent->update([
+                'metadata' => array_merge($intent->metadata ?? [], [
+                    'paystack_checkout' => [
+                        'authorization_url' => $payment['authorization_url'] ?? null,
+                        'access_code' => $payment['access_code'] ?? null,
+                        'reference' => $payment['reference'] ?? $intent->reference,
+                        'initialized_at' => now()->toISOString(),
+                    ],
+                ]),
+            ]);
+        }
+
+        return $payment;
+    }
+
+    protected function isDuplicatePaystackReferenceMessage(?string $message): bool
+    {
+        $message = strtolower((string) $message);
+
+        return str_contains($message, 'duplicate') && str_contains($message, 'reference');
     }
 
     protected function publicResultServicesForUser(User $user)
