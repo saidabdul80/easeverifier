@@ -7,6 +7,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Support\ResultVerificationErrorFormatter;
 
 class PaygoResultCallbackService
 {
@@ -130,7 +131,11 @@ class PaygoResultCallbackService
             'result_status' => $success ? 'ready' : 'failed',
             'lookup_label' => $resultContext['lookup_label'] ?? $intent->lookup_label,
             'result' => $resultData,
-            'error' => $errorMessage,
+            'error' => ResultVerificationErrorFormatter::publicMessage(
+                $errorMessage,
+                $errorCode,
+                (string) ($resultContext['board'] ?? $intent->metadata['latest_board'] ?? $intent->paygoService?->resultBoard())
+            ),
             'error_code' => $errorCode,
             'timestamp' => now()->toISOString(),
         ];

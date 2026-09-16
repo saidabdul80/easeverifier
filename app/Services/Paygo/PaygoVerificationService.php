@@ -11,6 +11,7 @@ use App\Models\PaygoWallet;
 use App\Models\VerificationRequest;
 use App\Services\ResultVerify\ResultVerificationEngine;
 use App\Services\Verification\VerificationEngine;
+use App\Support\ResultVerificationErrorFormatter;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -640,20 +641,28 @@ class PaygoVerificationService
             ];
         }
 
+        $rawErrorMessage = $result->getErrorMessage();
+        $errorMessage = ResultVerificationErrorFormatter::publicMessage($rawErrorMessage, $result->errorCode, $board);
+        $metadata = [
+            'verification_status' => 'failed',
+            'verification_reference' => $verification?->reference,
+            'error_code' => $result->errorCode,
+            'error_message' => $errorMessage,
+        ];
+
+        if ($errorMessage !== $rawErrorMessage) {
+            $metadata['internal_error_message'] = $rawErrorMessage;
+        }
+
         $intent->update([
             'status' => 'paid',
             'verification_request_id' => $verification?->id,
-            'metadata' => array_merge($intent->metadata ?? [], [
-                'verification_status' => 'failed',
-                'verification_reference' => $verification?->reference,
-                'error_code' => $result->errorCode,
-                'error_message' => $result->getErrorMessage(),
-            ]),
+            'metadata' => array_merge($intent->metadata ?? [], $metadata),
         ]);
 
         return [
             'success' => false,
-            'error' => $result->getErrorMessage(),
+            'error' => $errorMessage,
             'error_code' => $result->errorCode,
             'verification' => $verification,
         ];
@@ -860,32 +869,42 @@ class PaygoVerificationService
             ];
         }
 
+        $rawErrorMessage = $result->getErrorMessage();
+        $errorMessage = ResultVerificationErrorFormatter::publicMessage($rawErrorMessage, $result->errorCode, $board);
+        $attemptMetadata = array_merge($attempt->metadata ?? [], [
+            'failed_at' => now()->toISOString(),
+            'response_time' => $result->responseTime,
+        ]);
+        $intentMetadata = [
+            'verification_status' => 'failed',
+            'verification_reference' => $verification?->reference,
+            'error_code' => $result->errorCode,
+            'error_message' => $errorMessage,
+        ];
+
+        if ($errorMessage !== $rawErrorMessage) {
+            $attemptMetadata['internal_error_message'] = $rawErrorMessage;
+            $intentMetadata['internal_error_message'] = $rawErrorMessage;
+        }
+
         $attempt->update([
             'verification_request_id' => $verification?->id,
             'status' => 'failed',
             'success_counted' => false,
             'error_code' => $result->errorCode,
-            'error_message' => $result->getErrorMessage(),
-            'metadata' => array_merge($attempt->metadata ?? [], [
-                'failed_at' => now()->toISOString(),
-                'response_time' => $result->responseTime,
-            ]),
+            'error_message' => $errorMessage,
+            'metadata' => $attemptMetadata,
         ]);
 
         $intent->update([
             'status' => 'paid',
             'verification_request_id' => $verification?->id,
-            'metadata' => array_merge($intent->metadata ?? [], [
-                'verification_status' => 'failed',
-                'verification_reference' => $verification?->reference,
-                'error_code' => $result->errorCode,
-                'error_message' => $result->getErrorMessage(),
-            ]),
+            'metadata' => array_merge($intent->metadata ?? [], $intentMetadata),
         ]);
 
         return [
             'success' => false,
-            'error' => $result->getErrorMessage(),
+            'error' => $errorMessage,
             'error_code' => $result->errorCode,
             'verification' => $verification,
             'attempts_remaining' => max(0, $this->maxFetchesForIntent($intent) - $this->successfulResultAttemptCount($intent)),
@@ -1045,7 +1064,10 @@ class PaygoVerificationService
                         }
 
                         if ($contextAttempt->status === 'failed') {
-                            throw new RuntimeException($contextAttempt->error_message ?: 'Result verification failed for this attempt.');
+                            throw new RuntimeException(ResultVerificationErrorFormatter::publicMessage(
+                                $contextAttempt->error_message ?: 'Result verification failed for this attempt.',
+                                $contextAttempt->error_code,
+                            ));
                         }
 
                         throw new RuntimeException('Result is not available for this portal attempt yet.');

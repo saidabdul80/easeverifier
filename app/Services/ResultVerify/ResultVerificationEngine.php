@@ -289,6 +289,35 @@ class ResultVerificationEngine
                 return VerificationResult::success($data, $responseTime);
             }
 
+            if ($fallback && ($fallback['parsed']['status'] ?? null) === 'error') {
+                $fallbackParsed = $fallback['parsed'];
+                $errorCode = (string) ($fallbackParsed['code'] ?? 'UNKNOWN_ERROR');
+                $errorMessage = (string) ($fallbackParsed['message'] ?? 'Result verification failed.');
+
+                $apiLog->update([
+                    'response_status' => 400,
+                    'response_body' => ApiLog::responseSummary($this->sanitizeParsedResponse($fallbackParsed), 400),
+                    'response_time' => $responseTime,
+                ]);
+
+                Log::error('Result verification failed after NECO fallback error', [
+                    'board' => $board,
+                    'fallback_board' => $fallback['board'],
+                    'reference' => $verificationRequest->reference,
+                    'primary_exception' => $exception->getMessage(),
+                    'fallback_code' => $errorCode,
+                    'fallback_message' => $errorMessage,
+                ]);
+
+                if ($transaction && $wallet && $this->shouldRefund($errorCode, $errorMessage)) {
+                    $this->refundAndFail($verificationRequest, $wallet, (float) $transaction->amount, $errorMessage, $transaction);
+                } else {
+                    $verificationRequest->markAsFailed($errorMessage);
+                }
+
+                return VerificationResult::failure($errorMessage, $errorCode, $responseTime);
+            }
+
             $apiLog->update([
                 'response_status' => 500,
                 'response_body' => ApiLog::exceptionSummary($exception->getMessage()),
@@ -537,6 +566,11 @@ class ResultVerificationEngine
                 'code' => $parsed['code'] ?? null,
                 'message' => $parsed['message'] ?? null,
             ]);
+
+            return [
+                'board' => $fallbackBoard,
+                'parsed' => $parsed,
+            ];
         } catch (Throwable $exception) {
             Log::info('NECO result fallback failed', [
                 'selected_board' => $board,

@@ -11,6 +11,7 @@ use App\Services\PaystackService;
 use App\Services\PaystackSplitService;
 use App\Services\ResultVerify\ResultFactory;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
+use App\Support\ResultVerificationErrorFormatter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -207,6 +208,7 @@ class PublicPaygoVerificationController extends Controller
             : null;
 
         if ($externalReference) {
+            
             try {
                 $intent = $this->paygo->createOrFindResultReferenceIntent($paygoService, $externalReference, [
                     'params' => $params,
@@ -222,8 +224,8 @@ class PublicPaygoVerificationController extends Controller
             } catch (RuntimeException $exception) {
                 return back()->withErrors(['result' => $exception->getMessage()])->withInput();
             }
-
-            if ($intent->status === 'paid') {
+        
+            if ($intent->status === 'paid' || $intent->status === 'verifying') {
                 try {
                     $result = $this->paygo->fetchResultForPaidIntent($intent, $request->ip(), $params, $paygoService, [
                         'candidate_id' => $validated['candidate_id'] ?? null,
@@ -350,7 +352,9 @@ class PublicPaygoVerificationController extends Controller
         $fetchErrorContext = $request->session()->get('paygo_result_context', []);
         $portalRef = $request->query('portal_ref') ? (string) $request->query('portal_ref') : null;
         $sitting = $request->query('sitting') ? (string) $request->query('sitting') : null;
-        $contextualFetchError = $this->contextualPaidResultError($fetchError, $fetchErrorContext, $portalRef, $sitting);
+        $contextualFetchError = ResultVerificationErrorFormatter::publicMessage(
+            $this->contextualPaidResultError($fetchError, $fetchErrorContext, $portalRef, $sitting)
+        );
         $verification = null;
         $attempt = null;
         $resultError = null;
@@ -361,7 +365,10 @@ class PublicPaygoVerificationController extends Controller
 
             if ($attempt) {
                 $verification = $attempt->status === 'completed' ? $attempt->verificationRequest : null;
-                $resultError = $attempt->error_message ?: ($attempt->status === 'failed' ? 'Result verification failed.' : null);
+                $resultError = ResultVerificationErrorFormatter::publicMessage(
+                    $attempt->error_message ?: ($attempt->status === 'failed' ? 'Result verification failed.' : null),
+                    $attempt->error_code
+                );
             } elseif (! $contextualFetchError && blank($portalRef) && blank($sitting)) {
                 $verification = $this->paygo->displayVerificationForResultIntent($intent);
             } elseif (! $contextualFetchError) {
@@ -409,7 +416,9 @@ class PublicPaygoVerificationController extends Controller
             'result' => [
                 'success' => blank($resultError) && $verification?->status === 'completed',
                 'data' => blank($resultError) ? $verification?->response_data : null,
-                'error' => $resultError ?: ($intent->metadata['error_message'] ?? $verification?->error_message),
+                'error' => ResultVerificationErrorFormatter::publicMessage(
+                    $resultError ?: ($intent->metadata['error_message'] ?? $verification?->error_message)
+                ),
             ],
         ]);
     }
@@ -453,7 +462,7 @@ class PublicPaygoVerificationController extends Controller
 
             return response()->json([
                 'success' => false,
-                'error' => $exception->getMessage(),
+                'error' => ResultVerificationErrorFormatter::publicMessage($exception->getMessage()),
                 'error_code' => $status === 429 ? 'PULL_LIMIT_EXCEEDED' : 'RESULT_REFERENCE_INVALID',
             ], $status);
         }
