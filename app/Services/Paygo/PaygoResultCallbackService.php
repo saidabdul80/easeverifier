@@ -6,6 +6,7 @@ use App\Models\PaygoVerificationIntent;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class PaygoResultCallbackService
 {
@@ -35,6 +36,17 @@ class PaygoResultCallbackService
 
         $payload = $this->buildWebhookPayload($intent, $success, $resultData, $errorMessage, $errorCode);
         $signature = hash_hmac('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES), $secret);
+
+        Log::info('EaseVerifier PayGo result webhook outbound', [
+            'reference' => $intent->reference,
+            'webhook_url' => $webhookUrl,
+            'portal_ref' => $payload['portal_ref'] ?? null,
+            'sitting' => $payload['sitting'] ?? null,
+            'lookup_label' => $payload['lookup_label'] ?? null,
+            'board' => $payload['board'] ?? null,
+            'result_status' => $payload['result_status'] ?? null,
+            'payload' => $payload,
+        ]);
 
         $response = Http::timeout(15)
             ->retry(2, 500)
@@ -67,10 +79,12 @@ class PaygoResultCallbackService
             return null;
         }
 
+        $resultContext = $this->resultAttemptContext($intent);
         $context = [
             'reference' => $intent->reference,
             'candidate_id' => $intent->metadata['candidate_id'] ?? null,
-            'portal_ref' => $intent->metadata['portal_ref'] ?? null,
+            'portal_ref' => $resultContext['portal_ref'] ?? $intent->metadata['portal_ref'] ?? null,
+            'sitting' => $resultContext['sitting'] ?? $intent->metadata['result_sitting'] ?? null,
             'state' => $intent->metadata['portal_state'] ?? null,
         ];
 
@@ -79,7 +93,18 @@ class PaygoResultCallbackService
             fn ($value) => $value !== null && $value !== ''
         ));
 
-        return redirect()->away($url.(str_contains($url, '?') ? '&' : '?').$queryString);
+        $redirectUrl = $url.(str_contains($url, '?') ? '&' : '?').$queryString;
+
+        Log::info('EaseVerifier PayGo result redirect outbound', [
+            'reference' => $intent->reference,
+            'redirect_url' => $redirectUrl,
+            'portal_ref' => $context['portal_ref'] ?? null,
+            'sitting' => $context['sitting'] ?? null,
+            'state' => $context['state'] ?? null,
+            'query' => array_merge($context, $query),
+        ]);
+
+        return redirect()->away($redirectUrl);
     }
 
     protected function buildWebhookPayload(
@@ -90,18 +115,20 @@ class PaygoResultCallbackService
         ?string $errorCode
     ): array {
         $intent->loadMissing(['paygoService.user.customer']);
+        $resultContext = $this->resultAttemptContext($intent);
 
         return [
             'event' => $success ? 'paygo.result.ready' : 'paygo.result.failed',
             'reference' => $intent->reference,
             'candidate_id' => $intent->metadata['candidate_id'] ?? null,
-            'portal_ref' => $intent->metadata['portal_ref'] ?? null,
+            'portal_ref' => $resultContext['portal_ref'] ?? $intent->metadata['portal_ref'] ?? null,
+            'sitting' => $resultContext['sitting'] ?? $intent->metadata['result_sitting'] ?? null,
             'state' => $intent->metadata['portal_state'] ?? null,
             'school_referral_code' => $intent->metadata['referral_code'] ?? $intent->paygoService?->user?->customer?->referral_code,
-            'board' => strtoupper((string) ($intent->metadata['latest_board'] ?? $intent->paygoService?->resultBoard())),
+            'board' => strtoupper((string) ($resultContext['board'] ?? $intent->metadata['latest_board'] ?? $intent->paygoService?->resultBoard())),
             'payment_status' => in_array($intent->status, ['paid', 'used', 'verifying'], true) ? 'paid' : $intent->status,
             'result_status' => $success ? 'ready' : 'failed',
-            'lookup_label' => $intent->lookup_label,
+            'lookup_label' => $resultContext['lookup_label'] ?? $intent->lookup_label,
             'result' => $resultData,
             'error' => $errorMessage,
             'error_code' => $errorCode,
@@ -142,6 +169,45 @@ class PaygoResultCallbackService
     protected function usesWebhookCallback(PaygoVerificationIntent $intent): bool
     {
         return in_array($intent->metadata['callback_mode'] ?? $intent->paygoService?->callback_mode ?? 'redirect', ['webhook', 'hybrid'], true);
+    }
+
+    protected function resultAttemptContext(PaygoVerificationIntent $intent): array
+    {
+        if (! $intent->isResultReferenceFlow()) {
+            return [];
+        }
+
+        $attempt = $intent->resultAttempts()
+            ->with(['paygoService.verificationService'])
+            ->latest('id')
+            ->first();
+
+        if (! $attempt) {
+            return [];
+        }
+
+        $metadata = $attempt->metadata ?? [];
+        $portalRef = filled($metadata['last_portal_ref'] ?? null)
+            ? (string) $metadata['last_portal_ref']
+            : (filled($metadata['portal_ref'] ?? null) ? (string) $metadata['portal_ref'] : null);
+        $sitting = filled($metadata['sitting'] ?? null) ? (int) $metadata['sitting'] : null;
+        $intentPortalRef = filled($intent->metadata['portal_ref'] ?? null) ? (string) $intent->metadata['portal_ref'] : null;
+        $intentSitting = filled($intent->metadata['result_sitting'] ?? null) ? (int) $intent->metadata['result_sitting'] : null;
+
+        if ($intentPortalRef && $portalRef !== $intentPortalRef) {
+            return [];
+        }
+
+        if ($intentSitting !== null && $sitting !== null && $sitting !== $intentSitting) {
+            return [];
+        }
+
+        return [
+            'portal_ref' => $portalRef,
+            'sitting' => $sitting,
+            'lookup_label' => $attempt->lookup_label,
+            'board' => $attempt->paygoService?->resultBoard(),
+        ];
     }
 
     protected function webhookUrl(PaygoVerificationIntent $intent): ?string

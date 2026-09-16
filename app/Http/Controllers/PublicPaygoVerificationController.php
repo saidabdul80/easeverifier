@@ -12,7 +12,9 @@ use App\Services\PaystackSplitService;
 use App\Services\ResultVerify\ResultFactory;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -214,6 +216,7 @@ class PublicPaygoVerificationController extends Controller
                         'candidate_id' => $validated['candidate_id'] ?? null,
                         'portal_ref' => $validated['portal_ref'] ?? null,
                         'state' => $validated['state'] ?? null,
+                        'sitting' => $validated['sitting'] ?? null,
                     ],
                 ], $request->ip());
             } catch (RuntimeException $exception) {
@@ -222,7 +225,12 @@ class PublicPaygoVerificationController extends Controller
 
             if ($intent->status === 'paid') {
                 try {
-                    $result = $this->paygo->fetchResultForPaidIntent($intent, $request->ip(), $params, $paygoService);
+                    $result = $this->paygo->fetchResultForPaidIntent($intent, $request->ip(), $params, $paygoService, [
+                        'candidate_id' => $validated['candidate_id'] ?? null,
+                        'portal_ref' => $validated['portal_ref'] ?? null,
+                        'state' => $validated['state'] ?? null,
+                        'sitting' => $validated['sitting'] ?? null,
+                    ]);
                 } catch (RuntimeException $exception) {
                     return back()->withErrors(['result' => $exception->getMessage()])->withInput();
                 }
@@ -237,22 +245,31 @@ class PublicPaygoVerificationController extends Controller
                     $result['error_code'] ?? null,
                 );
 
-                $redirect = $this->resultCallbacks->redirectToConfiguredUrl($intent, (bool) ($result['success'] ?? false), [
-                    'status' => 'paid',
-                    'payment_status' => 'paid',
-                    'result_status' => ($result['success'] ?? false) ? 'ready' : 'failed',
-                    'attempts_remaining' => $result['attempts_remaining'] ?? max(0, (int) $intent->max_fetches_snapshot - (int) $intent->verification_attempts),
-                ]);
+                if ($result['success'] ?? false) {
+                    $redirect = $this->resultCallbacks->redirectToConfiguredUrl($intent, true, [
+                        'status' => 'paid',
+                        'payment_status' => 'paid',
+                        'result_status' => 'ready',
+                        'attempts_remaining' => $result['attempts_remaining'] ?? max(0, (int) $intent->max_fetches_snapshot - (int) $intent->verification_attempts),
+                    ]);
 
-                if ($redirect) {
-                    if ($request->header('X-Inertia')) {
-                        return Inertia::location($redirect->getTargetUrl());
+                    if ($redirect) {
+                        if ($request->header('X-Inertia')) {
+                            return Inertia::location($redirect->getTargetUrl());
+                        }
+
+                        return $redirect;
                     }
-
-                    return $redirect;
                 }
 
-                return redirect()->route('paygo.results.paid', $intent->reference);
+                return $this->redirectToPaidResultWithContext($intent)
+                    ->with(
+                        ($result['success'] ?? false) ? 'success' : 'error',
+                        ($result['success'] ?? false)
+                            ? 'Result fetched successfully.'
+                            : ($result['error'] ?? 'Payment succeeded, but the result could not be fetched.'),
+                    )
+                    ->with('paygo_result_context', $this->paidResultFlashContext($intent));
             }
 
             $payment = $this->initializePaygoPayment($paygoService, $intent, $validated['email'] ?? $paygoService->user->email);
@@ -291,7 +308,7 @@ class PublicPaygoVerificationController extends Controller
                 return $redirect;
             }
 
-            return redirect()->route('paygo.results.paid', $existingIntent->reference);
+            return $this->redirectToPaidResultWithContext($existingIntent);
         }
 
         try {
@@ -303,6 +320,7 @@ class PublicPaygoVerificationController extends Controller
                     'candidate_id' => $validated['candidate_id'] ?? null,
                     'portal_ref' => $validated['portal_ref'] ?? null,
                     'state' => $validated['state'] ?? null,
+                    'sitting' => $validated['sitting'] ?? null,
                 ],
             ], $request->ip());
         } catch (RuntimeException $exception) {
@@ -328,11 +346,31 @@ class PublicPaygoVerificationController extends Controller
 
     public function resultPaid(Request $request, string $reference): Response
     {
-        try {
-            $intent = $this->paygo->displayResultByReference($reference);
-            $verification = $this->paygo->displayVerificationForResultIntent($intent);
+        $fetchError = $request->session()->get('error');
+        $fetchErrorContext = $request->session()->get('paygo_result_context', []);
+        $portalRef = $request->query('portal_ref') ? (string) $request->query('portal_ref') : null;
+        $sitting = $request->query('sitting') ? (string) $request->query('sitting') : null;
+        $contextualFetchError = $this->contextualPaidResultError($fetchError, $fetchErrorContext, $portalRef, $sitting);
+        $verification = null;
+        $attempt = null;
+        $resultError = null;
 
-            if ($intent->status === 'paid' && ! $verification) {
+        try {
+            $intent = $this->paygo->displayResultByReference($reference, false);
+            $attempt = $this->paygo->displayResultAttemptForContext($intent, $portalRef, $sitting);
+
+            if ($attempt) {
+                $verification = $attempt->status === 'completed' ? $attempt->verificationRequest : null;
+                $resultError = $attempt->error_message ?: ($attempt->status === 'failed' ? 'Result verification failed.' : null);
+            } elseif (! $contextualFetchError && blank($portalRef) && blank($sitting)) {
+                $verification = $this->paygo->displayVerificationForResultIntent($intent);
+            } elseif (! $contextualFetchError) {
+                $resultError = 'Result is not available for this portal attempt yet.';
+            } else {
+                $resultError = $contextualFetchError;
+            }
+
+            if (! $resultError && ! $attempt && $intent->status === 'paid' && ! $verification && blank($portalRef) && blank($sitting)) {
                 $this->paygo->fetchResultForPaidIntent($intent, $request->ip());
                 $intent = $this->paygo->displayResultByReference($reference);
                 $verification = $this->paygo->displayVerificationForResultIntent($intent);
@@ -342,27 +380,36 @@ class PublicPaygoVerificationController extends Controller
         }
 
         $usage = $this->paygo->resultFetchUsage($intent);
-        $displayService = $this->paygo->displayPaygoServiceForResultIntent($intent) ?? $intent->paygoService;
+        $displayService = $attempt?->paygoService
+            ?? $this->displayPaygoServiceForResultContext($intent, filled($portalRef) || filled($sitting))
+            ?? $this->paygo->displayPaygoServiceForResultIntent($intent)
+            ?? $intent->paygoService;
+
+        $pullQuery = array_filter([
+            'portal_ref' => $portalRef,
+            'sitting' => $sitting,
+        ], fn ($value) => $value !== null && $value !== '');
 
         return Inertia::render('Public/Paygo/ResultPaid', [
             'paygoService' => $this->publicResultServicePayload($displayService),
             'intent' => [
                 'reference' => $intent->reference,
                 'status' => $intent->status,
-                'lookup_label' => $intent->lookup_label,
+                'lookup_label' => $attempt?->lookup_label ?? $intent->metadata['latest_lookup_label'] ?? $intent->lookup_label,
                 'candidate_id' => $intent->metadata['candidate_id'] ?? null,
-                'portal_ref' => $intent->metadata['portal_ref'] ?? null,
+                'portal_ref' => $portalRef ?? $intent->metadata['portal_ref'] ?? null,
+                'sitting' => $sitting ? (int) $sitting : ($intent->metadata['result_sitting'] ?? null),
                 'paid_at' => $intent->paid_at,
                 'fetches_used' => $usage['used'],
                 'fetches_allowed' => $usage['allowed'],
                 'fetches_remaining' => $usage['remaining'],
-                'pull_url' => url('/api/paygo/results/'.$intent->reference),
+                'pull_url' => url('/api/paygo/results/'.$intent->reference).($pullQuery ? '?'.http_build_query($pullQuery) : ''),
             ],
             'verification' => $verification,
             'result' => [
-                'success' => $verification?->status === 'completed',
-                'data' => $verification?->response_data,
-                'error' => $intent->metadata['error_message'] ?? $verification?->error_message,
+                'success' => blank($resultError) && $verification?->status === 'completed',
+                'data' => blank($resultError) ? $verification?->response_data : null,
+                'error' => $resultError ?: ($intent->metadata['error_message'] ?? $verification?->error_message),
             ],
         ]);
     }
@@ -393,10 +440,14 @@ class PublicPaygoVerificationController extends Controller
         }
     }
 
-    public function pullResult(string $reference): JsonResponse
+    public function pullResult(Request $request, string $reference): JsonResponse
     {
         try {
-            $result = $this->paygo->pullResultByReference($reference);
+            $result = $this->paygo->pullResultByReference(
+                $reference,
+                $request->query('portal_ref') ? (string) $request->query('portal_ref') : null,
+                $request->query('sitting') ? (string) $request->query('sitting') : null
+            );
         } catch (RuntimeException $exception) {
             $status = str_contains(strtolower($exception->getMessage()), 'limit') ? 429 : 400;
 
@@ -410,17 +461,32 @@ class PublicPaygoVerificationController extends Controller
         /** @var PaygoVerificationIntent $intent */
         $intent = $result['intent'];
 
-        return response()->json([
+        $responsePayload = [
             'success' => true,
             'status' => 200,
             'reference' => $intent->reference,
             'lookup_label' => $result['lookup_label'] ?? $intent->lookup_label,
             'candidate_id' => $intent->metadata['candidate_id'] ?? null,
-            'portal_ref' => $intent->metadata['portal_ref'] ?? null,
+            'portal_ref' => $result['portal_ref'] ?? $intent->metadata['portal_ref'] ?? null,
+            'sitting' => $result['sitting'] ?? $intent->metadata['result_sitting'] ?? null,
             'data' => $result['data'],
             'fetches_remaining' => $result['fetches_remaining'],
             'served_from' => $result['served_from'] ?? 'local_cache',
+        ];
+
+        Log::info('EaseVerifier PayGo result API pull outbound', [
+            'reference' => $intent->reference,
+            'request_portal_ref' => $request->query('portal_ref'),
+            'request_sitting' => $request->query('sitting'),
+            'response_portal_ref' => $responsePayload['portal_ref'] ?? null,
+            'response_sitting' => $responsePayload['sitting'] ?? null,
+            'lookup_label' => $responsePayload['lookup_label'] ?? null,
+            'board' => is_array($responsePayload['data'] ?? null) ? ($responsePayload['data']['board'] ?? $responsePayload['data']['exam_body'] ?? null) : null,
+            'served_from' => $responsePayload['served_from'] ?? null,
+            'payload' => $responsePayload,
         ]);
+
+        return response()->json($responsePayload);
     }
 
     protected function shouldRespondWithJson(Request $request, CustomerPaygoService $paygoService): bool
@@ -569,6 +635,7 @@ class PublicPaygoVerificationController extends Controller
                 'candidate_id' => request()->string('candidate_id')->value(),
                 'portal_ref' => request()->string('portal_ref')->value(),
                 'state' => request()->string('state')->value(),
+                'sitting' => request()->string('sitting')->value(),
                 'reference' => request()->string('reference')->value(),
             ],
         ]);
@@ -589,6 +656,64 @@ class PublicPaygoVerificationController extends Controller
             'result_url' => $service->resultUrl(),
             'selector_url' => $service->resultSelectorUrl(),
         ];
+    }
+
+    protected function displayPaygoServiceForResultContext(PaygoVerificationIntent $intent, bool $hasContext): ?CustomerPaygoService
+    {
+        if (! $hasContext) {
+            return null;
+        }
+
+        $serviceId = (int) ($intent->metadata['latest_customer_paygo_service_id'] ?? 0);
+
+        if ($serviceId <= 0) {
+            return null;
+        }
+
+        return CustomerPaygoService::query()
+            ->with(['user.customer', 'verificationService'])
+            ->whereKey($serviceId)
+            ->first();
+    }
+
+    protected function paidResultFlashContext(PaygoVerificationIntent $intent): array
+    {
+        return [
+            'portal_ref' => filled($intent->metadata['portal_ref'] ?? null) ? (string) $intent->metadata['portal_ref'] : null,
+            'sitting' => filled($intent->metadata['result_sitting'] ?? null) ? (int) $intent->metadata['result_sitting'] : null,
+            'service_id' => filled($intent->metadata['latest_customer_paygo_service_id'] ?? null)
+                ? (int) $intent->metadata['latest_customer_paygo_service_id']
+                : (int) $intent->customer_paygo_service_id,
+        ];
+    }
+
+    protected function contextualPaidResultError(mixed $error, mixed $context, ?string $portalRef, ?string $sitting): ?string
+    {
+        if (! filled($error)) {
+            return null;
+        }
+
+        if (blank($portalRef) && blank($sitting)) {
+            return (string) $error;
+        }
+
+        if (! is_array($context) || $context === []) {
+            return null;
+        }
+
+        $contextPortalRef = filled($context['portal_ref'] ?? null) ? (string) $context['portal_ref'] : null;
+        $contextSitting = filled($context['sitting'] ?? null) ? (int) $context['sitting'] : null;
+        $requestedSitting = filled($sitting) ? (int) $sitting : null;
+
+        if (filled($portalRef) && filled($contextPortalRef) && $portalRef !== $contextPortalRef) {
+            return null;
+        }
+
+        if ($requestedSitting !== null && $contextSitting !== null && $requestedSitting !== $contextSitting) {
+            return null;
+        }
+
+        return (string) $error;
     }
 
     protected function resultFields(CustomerPaygoService $paygoService): array
@@ -621,6 +746,7 @@ class PublicPaygoVerificationController extends Controller
             'candidate_id' => 'nullable|string|max:120',
             'portal_ref' => 'nullable|string|max:120',
             'state' => 'nullable|string|max:500',
+            'sitting' => 'nullable|integer|min:1|max:10',
             'reference' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9._=-]+$/'],
         ];
 
@@ -654,6 +780,10 @@ class PublicPaygoVerificationController extends Controller
 
         if (filled($validated['state'] ?? null)) {
             $metadata['portal_state'] = (string) $validated['state'];
+        }
+
+        if (filled($validated['sitting'] ?? null)) {
+            $metadata['result_sitting'] = (int) $validated['sitting'];
         }
 
         if ($metadata === []) {
@@ -749,19 +879,9 @@ class PublicPaygoVerificationController extends Controller
                     'RESULT_FETCH_INVALID',
                 );
 
-                $redirect = $this->resultCallbacks->redirectToConfiguredUrl($intent, false, [
-                    'status' => 'paid',
-                    'payment_status' => 'paid',
-                    'result_status' => 'failed',
-                ]);
-
-                if ($redirect) {
-                    return $redirect;
-                }
-
-                return redirect()
-                    ->route('paygo.results.paid', $intent->reference)
-                    ->with('error', $exception->getMessage());
+                return $this->redirectToPaidResultWithContext($intent)
+                    ->with('error', $exception->getMessage())
+                    ->with('paygo_result_context', $this->paidResultFlashContext($intent));
             }
 
             $intent = $intent->fresh(['paygoService.user.customer', 'verificationRequest']);
@@ -774,25 +894,27 @@ class PublicPaygoVerificationController extends Controller
                 $result['error_code'] ?? null,
             );
 
-            $redirect = $this->resultCallbacks->redirectToConfiguredUrl($intent, (bool) ($result['success'] ?? false), [
-                'status' => 'paid',
-                'payment_status' => 'paid',
-                'result_status' => ($result['success'] ?? false) ? 'ready' : 'failed',
-                'attempts_remaining' => $result['attempts_remaining'] ?? null,
-            ]);
+            if ($result['success'] ?? false) {
+                $redirect = $this->resultCallbacks->redirectToConfiguredUrl($intent, true, [
+                    'status' => 'paid',
+                    'payment_status' => 'paid',
+                    'result_status' => 'ready',
+                    'attempts_remaining' => $result['attempts_remaining'] ?? null,
+                ]);
 
-            if ($redirect) {
-                return $redirect;
+                if ($redirect) {
+                    return $redirect;
+                }
             }
 
-            return redirect()
-                ->route('paygo.results.paid', $intent->reference)
+            return $this->redirectToPaidResultWithContext($intent)
                 ->with(
                     ($result['success'] ?? false) ? 'success' : 'error',
                     ($result['success'] ?? false)
                         ? 'Payment successful. Your result reference is '.$intent->reference.'.'
                         : ($result['error'] ?? 'Payment succeeded, but the result could not be fetched.'),
-                );
+                )
+                ->with('paygo_result_context', $this->paidResultFlashContext($intent));
         }
 
         return $this->redirectAfterPayment($intent, true, 'Payment successful. Your verification reference is '.$intent->reference.'.');
@@ -862,6 +984,21 @@ class PublicPaygoVerificationController extends Controller
         ], 400);
     }
 
+    protected function redirectToPaidResultWithContext(PaygoVerificationIntent $intent): RedirectResponse
+    {
+        $params = ['reference' => $intent->reference];
+
+        if (filled($intent->metadata['portal_ref'] ?? null)) {
+            $params['portal_ref'] = (string) $intent->metadata['portal_ref'];
+        }
+
+        if (filled($intent->metadata['result_sitting'] ?? null)) {
+            $params['sitting'] = (int) $intent->metadata['result_sitting'];
+        }
+
+        return redirect()->route('paygo.results.paid', $params);
+    }
+
     protected function redirectAfterPayment(\App\Models\PaygoVerificationIntent $intent, bool $success, string $message)
     {
         $intent->loadMissing('paygoService');
@@ -875,6 +1012,7 @@ class PublicPaygoVerificationController extends Controller
                 'status' => $success ? 'paid' : 'failed',
                 'candidate_id' => $intent->metadata['candidate_id'] ?? null,
                 'portal_ref' => $intent->metadata['portal_ref'] ?? null,
+                'sitting' => $intent->metadata['result_sitting'] ?? null,
                 'state' => $intent->metadata['portal_state'] ?? null,
             ], fn ($value) => $value !== null && $value !== '');
 

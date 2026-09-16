@@ -13,6 +13,7 @@ const props = defineProps<{
         reference: string;
         status: string;
         lookup_label?: string | null;
+        sitting?: number | null;
         paid_at?: string | null;
         fetches_used: number;
         fetches_allowed: number;
@@ -29,13 +30,20 @@ const props = defineProps<{
 
 const candidateRows = computed(() => Object.entries(props.result.data?.candidate || {}));
 const subjects = computed(() => props.result.data?.subjects || props.result.data?.result?.subjects || []);
+const contextLabel = computed(() => {
+    if (props.result.success && props.intent.lookup_label) {
+        return props.intent.lookup_label;
+    }
+
+    if (props.intent.sitting) {
+        return `Sitting ${props.intent.sitting}`;
+    }
+
+    return props.paygoService.name;
+});
 
 const copyReference = async () => {
     await navigator.clipboard.writeText(props.intent.reference);
-};
-
-const copyPullUrl = async () => {
-    await navigator.clipboard.writeText(props.intent.pull_url);
 };
 </script>
 
@@ -53,7 +61,7 @@ const copyPullUrl = async () => {
                                     {{ result.success ? 'Result ready' : 'Result unavailable' }}
                                 </v-chip>
                                 <h1 class="text-h4 font-weight-bold mb-2">{{ paygoService.board }} Result Verification</h1>
-                                <p class="text-body-2 text-grey-darken-1 mb-5">{{ intent.lookup_label || paygoService.name }}</p>
+                                <p class="text-body-2 text-grey-darken-1 mb-5">{{ contextLabel }}</p>
 
                                 <div class="reference-row">
                                     <div>
@@ -65,18 +73,8 @@ const copyPullUrl = async () => {
                                     </v-btn>
                                 </div>
 
-                                <div class="reference-row mt-3">
-                                    <div>
-                                        <span>Open result endpoint</span>
-                                        <code>{{ intent.pull_url }}</code>
-                                    </div>
-                                    <v-btn icon variant="outlined" title="Copy endpoint" @click="copyPullUrl">
-                                        <v-icon>mdi-content-copy</v-icon>
-                                    </v-btn>
-                                </div>
-
                                 <v-alert type="info" variant="tonal" class="mt-4">
-                                    Endpoint pulls remaining: {{ intent.fetches_remaining }} of {{ intent.fetches_allowed }}.
+                                    Result fetches remaining: {{ intent.fetches_remaining }} of {{ intent.fetches_allowed }}.
                                 </v-alert>
                             </v-card-text>
                         </v-card>

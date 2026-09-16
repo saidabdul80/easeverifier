@@ -36,6 +36,7 @@ const props = defineProps<{
         candidate_id?: string | null;
         portal_ref?: string | null;
         state?: string | null;
+        sitting?: string | number | null;
         reference?: string | null;
     };
 }>();
@@ -66,6 +67,7 @@ const form = useForm<Record<string, any>>({
     candidate_id: props.prefill?.candidate_id || '',
     portal_ref: props.prefill?.portal_ref || '',
     state: props.prefill?.state || '',
+    sitting: props.prefill?.sitting || '',
     reference: props.prefill?.reference || '',
 });
 
@@ -177,7 +179,7 @@ const withPortalContext = (url?: string | null) => {
 
     const query = new URLSearchParams();
 
-    ['candidate_id', 'portal_ref', 'state', 'reference', 'email', 'phone'].forEach((key) => {
+    ['candidate_id', 'portal_ref', 'state', 'sitting', 'reference', 'email', 'phone'].forEach((key) => {
         const value = form[key];
 
         if (value) {

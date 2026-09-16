@@ -3,6 +3,7 @@
 namespace App\Services\ResultVerify\ResultGates;
 
 use App\Services\ResultVerify\ResultInterface;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class WAECResult implements ResultInterface
@@ -62,15 +63,26 @@ class WAECResult implements ResultInterface
     public function fetchResult(array $params): string
     {
         $cookieJar = tempnam(sys_get_temp_dir(), 'waec_');
+        $startedAt = microtime(true);
+
+        @set_time_limit(120);
 
         try {
-            $this->initSession($cookieJar);
-
             $payload = $this->resultPayload($params);
+
+            Log::info('WAEC result fetch started', [
+                'exam_number' => $payload['examNumber'],
+                'exam_year' => $payload['examYear'],
+                'exam_type' => $payload['examType'],
+                'has_pin' => $payload['pin'] !== '',
+                'has_serial' => $payload['serial'] !== '',
+            ]);
+
+            $this->initSession($cookieJar);
             $encryptedQuery = $this->encryptPayload($payload, $cookieJar);
 
             if ($encryptedQuery !== null) {
-                return $this->request(
+                $html = $this->request(
                     url: $this->baseUrl.'/Result/Display?q='.rawurlencode($encryptedQuery),
                     method: 'GET',
                     payload: null,
@@ -79,10 +91,19 @@ class WAECResult implements ResultInterface
                     ]),
                     cookieJar: $cookieJar,
                     timeout: 90,
+                    step: 'display_encrypted',
                 );
+
+                Log::info('WAEC result fetch completed', [
+                    'exam_number' => $payload['examNumber'],
+                    'used_encrypted_payload' => true,
+                    'elapsed_ms' => (int) ((microtime(true) - $startedAt) * 1000),
+                ]);
+
+                return $html;
             }
 
-            return $this->request(
+            $html = $this->request(
                 url: $this->baseUrl.'/Result/Display?'.http_build_query([
                     'ExamNumber' => $payload['examNumber'],
                     'ExamYear' => $payload['examYear'],
@@ -97,7 +118,16 @@ class WAECResult implements ResultInterface
                 ]),
                 cookieJar: $cookieJar,
                 timeout: 90,
+                step: 'display_query',
             );
+
+            Log::info('WAEC result fetch completed', [
+                'exam_number' => $payload['examNumber'],
+                'used_encrypted_payload' => false,
+                'elapsed_ms' => (int) ((microtime(true) - $startedAt) * 1000),
+            ]);
+
+            return $html;
         } finally {
             @unlink($cookieJar);
         }
@@ -236,6 +266,7 @@ class WAECResult implements ResultInterface
             headers: $this->commonHeaders,
             cookieJar: $cookieJar,
             timeout: 30,
+            step: 'init_session',
         );
     }
 
@@ -269,6 +300,7 @@ class WAECResult implements ResultInterface
             cookieJar: $cookieJar,
             timeout: 30,
             failOnHttpError: false,
+            step: 'encrypt_payload',
         );
 
         $data = json_decode($response, true);
@@ -292,9 +324,11 @@ class WAECResult implements ResultInterface
         string $cookieJar,
         int $timeout,
         bool $failOnHttpError = true,
+        string $step = 'request',
     ): string {
         $ch = curl_init();
         $method = strtoupper($method);
+        $startedAt = microtime(true);
 
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
@@ -322,17 +356,63 @@ class WAECResult implements ResultInterface
         $response = curl_exec($ch);
         $error = curl_error($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlInfo = curl_getinfo($ch);
         curl_close($ch);
 
         if ($error) {
-            throw new RuntimeException("cURL error: {$error}");
+            Log::warning('WAEC result HTTP request failed', [
+                'step' => $step,
+                'status' => $status,
+                'timeout' => $timeout,
+                'elapsed_ms' => (int) ((microtime(true) - $startedAt) * 1000),
+                'curl_total_time' => isset($curlInfo['total_time']) ? (float) $curlInfo['total_time'] : null,
+                'curl_error' => $error,
+            ]);
+
+            throw new RuntimeException($this->friendlyCurlError($error));
         }
 
         if ($failOnHttpError && ($status < 200 || $status >= 400)) {
+            Log::warning('WAEC result HTTP request returned an error status', [
+                'step' => $step,
+                'status' => $status,
+                'timeout' => $timeout,
+                'elapsed_ms' => (int) ((microtime(true) - $startedAt) * 1000),
+                'curl_total_time' => isset($curlInfo['total_time']) ? (float) $curlInfo['total_time'] : null,
+            ]);
+
             throw new RuntimeException("HTTP error {$status} from WAEC");
         }
 
+        Log::info('WAEC result HTTP request completed', [
+            'step' => $step,
+            'status' => $status,
+            'timeout' => $timeout,
+            'elapsed_ms' => (int) ((microtime(true) - $startedAt) * 1000),
+            'curl_total_time' => isset($curlInfo['total_time']) ? (float) $curlInfo['total_time'] : null,
+            'response_bytes' => is_string($response) ? strlen($response) : null,
+        ]);
+
         return (string) $response;
+    }
+
+    private function friendlyCurlError(string $error): string
+    {
+        $lower = strtolower($error);
+
+        if (str_contains($lower, 'timed out') || str_contains($lower, 'timeout')) {
+            return 'WAEC portal did not respond before the timeout. Please retry shortly.';
+        }
+
+        if (str_contains($lower, 'could not connect') || str_contains($lower, 'failed to connect')) {
+            return 'WAEC portal is currently unreachable from this server. Please retry shortly.';
+        }
+
+        if (str_contains($lower, 'ssl')) {
+            return 'WAEC portal SSL connection failed. Please retry shortly.';
+        }
+
+        return 'Unable to connect to WAEC portal. Please retry shortly.';
     }
 
     private function extractHiddenFields(string $html, array $names): array

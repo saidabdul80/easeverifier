@@ -104,7 +104,7 @@ class PaygoVerificationService
         $lookup = $this->resultSearchParameter($paygoService, $params);
 
         if ($lookup === '') {
-            throw new RuntimeException('A valid result lookup value is required for this PayGo reference.');
+            throw new RuntimeException($this->resultLookupMissingMessage($paygoService));
         }
 
         $systemPrice = $paygoService->resultReferenceSystemPrice();
@@ -537,7 +537,8 @@ class PaygoVerificationService
         PaygoVerificationIntent $intent,
         ?string $ipAddress = null,
         ?array $params = null,
-        ?CustomerPaygoService $paygoService = null
+        ?CustomerPaygoService $paygoService = null,
+        array $context = []
     ): array {
         $intent->loadMissing(['paygoService.user.customer', 'verificationService', 'verificationRequest']);
 
@@ -546,7 +547,7 @@ class PaygoVerificationService
         }
 
         if ($intent->isResultReferenceFlow()) {
-            return $this->fetchResultForReferenceIntent($intent, $params ?? ($intent->payload ?? []), $ipAddress, $paygoService);
+            return $this->fetchResultForReferenceIntent($intent, $params ?? ($intent->payload ?? []), $ipAddress, $paygoService, $context);
         }
 
         if ($intent->expires_at && now()->greaterThan($intent->expires_at) && $intent->status !== 'used') {
@@ -662,7 +663,8 @@ class PaygoVerificationService
         PaygoVerificationIntent $intent,
         array $params,
         ?string $ipAddress = null,
-        ?CustomerPaygoService $paygoService = null
+        ?CustomerPaygoService $paygoService = null,
+        array $context = []
     ): array
     {
         $intent->loadMissing(['paygoService.user.customer', 'verificationService']);
@@ -684,7 +686,7 @@ class PaygoVerificationService
         }
 
         if ($params === []) {
-            throw new RuntimeException('No result verification form data was found for this payment reference.');
+            throw new RuntimeException($this->resultLookupMissingMessage($paygoService));
         }
 
         $board = $paygoService->resultBoard();
@@ -694,10 +696,15 @@ class PaygoVerificationService
 
         $lookup = $this->resultSearchParameter($paygoService, $params);
         if ($lookup === '') {
-            throw new RuntimeException('A valid result lookup value is required for this PayGo reference.');
+            throw new RuntimeException($this->resultLookupMissingMessage($paygoService));
         }
 
-        $prepared = DB::transaction(function () use ($intent, $params, $lookup, $paygoService) {
+        $portalRef = filled($context['portal_ref'] ?? null)
+            ? (string) $context['portal_ref']
+            : (filled($intent->metadata['portal_ref'] ?? null) ? (string) $intent->metadata['portal_ref'] : null);
+        $sitting = $this->normalizeResultSitting($context['sitting'] ?? ($intent->metadata['result_sitting'] ?? null));
+
+        $prepared = DB::transaction(function () use ($intent, $params, $lookup, $paygoService, $portalRef, $sitting) {
             $lockedIntent = PaygoVerificationIntent::query()
                 ->whereKey($intent->id)
                 ->lockForUpdate()
@@ -716,6 +723,8 @@ class PaygoVerificationService
             $completedAttempt = $this->findCompletedResultAttempt($lockedIntent, $lookupHash, $params);
 
             if ($completedAttempt) {
+                $this->attachPortalContextToResultAttempt($completedAttempt, $portalRef, $sitting);
+
                 return [
                     'intent' => $lockedIntent,
                     'attempt' => $completedAttempt->load('verificationRequest'),
@@ -740,9 +749,12 @@ class PaygoVerificationService
                 'status' => 'processing',
                 'attempt_number' => $successfulAttempts + 1,
                 'success_counted' => false,
-                'metadata' => [
+                'metadata' => array_filter([
                     'started_at' => now()->toISOString(),
-                ],
+                    'portal_ref' => $portalRef,
+                    'portal_refs' => $portalRef ? [$portalRef] : null,
+                    'sitting' => $sitting,
+                ]),
             ]);
 
             $lockedIntent->update([
@@ -756,6 +768,7 @@ class PaygoVerificationService
                     'latest_customer_paygo_service_id' => $paygoService->id,
                     'latest_verification_service_id' => $paygoService->verification_service_id,
                     'latest_board' => $paygoService->resultBoard(),
+                    'result_sitting' => $sitting,
                 ]),
             ]);
 
@@ -879,7 +892,7 @@ class PaygoVerificationService
         ];
     }
 
-    public function displayResultByReference(string $reference): PaygoVerificationIntent
+    public function displayResultByReference(string $reference, bool $resolveVerification = true): PaygoVerificationIntent
     {
         $intent = PaygoVerificationIntent::query()
             ->with(['paygoService.user.customer', 'verificationService', 'verificationRequest', 'resultAttempts.verificationRequest'])
@@ -888,6 +901,10 @@ class PaygoVerificationService
 
         if (! $intent->isResultFlow()) {
             throw new RuntimeException('This reference is not for a PayGo result verification.');
+        }
+
+        if (! $resolveVerification) {
+            return $intent;
         }
 
         $verification = $this->displayVerificationForResultIntent($intent);
@@ -944,6 +961,37 @@ class PaygoVerificationService
         return $intent->paygoService;
     }
 
+    public function displayResultAttemptForContext(
+        PaygoVerificationIntent $intent,
+        ?string $portalRef = null,
+        ?string $sitting = null
+    ): ?PaygoResultAttempt {
+        if (! $intent->isResultReferenceFlow()) {
+            return null;
+        }
+
+        $attempts = PaygoResultAttempt::query()
+            ->with(['verificationRequest', 'paygoService.user.customer', 'paygoService.verificationService'])
+            ->where('paygo_verification_intent_id', $intent->id)
+            ->latest('id')
+            ->get();
+
+        if (filled($portalRef)) {
+            $attempt = $attempts->first(fn (PaygoResultAttempt $attempt) => $this->resultAttemptMatchesPortalRef($attempt, (string) $portalRef));
+
+            if ($attempt) {
+                return $attempt;
+            }
+        }
+
+        $normalizedSitting = $this->normalizeResultSitting($sitting);
+        if ($normalizedSitting !== null) {
+            return $attempts->first(fn (PaygoResultAttempt $attempt) => $this->resultAttemptSitting($attempt) === $normalizedSitting);
+        }
+
+        return null;
+    }
+
     public function resultFetchUsage(PaygoVerificationIntent $intent): array
     {
         $used = $intent->isResultReferenceFlow()
@@ -959,9 +1007,9 @@ class PaygoVerificationService
         ];
     }
 
-    public function pullResultByReference(string $reference): array
+    public function pullResultByReference(string $reference, ?string $portalRef = null, ?string $sitting = null): array
     {
-        return DB::transaction(function () use ($reference) {
+        return DB::transaction(function () use ($reference, $portalRef, $sitting) {
             $intent = PaygoVerificationIntent::query()
                 ->where('reference', $reference)
                 ->lockForUpdate()
@@ -978,10 +1026,38 @@ class PaygoVerificationService
                     throw new RuntimeException('Result payment has not been completed.');
                 }
 
-                $attempt = $this->latestCompletedResultAttempt($intent);
+                if (filled($portalRef) || $this->normalizeResultSitting($sitting) !== null) {
+                    $contextAttempt = $this->displayResultAttemptForContext($intent, $portalRef, $sitting);
+
+                    if ($contextAttempt) {
+                        if ($contextAttempt->status === 'completed' && $contextAttempt->verificationRequest) {
+                            $successfulAttempts = $this->successfulResultAttemptCount($intent);
+
+                            return [
+                                'intent' => $intent->fresh(['verificationRequest', 'paygoService']),
+                                'data' => $contextAttempt->verificationRequest->response_data,
+                                'lookup_label' => $contextAttempt->lookup_label,
+                                'portal_ref' => $this->resultAttemptPortalRef($contextAttempt) ?? $portalRef,
+                                'sitting' => $this->resultAttemptSitting($contextAttempt) ?? $this->normalizeResultSitting($sitting),
+                                'fetches_remaining' => max(0, $this->maxFetchesForIntent($intent) - $successfulAttempts),
+                                'served_from' => 'reference_attempt_cache',
+                            ];
+                        }
+
+                        if ($contextAttempt->status === 'failed') {
+                            throw new RuntimeException($contextAttempt->error_message ?: 'Result verification failed for this attempt.');
+                        }
+
+                        throw new RuntimeException('Result is not available for this portal attempt yet.');
+                    }
+                }
+
+                $attempt = $this->latestCompletedResultAttempt($intent, $portalRef, $sitting);
 
                 if (! $attempt?->verificationRequest) {
-                    throw new RuntimeException('Result is not available for this reference.');
+                    throw new RuntimeException($portalRef
+                        ? 'Result is not available for this portal attempt yet.'
+                        : 'Result is not available for this reference.');
                 }
 
                 $successfulAttempts = $this->successfulResultAttemptCount($intent);
@@ -990,6 +1066,8 @@ class PaygoVerificationService
                     'intent' => $intent->fresh(['verificationRequest', 'paygoService']),
                     'data' => $attempt->verificationRequest->response_data,
                     'lookup_label' => $attempt->lookup_label,
+                    'portal_ref' => $this->resultAttemptPortalRef($attempt) ?? $portalRef,
+                    'sitting' => $this->resultAttemptSitting($attempt) ?? $this->normalizeResultSitting($sitting),
                     'fetches_remaining' => max(0, $this->maxFetchesForIntent($intent) - $successfulAttempts),
                     'served_from' => 'reference_attempt_cache',
                 ];
@@ -1168,15 +1246,104 @@ class PaygoVerificationService
             ->first(fn (PaygoResultAttempt $attempt) => $this->resultPayloadMatches($attempt->payload ?? [], $params));
     }
 
-    protected function latestCompletedResultAttempt(PaygoVerificationIntent $intent): ?PaygoResultAttempt
+    protected function latestCompletedResultAttempt(PaygoVerificationIntent $intent, ?string $portalRef = null, ?string $sitting = null): ?PaygoResultAttempt
     {
-        return PaygoResultAttempt::query()
+        $attempts = PaygoResultAttempt::query()
             ->with(['verificationRequest', 'paygoService.user.customer', 'paygoService.verificationService'])
             ->where('paygo_verification_intent_id', $intent->id)
             ->where('status', 'completed')
             ->where('success_counted', true)
             ->latest('id')
-            ->first();
+            ->get();
+
+        if (filled($portalRef)) {
+            $attempt = $attempts->first(fn (PaygoResultAttempt $attempt) => $this->resultAttemptMatchesPortalRef($attempt, (string) $portalRef));
+
+            if ($attempt) {
+                return $attempt;
+            }
+        }
+
+        $normalizedSitting = $this->normalizeResultSitting($sitting);
+        if ($normalizedSitting !== null) {
+            return $attempts->first(fn (PaygoResultAttempt $attempt) => $this->resultAttemptSitting($attempt) === $normalizedSitting);
+        }
+
+        return $attempts->first();
+    }
+
+    protected function attachPortalContextToResultAttempt(PaygoResultAttempt $attempt, ?string $portalRef, ?int $sitting = null): void
+    {
+        if (blank($portalRef) && $sitting === null) {
+            return;
+        }
+
+        $metadata = $attempt->metadata ?? [];
+        $portalRefs = $metadata['portal_refs'] ?? [];
+
+        if (! is_array($portalRefs)) {
+            $portalRefs = filled($portalRefs) ? [(string) $portalRefs] : [];
+        }
+
+        $portalRefs[] = (string) $portalRef;
+        $portalRefs = array_values(array_unique(array_filter($portalRefs)));
+
+        $attempt->update([
+            'metadata' => array_filter(array_merge($metadata, [
+                'portal_ref' => filled($portalRef) ? ($metadata['portal_ref'] ?? (string) $portalRef) : ($metadata['portal_ref'] ?? null),
+                'last_portal_ref' => filled($portalRef) ? (string) $portalRef : ($metadata['last_portal_ref'] ?? null),
+                'portal_refs' => $portalRefs !== [] ? $portalRefs : ($metadata['portal_refs'] ?? null),
+                'sitting' => $sitting ?? ($metadata['sitting'] ?? null),
+            ]), fn ($value) => $value !== null && $value !== ''),
+        ]);
+    }
+
+    protected function resultAttemptMatchesPortalRef(PaygoResultAttempt $attempt, string $portalRef): bool
+    {
+        $metadata = $attempt->metadata ?? [];
+
+        if (($metadata['portal_ref'] ?? null) === $portalRef || ($metadata['last_portal_ref'] ?? null) === $portalRef) {
+            return true;
+        }
+
+        $portalRefs = $metadata['portal_refs'] ?? [];
+        if (! is_array($portalRefs)) {
+            return false;
+        }
+
+        return in_array($portalRef, array_map('strval', $portalRefs), true);
+    }
+
+    protected function resultAttemptPortalRef(PaygoResultAttempt $attempt): ?string
+    {
+        $metadata = $attempt->metadata ?? [];
+
+        return filled($metadata['last_portal_ref'] ?? null)
+            ? (string) $metadata['last_portal_ref']
+            : (filled($metadata['portal_ref'] ?? null) ? (string) $metadata['portal_ref'] : null);
+    }
+
+    protected function resultAttemptSitting(PaygoResultAttempt $attempt): ?int
+    {
+        return $this->normalizeResultSitting(($attempt->metadata ?? [])['sitting'] ?? null);
+    }
+
+    protected function normalizeResultSitting(mixed $sitting): ?int
+    {
+        if ($sitting === null || $sitting === '') {
+            return null;
+        }
+
+        $sitting = (int) $sitting;
+
+        return $sitting > 0 ? $sitting : null;
+    }
+
+    protected function resultLookupMissingMessage(CustomerPaygoService $paygoService): string
+    {
+        $board = strtoupper((string) ($paygoService->resultBoard() ?: 'selected board'));
+
+        return "We could not start {$board} result verification because the required exam details were not received. Please return to the portal and try again.";
     }
 
     protected function resultPayloadMatches(array $storedParams, array $submittedParams): bool
@@ -1204,6 +1371,7 @@ class PaygoVerificationService
             'candidate_id' => filled($context['candidate_id'] ?? null) ? (string) $context['candidate_id'] : null,
             'portal_ref' => filled($context['portal_ref'] ?? null) ? (string) $context['portal_ref'] : null,
             'portal_state' => filled($context['state'] ?? null) ? (string) $context['state'] : null,
+            'result_sitting' => $this->normalizeResultSitting($context['sitting'] ?? null),
             'referral_code' => $customer?->referral_code,
             'callback_mode' => $paygoService->callback_mode ?? 'redirect',
             'success_url_snapshot' => $paygoService->success_url,
