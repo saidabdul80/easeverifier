@@ -124,13 +124,13 @@ class PaygoVerificationService
 
             if ($existing) {
                 if (
-                    (int) $existing->customer_paygo_service_id !== (int) $paygoService->id
+                    (int) $existing->user_id !== (int) $paygoService->user_id
                     || ! $existing->isResultReferenceFlow()
                 ) {
                     throw new RuntimeException('This portal reference is already attached to a different PayGo payment.');
                 }
 
-                $existing->update([
+                $updates = [
                     'payload' => $params,
                     'lookup_hash' => PaygoVerificationIntent::hashLookup($paygoService->id.':'.$lookup),
                     'lookup_label' => $this->lookupLabel($paygoService, $lookup),
@@ -138,8 +138,22 @@ class PaygoVerificationService
                     'metadata' => array_merge($existing->metadata ?? [], $portalContext, [
                         'buyer_email' => $data['email'] ?? data_get($existing->metadata, 'buyer_email'),
                         'latest_lookup_label' => $this->lookupLabel($paygoService, $lookup),
+                        'latest_customer_paygo_service_id' => $paygoService->id,
+                        'latest_verification_service_id' => $paygoService->verification_service_id,
+                        'latest_board' => $paygoService->resultBoard(),
                     ]),
-                ]);
+                ];
+
+                if (in_array($existing->status, ['pending', 'failed'], true)) {
+                    $updates = array_merge($updates, [
+                        'customer_paygo_service_id' => $paygoService->id,
+                        'verification_service_id' => $paygoService->verification_service_id,
+                        'amount' => $publicPrice,
+                        'system_price_snapshot' => $systemPrice,
+                    ]);
+                }
+
+                $existing->update($updates);
 
                 return $existing->fresh(['paygoService']);
             }
@@ -170,6 +184,9 @@ class PaygoVerificationService
                     'payment_gateway' => 'paystack',
                     'payment_status' => 'pending',
                     'external_reference' => $reference,
+                    'latest_customer_paygo_service_id' => $paygoService->id,
+                    'latest_verification_service_id' => $paygoService->verification_service_id,
+                    'latest_board' => $paygoService->resultBoard(),
                     'successful_result_attempts' => 0,
                     'attempts_remaining' => self::RESULT_REFERENCE_SUCCESS_LIMIT,
                 ], $portalContext),
@@ -438,7 +455,7 @@ class PaygoVerificationService
             source: 'api',
             ipAddress: $ipAddress,
             chargeWallet: false,
-            amountCharged: $this->resultReferencePerAttemptSystemPrice($intent),
+            amountCharged: (float) $intent->system_price_snapshot,
         );
 
         $verification = VerificationRequest::query()
@@ -516,8 +533,12 @@ class PaygoVerificationService
         });
     }
 
-    public function fetchResultForPaidIntent(PaygoVerificationIntent $intent, ?string $ipAddress = null, ?array $params = null): array
-    {
+    public function fetchResultForPaidIntent(
+        PaygoVerificationIntent $intent,
+        ?string $ipAddress = null,
+        ?array $params = null,
+        ?CustomerPaygoService $paygoService = null
+    ): array {
         $intent->loadMissing(['paygoService.user.customer', 'verificationService', 'verificationRequest']);
 
         if (! $intent->isResultFlow() || ! $intent->paygoService?->isResultVerification()) {
@@ -525,7 +546,7 @@ class PaygoVerificationService
         }
 
         if ($intent->isResultReferenceFlow()) {
-            return $this->fetchResultForReferenceIntent($intent, $params ?? ($intent->payload ?? []), $ipAddress);
+            return $this->fetchResultForReferenceIntent($intent, $params ?? ($intent->payload ?? []), $ipAddress, $paygoService);
         }
 
         if ($intent->expires_at && now()->greaterThan($intent->expires_at) && $intent->status !== 'used') {
@@ -637,25 +658,46 @@ class PaygoVerificationService
         ];
     }
 
-    protected function fetchResultForReferenceIntent(PaygoVerificationIntent $intent, array $params, ?string $ipAddress = null): array
+    protected function fetchResultForReferenceIntent(
+        PaygoVerificationIntent $intent,
+        array $params,
+        ?string $ipAddress = null,
+        ?CustomerPaygoService $paygoService = null
+    ): array
     {
         $intent->loadMissing(['paygoService.user.customer', 'verificationService']);
+        $paygoService ??= $intent->paygoService;
+
+        if (! $paygoService) {
+            throw new RuntimeException('This pay-on-the-go result service is not available for this payment reference.');
+        }
+
+        $paygoService->loadMissing(['user.customer', 'verificationService']);
+
+        if (
+            ! $paygoService->is_active
+            || ! $paygoService->verificationService?->is_active
+            || ! $paygoService->isResultVerification()
+            || (int) $paygoService->user_id !== (int) $intent->user_id
+        ) {
+            throw new RuntimeException('This pay-on-the-go result service is not available for this payment reference.');
+        }
 
         if ($params === []) {
             throw new RuntimeException('No result verification form data was found for this payment reference.');
         }
 
-        $board = $intent->paygoService->resultBoard();
+        $board = $paygoService->resultBoard();
         if (! $board) {
             throw new RuntimeException('Unable to determine the result board for this PayGo service.');
         }
 
-        $lookup = $this->resultSearchParameter($intent->paygoService, $params);
+        $lookup = $this->resultSearchParameter($paygoService, $params);
         if ($lookup === '') {
             throw new RuntimeException('A valid result lookup value is required for this PayGo reference.');
         }
 
-        $prepared = DB::transaction(function () use ($intent, $params, $lookup) {
+        $prepared = DB::transaction(function () use ($intent, $params, $lookup, $paygoService) {
             $lockedIntent = PaygoVerificationIntent::query()
                 ->whereKey($intent->id)
                 ->lockForUpdate()
@@ -670,7 +712,7 @@ class PaygoVerificationService
                 throw new RuntimeException('Payment has not been completed for this result verification.');
             }
 
-            $lookupHash = PaygoVerificationIntent::hashLookup($lockedIntent->customer_paygo_service_id.':'.$lookup);
+            $lookupHash = PaygoVerificationIntent::hashLookup($paygoService->id.':'.$lookup);
             $completedAttempt = $this->findCompletedResultAttempt($lockedIntent, $lookupHash, $params);
 
             if ($completedAttempt) {
@@ -690,8 +732,10 @@ class PaygoVerificationService
 
             $attempt = PaygoResultAttempt::create([
                 'paygo_verification_intent_id' => $lockedIntent->id,
+                'customer_paygo_service_id' => $paygoService->id,
+                'verification_service_id' => $paygoService->verification_service_id,
                 'lookup_hash' => $lookupHash,
-                'lookup_label' => $this->lookupLabel($lockedIntent->paygoService, $lookup),
+                'lookup_label' => $this->lookupLabel($paygoService, $lookup),
                 'payload' => $params,
                 'status' => 'processing',
                 'attempt_number' => $successfulAttempts + 1,
@@ -705,10 +749,13 @@ class PaygoVerificationService
                 'status' => 'verifying',
                 'payload' => $params,
                 'lookup_hash' => $lookupHash,
-                'lookup_label' => $this->lookupLabel($lockedIntent->paygoService, $lookup),
+                'lookup_label' => $this->lookupLabel($paygoService, $lookup),
                 'metadata' => array_merge($lockedIntent->metadata ?? [], [
                     'verification_status' => 'processing',
-                    'latest_lookup_label' => $this->lookupLabel($lockedIntent->paygoService, $lookup),
+                    'latest_lookup_label' => $this->lookupLabel($paygoService, $lookup),
+                    'latest_customer_paygo_service_id' => $paygoService->id,
+                    'latest_verification_service_id' => $paygoService->verification_service_id,
+                    'latest_board' => $paygoService->resultBoard(),
                 ]),
             ]);
 
@@ -742,12 +789,12 @@ class PaygoVerificationService
             source: 'paygo',
             ipAddress: $ipAddress,
             chargeWallet: false,
-            amountCharged: (float) $intent->system_price_snapshot,
+            amountCharged: $this->resultReferencePerAttemptSystemPrice($intent),
         );
 
         $verification = VerificationRequest::query()
             ->where('user_id', $intent->user_id)
-            ->where('verification_service_id', $intent->verification_service_id)
+            ->where('verification_service_id', $paygoService->verification_service_id)
             ->where('search_parameter', $lookup)
             ->latest('id')
             ->first();

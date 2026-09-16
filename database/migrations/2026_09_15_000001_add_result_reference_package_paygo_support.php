@@ -23,6 +23,8 @@ return new class extends Migration
         Schema::create('paygo_result_attempts', function (Blueprint $table) {
             $table->id();
             $table->foreignId('paygo_verification_intent_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('customer_paygo_service_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('verification_service_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('verification_request_id')->nullable()->constrained()->nullOnDelete();
             $table->string('lookup_hash', 64);
             $table->string('lookup_label')->nullable();
