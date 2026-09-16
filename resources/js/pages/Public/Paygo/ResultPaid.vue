@@ -23,6 +23,7 @@ const props = defineProps<{
     verification?: any;
     result: {
         success: boolean;
+        pending?: boolean;
         data?: any;
         error?: string | null;
     };
@@ -30,6 +31,32 @@ const props = defineProps<{
 
 const candidateRows = computed(() => Object.entries(props.result.data?.candidate || {}));
 const subjects = computed(() => props.result.data?.subjects || props.result.data?.result?.subjects || []);
+const resultState = computed(() => {
+    if (props.result.success) {
+        return {
+            color: 'success',
+            label: 'Result ready',
+            alertType: 'success',
+            message: null,
+        };
+    }
+
+    if (props.result.pending) {
+        return {
+            color: 'info',
+            label: 'Result preparing',
+            alertType: 'info',
+            message: 'Payment completed. EaseVerifier is preparing this verified result. Refresh shortly.',
+        };
+    }
+
+    return {
+        color: 'error',
+        label: 'Result unavailable',
+        alertType: 'error',
+        message: props.result.error || 'Result verification failed. Please contact the service owner with the payment reference.',
+    };
+});
 const contextLabel = computed(() => {
     if (props.result.success && props.intent.lookup_label) {
         return props.intent.lookup_label;
@@ -57,8 +84,8 @@ const copyReference = async () => {
                     <v-col cols="12" lg="9">
                         <v-card class="paygo-card mb-5" elevation="0">
                             <v-card-text class="pa-6">
-                                <v-chip :color="result.success ? 'success' : 'error'" variant="flat" class="mb-4">
-                                    {{ result.success ? 'Result ready' : 'Result unavailable' }}
+                                <v-chip :color="resultState.color" variant="flat" class="mb-4">
+                                    {{ resultState.label }}
                                 </v-chip>
                                 <h1 class="text-h4 font-weight-bold mb-2">{{ paygoService.board }} Result Verification</h1>
                                 <p class="text-body-2 text-grey-darken-1 mb-5">{{ contextLabel }}</p>
@@ -79,8 +106,8 @@ const copyReference = async () => {
                             </v-card-text>
                         </v-card>
 
-                        <v-alert v-if="!result.success" type="error" variant="tonal" class="mb-5">
-                            {{ result.error || 'Result verification failed. Please contact the service owner with the payment reference.' }}
+                        <v-alert v-if="!result.success" :type="resultState.alertType" variant="tonal" class="mb-5">
+                            {{ resultState.message }}
                         </v-alert>
 
                         <v-card v-if="result.success" class="paygo-card mb-5" elevation="0">

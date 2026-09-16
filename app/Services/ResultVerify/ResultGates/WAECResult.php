@@ -65,7 +65,7 @@ class WAECResult implements ResultInterface
         $cookieJar = tempnam(sys_get_temp_dir(), 'waec_');
         $startedAt = microtime(true);
 
-        @set_time_limit(120);
+        @set_time_limit(max(60, $this->timeout('session_timeout', 20) + $this->timeout('encrypt_timeout', 20) + $this->timeout('display_timeout', 35) + 15));
 
         try {
             $payload = $this->resultPayload($params);
@@ -90,7 +90,7 @@ class WAECResult implements ResultInterface
                         'Referer: '.$this->baseUrl.'/',
                     ]),
                     cookieJar: $cookieJar,
-                    timeout: 90,
+                    timeout: $this->timeout('display_timeout', 35),
                     step: 'display_encrypted',
                 );
 
@@ -117,7 +117,7 @@ class WAECResult implements ResultInterface
                     'Referer: '.$this->baseUrl.'/',
                 ]),
                 cookieJar: $cookieJar,
-                timeout: 90,
+                timeout: $this->timeout('display_timeout', 35),
                 step: 'display_query',
             );
 
@@ -265,7 +265,7 @@ class WAECResult implements ResultInterface
             payload: null,
             headers: $this->commonHeaders,
             cookieJar: $cookieJar,
-            timeout: 30,
+            timeout: $this->timeout('session_timeout', 20),
             step: 'init_session',
         );
     }
@@ -298,7 +298,7 @@ class WAECResult implements ResultInterface
                 'X-Requested-With: XMLHttpRequest',
             ],
             cookieJar: $cookieJar,
-            timeout: 30,
+            timeout: $this->timeout('encrypt_timeout', 20),
             failOnHttpError: false,
             step: 'encrypt_payload',
         );
@@ -341,7 +341,7 @@ class WAECResult implements ResultInterface
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_CONNECTTIMEOUT => 20,
+            CURLOPT_CONNECTTIMEOUT => $this->connectTimeout($timeout),
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_ENCODING => '',
         ]);
@@ -394,6 +394,20 @@ class WAECResult implements ResultInterface
         ]);
 
         return (string) $response;
+    }
+
+    private function timeout(string $key, int $default): int
+    {
+        $value = (int) config('services.waec.'.$key, $default);
+
+        return max(5, min(120, $value));
+    }
+
+    private function connectTimeout(int $requestTimeout): int
+    {
+        $value = (int) config('services.waec.connect_timeout', 8);
+
+        return max(2, min($requestTimeout, $value));
     }
 
     private function friendlyCurlError(string $error): string

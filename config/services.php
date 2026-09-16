@@ -59,4 +59,11 @@ return [
         'timeout' => env('NECO_EVERIFY_TIMEOUT', 20),
     ],
 
+    'waec' => [
+        'connect_timeout' => env('WAEC_CONNECT_TIMEOUT', 8),
+        'session_timeout' => env('WAEC_SESSION_TIMEOUT', 20),
+        'encrypt_timeout' => env('WAEC_ENCRYPT_TIMEOUT', 20),
+        'display_timeout' => env('WAEC_DISPLAY_TIMEOUT', 35),
+    ],
+
 ];
