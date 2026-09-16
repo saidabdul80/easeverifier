@@ -12,6 +12,8 @@ class CustomerPaystackSplitAccount extends Model
 
     protected $fillable = [
         'customer_id',
+        'paystack_gateway_account_id',
+        'beneficiary_type',
         'label',
         'subaccount_code',
         'account_name',
@@ -39,5 +41,10 @@ class CustomerPaystackSplitAccount extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function paystackGatewayAccount(): BelongsTo
+    {
+        return $this->belongsTo(PaystackGatewayAccount::class);
     }
 }

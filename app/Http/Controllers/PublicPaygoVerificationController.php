@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Paygo\PaygoResultCallbackService;
 use App\Services\Paygo\PaygoVerificationService;
 use App\Services\PaystackService;
+use App\Services\PaystackGatewayResolver;
 use App\Services\PaystackSplitService;
 use App\Services\ResultVerify\ResultFactory;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
@@ -27,6 +28,7 @@ class PublicPaygoVerificationController extends Controller
         protected PaygoVerificationService $paygo,
         protected PaygoResultCallbackService $resultCallbacks,
         protected PaystackService $paystack,
+        protected PaystackGatewayResolver $paystackGateways,
         protected PaystackSplitService $paystackSplits,
         protected ResultFactory $resultFactory,
     ) {}
@@ -512,11 +514,34 @@ class PublicPaygoVerificationController extends Controller
             ];
         }
 
+        $gatewayPinned = filled($intent->paystack_environment)
+            && ! ($intent->status === 'failed' && blank($checkout['authorization_url'] ?? null));
+        $gateway = $gatewayPinned && $intent->paystack_gateway_owner_type === 'customer'
+            ? $this->paystackGateways->forIntent($intent)
+            : $this->paystackGateways->forCustomer($paygoService->user?->customer);
+
+        if (! $gatewayPinned) {
+            $intent->update([
+                'paystack_gateway_account_id' => $gateway?->id,
+                'paystack_gateway_owner_type' => $gateway ? 'customer' : 'system',
+                'paystack_environment' => $gateway?->environment ?? $this->paystackGateways->systemEnvironment(),
+                'paystack_key_fingerprint' => $gateway?->key_fingerprint ?? $this->paystackGateways->systemFingerprint(),
+                'settlement_strategy' => $gateway
+                    ? 'customer_gateway_system_subaccount'
+                    : 'system_gateway_customer_subaccount',
+            ]);
+            $intent->refresh();
+        }
+
+        $paystack = $this->paystackGateways->client($gateway);
+
         try {
             $split = $this->paystackSplits->buildDynamicFlatSplit(
                 $paygoService->user?->customer,
                 $amountInKobo,
                 $intent->reference,
+                $gateway,
+                (int) round((float) $intent->system_price_snapshot * 100),
             );
         } catch (RuntimeException $exception) {
             return [
@@ -533,7 +558,7 @@ class PublicPaygoVerificationController extends Controller
             ]);
         }
 
-        $payment = $this->paystack->initializeTransaction(
+        $payment = $paystack->initializeTransaction(
             email: $email,
             amountInKobo: $amountInKobo,
             reference: $intent->reference,
@@ -542,7 +567,7 @@ class PublicPaygoVerificationController extends Controller
         );
 
         if (! ($payment['success'] ?? false) && $this->isDuplicatePaystackReferenceMessage($payment['message'] ?? null)) {
-            $verifiedPayment = $this->paystack->verifyTransaction($intent->reference);
+            $verifiedPayment = $paystack->verifyTransaction($intent->reference);
 
             if (($verifiedPayment['success'] ?? false) && ($verifiedPayment['status'] ?? null) === 'success') {
                 try {
@@ -951,7 +976,12 @@ class PublicPaygoVerificationController extends Controller
             ->where('reference', $reference)
             ->firstOrFail();
 
-        $payment = $this->paystack->verifyTransaction($reference);
+        try {
+            $gateway = $this->paystackGateways->forIntent($intent);
+            $payment = $this->paystackGateways->client($gateway)->verifyTransaction($reference);
+        } catch (RuntimeException $exception) {
+            return $this->redirectAfterPayment($intent, false, $exception->getMessage());
+        }
         if (! $payment['success'] || ($payment['status'] ?? null) !== 'success') {
             $intent->update(['status' => 'failed']);
 

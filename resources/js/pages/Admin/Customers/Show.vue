@@ -13,6 +13,7 @@ const props = defineProps<{
     resultPinPricing?: any;
     paygoResultServices?: any[];
     paystackSplitAccounts?: any[];
+    paystackGateway?: any;
 }>();
 
 const pricingDialog = ref(false);
@@ -39,6 +40,16 @@ const buildPaystackSplitRows = (accounts: any[] = []) => accounts.map((account: 
 }));
 const paystackSplitForm = useForm({
     splits: buildPaystackSplitRows(props.paystackSplitAccounts),
+});
+const paystackGatewayForm = useForm({
+    environment: props.paystackGateway?.environment || 'live',
+    public_key: '',
+    secret_key: '',
+    is_trusted: props.paystackGateway?.is_trusted ?? false,
+    is_active: props.paystackGateway?.is_active ?? false,
+    system_bank_name: props.paystackGateway?.system_subaccount?.bank_name || '',
+    system_bank_code: props.paystackGateway?.system_subaccount?.bank_code || '',
+    system_account_number: '',
 });
 const paystackBanks = ref<any[]>([]);
 const loadingPaystackBanks = ref(false);
@@ -100,6 +111,20 @@ const openPricingDialog = (service: any) => {
 const submitPricing = () => {
     pricingForm.post(`/admin/customers/${props.customer.id}/pricing`, {
         onSuccess: () => { pricingDialog.value = false; }
+    });
+};
+
+const submitPaystackGateway = () => {
+    const bank = paystackBanks.value.find((item: any) => item.code === paystackGatewayForm.system_bank_code);
+    paystackGatewayForm.system_bank_name = bank?.name || paystackGatewayForm.system_bank_name || '';
+
+    paystackGatewayForm.post(`/admin/customers/${props.customer.id}/paystack-gateway`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            paystackGatewayForm.public_key = '';
+            paystackGatewayForm.secret_key = '';
+            paystackGatewayForm.system_account_number = '';
+        },
     });
 };
 
@@ -216,6 +241,11 @@ const selectPaystackBank = (split: any) => {
     split.bank_name = bank?.name || split.bank_name || '';
 };
 
+const selectGatewayBank = () => {
+    const bank = paystackBanks.value.find((item: any) => item.code === paystackGatewayForm.system_bank_code);
+    paystackGatewayForm.system_bank_name = bank?.name || '';
+};
+
 const splitErrorMessage = (index: number) => {
     const fields = ['id', 'label', 'flat_amount', 'bank_code', 'bank_name', 'account_number', 'account_name', 'subaccount_code', 'is_active'];
     const field = fields.find((name) => paystackSplitForm.errors[`splits.${index}.${name}`]);
@@ -303,6 +333,54 @@ onMounted(loadPaystackBanks);
                         <p class="text-overline opacity-80">Wallet Balance</p>
                         <p class="text-h4 font-weight-bold mb-2">{{ formatCurrency(customer.wallet?.balance) }}</p>
                         <p class="text-caption opacity-80">Bonus: {{ formatCurrency(customer.wallet?.bonus_balance) }}</p>
+                    </v-card-text>
+                </v-card>
+
+                <v-card class="mt-4">
+                    <v-card-title class="d-flex align-center">
+                        Customer Paystack Gateway
+                        <v-spacer />
+                        <v-chip size="small" :color="paystackGateway?.verification_status === 'verified' ? 'success' : 'grey'" variant="tonal">
+                            {{ paystackGateway?.verification_status === 'verified' ? 'Verified' : 'Not configured' }}
+                        </v-chip>
+                    </v-card-title>
+                    <v-card-text>
+                        <v-row dense>
+                            <v-col cols="12" sm="4">
+                                <v-select v-model="paystackGatewayForm.environment" :items="[{ title: 'Live', value: 'live' }, { title: 'Test', value: 'test' }]" label="Environment" variant="outlined" density="compact" :disabled="Boolean(paystackGateway)" :error-messages="paystackGatewayForm.errors.environment" />
+                            </v-col>
+                            <v-col cols="12" sm="8">
+                                <v-text-field v-model="paystackGatewayForm.public_key" label="Paystack public key" variant="outlined" density="compact" autocomplete="off" :placeholder="paystackGateway ? 'Leave blank to keep current key' : 'pk_live_...'" :error-messages="paystackGatewayForm.errors.public_key" />
+                            </v-col>
+                            <v-col cols="12">
+                                <v-text-field v-model="paystackGatewayForm.secret_key" label="Paystack secret key" type="password" variant="outlined" density="compact" autocomplete="new-password" :placeholder="paystackGateway ? `Current: ${paystackGateway.key_fingerprint}` : 'sk_live_...'" :error-messages="paystackGatewayForm.errors.secret_key" />
+                            </v-col>
+                            <v-col cols="12">
+                                <v-autocomplete
+                                    v-model="paystackGatewayForm.system_bank_code"
+                                    :items="paystackBanks"
+                                    item-title="name"
+                                    item-value="code"
+                                    label="EaseVerifier settlement bank"
+                                    variant="outlined"
+                                    density="compact"
+                                    clearable
+                                    :loading="loadingPaystackBanks"
+                                    :disabled="loadingPaystackBanks"
+                                    :error-messages="paystackGatewayForm.errors.system_bank_code || paystackGatewayForm.errors.system_bank_name"
+                                    @update:model-value="selectGatewayBank"
+                                />
+                            </v-col>
+                            <v-col cols="12">
+                                <v-text-field v-model="paystackGatewayForm.system_account_number" label="EaseVerifier settlement account number" variant="outlined" density="compact" maxlength="10" :placeholder="paystackGateway?.system_subaccount ? `Current: ******${paystackGateway.system_subaccount.account_number_last4}` : '0123456789'" :error-messages="paystackGatewayForm.errors.system_account_number" />
+                            </v-col>
+                            <v-col cols="12" sm="6"><v-switch v-model="paystackGatewayForm.is_trusted" label="Trusted customer" color="primary" hide-details /></v-col>
+                            <v-col cols="12" sm="6"><v-switch v-model="paystackGatewayForm.is_active" label="Use customer Paystack" color="primary" hide-details /></v-col>
+                        </v-row>
+                        <div v-if="paystackGateway?.system_subaccount" class="text-caption text-grey mb-3">
+                            System subaccount: {{ paystackGateway.system_subaccount.subaccount_code }} · {{ paystackGateway.system_subaccount.account_name }}
+                        </div>
+                        <v-btn color="primary" prepend-icon="mdi-shield-check-outline" :loading="paystackGatewayForm.processing" @click="submitPaystackGateway">Verify and save</v-btn>
                     </v-card-text>
                 </v-card>
 

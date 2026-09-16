@@ -7,6 +7,7 @@ use App\Models\CustomerPaystackSplitLedger;
 use App\Models\PaygoResultAttempt;
 use App\Models\PaygoVerificationIntent;
 use App\Models\PaygoWallet;
+use App\Models\PaystackGatewayAccount;
 use App\Models\ServiceProvider;
 use App\Models\Transaction;
 use App\Models\User;
@@ -397,6 +398,168 @@ it('initializes paygo payment with configured flat paystack split', function () 
     expect($intent->metadata['paystack_split']['applied'])->toBeTrue()
         ->and((float) $intent->metadata['paystack_split']['total_split_amount'])->toBe(100.0)
         ->and((float) $intent->metadata['paystack_split']['main_account_remainder'])->toBe(100.0);
+});
+
+it('uses trusted customer paystack keys and settles the system share to its subaccount', function () {
+    config([
+        'services.paystack.public_key' => 'pk_test_system',
+        'services.paystack.secret_key' => 'sk_test_system',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
+    Http::fake(function ($request) {
+        if (str_contains($request->url(), '/transaction/verify/')) {
+            return Http::response(['status' => true, 'data' => [
+                'status' => 'success',
+                'amount' => 20000,
+                'reference' => basename(parse_url($request->url(), PHP_URL_PATH)),
+                'paid_at' => now()->toISOString(),
+                'channel' => 'card',
+                'customer' => ['email' => 'student@example.test'],
+            ]]);
+        }
+
+        return Http::response([
+            'status' => true,
+            'data' => [
+                'authorization_url' => 'https://checkout.test/customer-gateway',
+                'access_code' => 'ACCESS_CUSTOMER',
+                'reference' => $request['reference'],
+            ],
+        ]);
+    });
+
+    $user = createPaygoCustomer()->fresh('customer');
+    $service = createPaygoNinService(100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 200);
+    $gateway = PaystackGatewayAccount::create([
+        'owner_type' => 'customer',
+        'customer_id' => $user->customer->id,
+        'label' => 'School Paystack',
+        'environment' => 'test',
+        'public_key' => 'pk_test_customer',
+        'secret_key' => 'sk_test_customer',
+        'key_fingerprint' => PaystackGatewayAccount::fingerprint('sk_test_customer'),
+        'is_trusted' => true,
+        'is_active' => true,
+        'verification_status' => 'verified',
+        'verified_at' => now(),
+    ]);
+
+    CustomerPaystackSplitAccount::create([
+        'customer_id' => $user->customer->id,
+        'paystack_gateway_account_id' => $gateway->id,
+        'beneficiary_type' => 'system',
+        'label' => 'EaseVerifier settlement',
+        'subaccount_code' => 'ACCT_easeverifier',
+        'bank_name' => 'Test Bank',
+        'bank_code' => '058',
+        'account_number' => '0123456789',
+        'account_number_last4' => '6789',
+        'account_name' => 'EaseVerifier Ltd',
+        'flat_amount' => 0.01,
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    $this->post("/paygo/{$paygoService->public_slug}/initiate", [
+        'nin' => '12345678901',
+    ])->assertRedirect('https://checkout.test/customer-gateway');
+
+    Http::assertSent(function ($request) {
+        return $request->url() === 'https://api.paystack.co/transaction/initialize'
+            && $request->hasHeader('Authorization', 'Bearer sk_test_customer')
+            && $request['subaccount'] === 'ACCT_easeverifier'
+            && $request['transaction_charge'] === 10000
+            && $request['bearer'] === 'account';
+    });
+
+    $intent = $paygoService->intents()->firstOrFail();
+
+    expect($intent->paystack_gateway_account_id)->toBe($gateway->id)
+        ->and($intent->paystack_gateway_owner_type)->toBe('customer')
+        ->and($intent->settlement_strategy)->toBe('customer_gateway_system_subaccount')
+        ->and(data_get($intent->metadata, 'paystack_split.subaccounts.0.share'))->toBe(10000)
+        ->and(data_get($intent->metadata, 'paystack_split.subaccounts.0.beneficiary_type'))->toBe('system');
+
+    $this->get("/paygo/callback?reference={$intent->reference}")->assertRedirect();
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/transaction/verify/')
+        && $request->hasHeader('Authorization', 'Bearer sk_test_customer'));
+
+    expect($intent->fresh()->status)->toBe('paid')
+        ->and(CustomerPaystackSplitLedger::where('paygo_verification_intent_id', $intent->id)->value('gateway_owner_type'))->toBe('customer')
+        ->and(CustomerPaystackSplitLedger::where('paygo_verification_intent_id', $intent->id)->value('beneficiary_type'))->toBe('system');
+});
+
+it('uses system paystack keys when customer credentials are not trusted', function () {
+    config([
+        'services.paystack.public_key' => 'pk_test_system',
+        'services.paystack.secret_key' => 'sk_test_system',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
+    Http::fake(['https://api.paystack.co/transaction/initialize' => Http::response([
+        'status' => true,
+        'data' => ['authorization_url' => 'https://checkout.test/system', 'access_code' => 'SYSTEM', 'reference' => 'SYSTEM_REF'],
+    ])]);
+
+    $user = createPaygoCustomer()->fresh('customer');
+    $service = createPaygoNinService(100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 200);
+
+    PaystackGatewayAccount::create([
+        'owner_type' => 'customer',
+        'customer_id' => $user->customer->id,
+        'label' => 'Untrusted gateway',
+        'environment' => 'test',
+        'public_key' => 'pk_test_customer',
+        'secret_key' => 'sk_test_customer',
+        'key_fingerprint' => PaystackGatewayAccount::fingerprint('sk_test_customer'),
+        'is_trusted' => false,
+        'is_active' => true,
+        'verification_status' => 'verified',
+    ]);
+
+    $this->post("/paygo/{$paygoService->public_slug}/initiate", ['nin' => '12345678901'])
+        ->assertRedirect('https://checkout.test/system');
+
+    Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer sk_test_system'));
+
+    expect($paygoService->intents()->firstOrFail()->paystack_gateway_owner_type)->toBe('system');
+});
+
+it('does not fall back to system keys when a trusted customer gateway lacks its system subaccount', function () {
+    config([
+        'services.paystack.public_key' => 'pk_test_system',
+        'services.paystack.secret_key' => 'sk_test_system',
+    ]);
+    Http::fake();
+
+    $user = createPaygoCustomer()->fresh('customer');
+    $service = createPaygoNinService(100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 200);
+
+    PaystackGatewayAccount::create([
+        'owner_type' => 'customer',
+        'customer_id' => $user->customer->id,
+        'label' => 'Customer gateway',
+        'environment' => 'test',
+        'public_key' => 'pk_test_customer',
+        'secret_key' => 'sk_test_customer',
+        'key_fingerprint' => PaystackGatewayAccount::fingerprint('sk_test_customer'),
+        'is_trusted' => true,
+        'is_active' => true,
+        'verification_status' => 'verified',
+    ]);
+
+    $this->from("/paygo/{$paygoService->public_slug}/initiate")
+        ->post("/paygo/{$paygoService->public_slug}/initiate", ['nin' => '12345678901'])
+        ->assertRedirect("/paygo/{$paygoService->public_slug}/initiate")
+        ->assertSessionHas('error', 'This customer Paystack account is missing an active EaseVerifier settlement subaccount.');
+
+    Http::assertNothingSent();
+    expect($paygoService->intents()->firstOrFail()->paystack_gateway_owner_type)->toBe('customer');
 });
 
 it('does not credit paygo wallet when paystack split was applied', function () {

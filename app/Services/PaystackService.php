@@ -8,15 +8,20 @@ use Illuminate\Support\Facades\Log;
 
 class PaystackService
 {
-    protected string $secretKey;
-    protected string $publicKey;
+    protected ?string $secretKey;
+    protected ?string $publicKey;
     protected string $baseUrl;
 
-    public function __construct()
+    public function __construct(?string $secretKey = null, ?string $publicKey = null, ?string $baseUrl = null)
     {
-        $this->secretKey = config('services.paystack.secret_key');
-        $this->publicKey = config('services.paystack.public_key');
-        $this->baseUrl = config('services.paystack.base_url');
+        $this->secretKey = $secretKey ?? config('services.paystack.secret_key');
+        $this->publicKey = $publicKey ?? config('services.paystack.public_key');
+        $this->baseUrl = $baseUrl ?? config('services.paystack.base_url', 'https://api.paystack.co');
+    }
+
+    public static function withCredentials(string $secretKey, ?string $publicKey = null): self
+    {
+        return new self($secretKey, $publicKey, config('services.paystack.base_url', 'https://api.paystack.co'));
     }
 
     /**
@@ -94,6 +99,27 @@ class PaystackService
         unset($payload['email']);
 
         return $payload;
+    }
+
+    public function verifyCredentials(): array
+    {
+        try {
+            $response = Http::withToken($this->secretKey)
+                ->get("{$this->baseUrl}/balance");
+        } catch (ConnectionException $exception) {
+            Log::error('Paystack credential verification connection failed', ['message' => $exception->getMessage()]);
+
+            return ['success' => false, 'message' => 'Unable to reach Paystack to verify these credentials.'];
+        }
+
+        if ($response->successful() && $response->json('status')) {
+            return ['success' => true];
+        }
+
+        return [
+            'success' => false,
+            'message' => $response->json('message') ?? 'Paystack rejected these credentials.',
+        ];
     }
 
     /**
@@ -242,7 +268,7 @@ class PaystackService
      */
     public function getPublicKey(): string
     {
-        return $this->publicKey;
+        return (string) $this->publicKey;
     }
 
     /**

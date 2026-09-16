@@ -339,6 +339,10 @@ class PaygoVerificationService
                 [
                     'customer_id' => $customerId,
                     'user_id' => $intent->user_id,
+                    'paystack_gateway_account_id' => $intent->paystack_gateway_account_id,
+                    'gateway_owner_type' => $intent->paystack_gateway_owner_type ?? 'system',
+                    'settlement_strategy' => $intent->settlement_strategy ?? ($split['settlement_strategy'] ?? null),
+                    'beneficiary_type' => $subaccount['beneficiary_type'] ?? 'customer',
                     'payment_reference' => $paymentData['reference'] ?? $reference,
                     'split_reference' => $split['reference'] ?? null,
                     'subaccount_label' => $subaccount['label'] ?? null,

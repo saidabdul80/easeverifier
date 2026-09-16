@@ -126,11 +126,13 @@ const necoNoticeForService = (service?: PaygoResultService | null) => {
 const selectedNecoNotice = computed(() =>
     necoNoticeForService(selectedService.value),
 );
+
 const activeNecoNotice = computed(
     () =>
         necoNoticeForService(pendingNecoService.value) ||
         selectedNecoNotice.value,
 );
+
 const confirmationEntries = computed(() => {
     const entries = props.fields
         .map((field) => {
@@ -140,11 +142,9 @@ const confirmationEntries = computed(() => {
                 return null;
             }
 
-            const displayValue =
-                field.type === 'select'
-                    ? (optionsForField(field).find(
-                          (option) => String(option.value) === String(value),
-                      )?.title ?? String(value))
+            const displayValue = field.type === 'select' ? (optionsForField(field).find(
+                        (option) => String(option.value) === String(value),
+                    )?.title ?? String(value))
                     : String(value);
 
             return {
@@ -152,8 +152,7 @@ const confirmationEntries = computed(() => {
                 value: displayValue,
             };
         })
-        .filter(
-            (entry): entry is { label: string; value: string } =>
+        .filter((entry): entry is { label: string; value: string } =>
                 entry !== null,
         );
 
@@ -179,7 +178,15 @@ const withPortalContext = (url?: string | null) => {
 
     const query = new URLSearchParams();
 
-    ['candidate_id', 'portal_ref', 'state', 'sitting', 'reference', 'email', 'phone'].forEach((key) => {
+    [
+        'candidate_id',
+        'portal_ref',
+        'state',
+        'sitting',
+        'reference',
+        'email',
+        'phone',
+    ].forEach((key) => {
         const value = form[key];
 
         if (value) {
@@ -309,9 +316,8 @@ onMounted(() => {
 </script>
 
 <template>
-    <Head
-        :title="`${selectedService?.name || 'Result Verification'} - PayGo`"
-    />
+
+    <Head :title="`${selectedService?.name || 'Result Verification'} - PayGo`" />
 
     <v-app>
         <v-main class="paygo-main">
@@ -320,12 +326,7 @@ onMounted(() => {
                     <v-col cols="12" md="8" lg="6">
                         <v-card class="paygo-card" elevation="0">
                             <v-card-text class="pa-6">
-                                <v-chip
-                                    color="secondary"
-                                    variant="flat"
-                                    class="mb-4"
-                                    >Result Verification</v-chip
-                                >
+                                <v-chip color="secondary" variant="flat" class="mb-4">Result Verification</v-chip>
                                 <h1 class="text-h4 font-weight-bold mb-2">
                                     {{
                                         selectedService?.name ||
@@ -333,221 +334,110 @@ onMounted(() => {
                                     }}
                                 </h1>
 
-                                <v-btn
-                                    v-if="
-                                        paygoService &&
-                                        selectorUrl &&
-                                        services.length > 1
-                                    "
-                                    :href="withPortalContext(selectorUrl)"
-                                    variant="text"
-                                    color="primary"
-                                    prepend-icon="mdi-arrow-left"
-                                    class="mb-4 px-0"
-                                >
+                                <v-btn v-if="
+                                    paygoService &&
+                                    selectorUrl &&
+                                    services.length > 1
+                                " :href="withPortalContext(selectorUrl)" variant="text" color="primary"
+                                    prepend-icon="mdi-arrow-left" class="mb-4 px-0">
                                     Change exam
                                 </v-btn>
 
-                                <v-alert
-                                    v-if="flash?.error"
-                                    type="error"
-                                    variant="tonal"
-                                    class="mb-4"
-                                    >{{ flash.error }}</v-alert
-                                >
-                                <v-alert
-                                    v-if="fieldLoadError"
-                                    type="error"
-                                    variant="tonal"
-                                    class="mb-4"
-                                    >{{ fieldLoadError }}</v-alert
-                                >
-                                <v-alert
-                                    v-if="form.errors.result"
-                                    type="error"
-                                    variant="tonal"
-                                    class="mb-4"
-                                    >{{ form.errors.result }}</v-alert
-                                >
-                                <v-alert
-                                    v-if="selectedNecoNotice"
-                                    type="info"
-                                    variant="tonal"
-                                    class="mb-4"
-                                >
+                                <v-alert v-if="flash?.error" type="error" variant="tonal" class="mb-4">{{ flash.error
+                                    }}</v-alert>
+                                <v-alert v-if="fieldLoadError" type="error" variant="tonal" class="mb-4">{{
+                                    fieldLoadError }}</v-alert>
+                                <v-alert v-if="form.errors.result" type="error" variant="tonal" class="mb-4">{{
+                                    form.errors.result }}</v-alert>
+                                <v-alert v-if="selectedNecoNotice" type="info" variant="tonal" class="mb-4">
                                     <v-alert-title>{{
                                         selectedNecoNotice.title
-                                    }}</v-alert-title>
+                                        }}</v-alert-title>
                                     {{ selectedNecoNotice.message }}
                                 </v-alert>
 
-                                <v-select
-                                    v-if="!paygoService"
-                                    v-model="selectedSlug"
-                                    :items="
-                                        services.map((service) => ({
-                                            title: `${service.board} - ${formatCurrency(priceForService(service))}`,
-                                            value: service.public_slug,
-                                        }))
-                                    "
-                                    label="Exam"
-                                    variant="outlined"
-                                    class="mb-4"
-                                    @update:model-value="chooseService"
-                                />
+                                <v-select v-if="!paygoService" v-model="selectedSlug" :items="services.map((service) => ({
+                                    title: `${service.board} - ${formatCurrency(priceForService(service))}`,
+                                    value: service.public_slug,
+                                }))
+                                    " label="Exam" variant="outlined" class="mb-4"
+                                    @update:model-value="chooseService" />
 
-                                <template
-                                    v-if="selectedService && fields.length"
-                                >
+                                <template v-if="selectedService && fields.length">
                                     <div class="price-strip mb-5">
-                                        <span
-                                            >{{
-                                                selectedService.board
-                                            }}
-                                            amount</span
-                                        >
+                                        <span>{{
+                                            selectedService.board
+                                        }}
+                                            amount</span>
                                         <strong>{{
-                                            formatCurrency(
-                                                selectedPrice,
-                                            )
-                                        }}</strong>
+                                            formatCurrency(selectedPrice)
+                                            }}</strong>
                                     </div>
 
                                     <v-form @submit.prevent="openConfirmation">
-                                        <template
-                                            v-for="field in fields"
-                                            :key="field.name"
-                                        >
-                                            <v-autocomplete
-                                                v-if="field.type === 'select'"
-                                                v-model="form[field.name]"
-                                                :items="optionsForField(field)"
-                                                item-title="title"
-                                                item-value="value"
-                                                :label="field.label"
-                                                variant="outlined"
-                                                clearable
-                                                auto-select-first
-                                                no-data-text="No matching option found"
-                                                :disabled="
-                                                    !!field.depends_on &&
+                                        <template v-for="field in fields" :key="field.name">
+                                            <v-autocomplete v-if="field.type === 'select'" v-model="form[field.name]"
+                                                :items="optionsForField(field)" item-title="title" item-value="value"
+                                                :label="field.label" variant="outlined" clearable auto-select-first
+                                                no-data-text="No matching option found" :disabled="!!field.depends_on &&
                                                     !form[field.depends_on]
-                                                "
-                                                :error-messages="
-                                                    form.errors[field.name]
-                                                "
-                                                class="mb-4"
-                                            />
-                                            <v-text-field
-                                                v-else
-                                                v-model="form[field.name]"
-                                                :label="field.label"
-                                                :type="field.type || 'text'"
-                                                variant="outlined"
-                                                :error-messages="
-                                                    form.errors[field.name]
-                                                "
-                                                class="mb-4"
-                                            />
+                                                    " :error-messages="form.errors[field.name]
+                                                    " class="mb-4" />
+                                            <v-text-field v-else v-model="form[field.name]" :label="field.label"
+                                                :type="field.type || 'text'" variant="outlined" :error-messages="form.errors[field.name]
+                                                    " class="mb-4" />
                                         </template>
 
-                                        <v-text-field
-                                            v-model="form.email"
-                                            label="Email"
-                                            type="email"
-                                            variant="outlined"
-                                            :error-messages="form.errors.email"
-                                            class="mb-4"
-                                        />
-                                        <v-text-field
-                                            v-model="form.phone"
-                                            label="Phone number"
-                                            variant="outlined"
-                                            :error-messages="form.errors.phone"
-                                            class="mb-4"
-                                        />
-                                        <v-btn
-                                            type="submit"
-                                            color="secondary"
-                                            size="large"
-                                            block
-                                            :loading="form.processing"
-                                        >
+                                        <v-text-field v-model="form.email" label="Email" type="email" variant="outlined"
+                                            :error-messages="form.errors.email" class="mb-4" />
+                                        <v-text-field v-model="form.phone" label="Phone number" variant="outlined"
+                                            :error-messages="form.errors.phone" class="mb-4" />
+                                        <v-btn type="submit" color="secondary" size="large" block
+                                            :loading="form.processing">
                                             Proceed to Payment
                                         </v-btn>
                                     </v-form>
 
-                                    <v-dialog
-                                        v-model="confirmationOpen"
-                                        max-width="560"
-                                    >
+                                    <v-dialog v-model="confirmationOpen" max-width="560">
                                         <v-card>
                                             <v-card-text class="pa-6">
-                                                <h2
-                                                    class="text-h6 font-weight-bold mb-2"
-                                                >
+                                                <h2 class="text-h6 font-weight-bold mb-2">
                                                     Confirm your details
                                                 </h2>
-                                                <p
-                                                    class="text-body-2 text-grey-darken-1 mb-4"
-                                                >
+                                                <p class="text-body-2 text-grey-darken-1 mb-4">
                                                     Please confirm that the
                                                     result-check details below
                                                     are correct before we
                                                     continue to payment.
                                                 </p>
 
-                                                <div
-                                                    class="confirmation-list mb-4"
-                                                >
-                                                    <div
-                                                        v-for="entry in confirmationEntries"
-                                                        :key="entry.label"
-                                                        class="confirmation-row"
-                                                    >
+                                                <div class="confirmation-list mb-4">
+                                                    <div v-for="entry in confirmationEntries" :key="entry.label"
+                                                        class="confirmation-row">
                                                         <span>{{
                                                             entry.label
-                                                        }}</span>
+                                                            }}</span>
                                                         <strong>{{
                                                             entry.value
-                                                        }}</strong>
+                                                            }}</strong>
                                                     </div>
                                                 </div>
 
-                                                <v-checkbox
-                                                    v-model="consentChecked"
-                                                    color="secondary"
-                                                    hide-details
+                                                <v-checkbox v-model="consentChecked" color="secondary" hide-details
                                                     class="mb-2"
-                                                    label="I confirm that the information provided is correct and belongs to me."
-                                                />
+                                                    label="I confirm that the information provided is correct and belongs to me." />
 
-                                                <div
-                                                    class="confirmation-actions"
-                                                >
-                                                    <v-btn
-                                                        variant="outlined"
-                                                        color="primary"
-                                                        class="confirmation-action"
-                                                        size="large"
-                                                        @click="
+                                                <div class="confirmation-actions">
+                                                    <v-btn variant="outlined" color="primary"
+                                                        class="confirmation-action" size="large" @click="
                                                             confirmationOpen = false
-                                                        "
-                                                    >
+                                                            ">
                                                         Review again
                                                     </v-btn>
-                                                    <v-btn
-                                                        color="secondary"
-                                                        class="confirmation-action"
-                                                        size="large"
-                                                        :disabled="
-                                                            !consentChecked
-                                                        "
-                                                        :loading="
-                                                            form.processing
-                                                        "
-                                                        @click="submit"
-                                                    >
+                                                    <v-btn color="secondary" class="confirmation-action" size="large"
+                                                        :disabled="!consentChecked
+                                                            " :loading="form.processing
+                                                            " @click="submit">
                                                         Confirm and Pay
                                                     </v-btn>
                                                 </div>
@@ -556,11 +446,7 @@ onMounted(() => {
                                     </v-dialog>
                                 </template>
 
-                                <v-alert
-                                    v-else-if="!services.length"
-                                    type="warning"
-                                    variant="tonal"
-                                >
+                                <v-alert v-else-if="!services.length" type="warning" variant="tonal">
                                     No PayGo result verification service is
                                     available for this customer.
                                 </v-alert>
@@ -574,9 +460,7 @@ onMounted(() => {
         <v-dialog v-model="necoNoticeOpen" max-width="560">
             <v-card v-if="activeNecoNotice">
                 <v-card-title class="d-flex align-center">
-                    <v-icon color="primary" class="mr-2"
-                        >mdi-information</v-icon
-                    >
+                    <v-icon color="primary" class="mr-2">mdi-information</v-icon>
                     {{ activeNecoNotice.title }}
                 </v-card-title>
                 <v-card-text class="text-body-1">
@@ -584,12 +468,7 @@ onMounted(() => {
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
-                    <v-btn
-                        color="primary"
-                        variant="flat"
-                        @click="continueAfterNecoNotice"
-                        >Continue</v-btn
-                    >
+                    <v-btn color="primary" variant="flat" @click="continueAfterNecoNotice">Continue</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>

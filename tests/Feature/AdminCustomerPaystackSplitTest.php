@@ -5,6 +5,7 @@ use App\Models\CustomerPaystackSplitAccount;
 use App\Models\CustomerPaystackSplitLedger;
 use App\Models\CustomerPaygoService;
 use App\Models\PaygoVerificationIntent;
+use App\Models\PaystackGatewayAccount;
 use App\Models\User;
 use App\Models\VerificationService;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
@@ -59,6 +60,14 @@ it('allows admin to save up to two paystack split accounts for a customer', func
     ]);
 
     Http::fake([
+        'https://api.paystack.co/bank/resolve*' => Http::response([
+            'status' => true,
+            'data' => [
+                'account_number' => '0123456789',
+                'account_name' => 'School Ltd',
+                'bank_id' => 1,
+            ],
+        ]),
         'https://api.paystack.co/subaccount' => Http::sequence()
             ->push([
                 'status' => true,
@@ -111,7 +120,7 @@ it('allows admin to save up to two paystack split accounts for a customer', func
         ->and(CustomerPaystackSplitAccount::where('subaccount_code', 'ACCT_school')->value('flat_amount'))->toBe('75.00')
         ->and(CustomerPaystackSplitAccount::where('subaccount_code', 'ACCT_school')->value('account_number_last4'))->toBe('6789');
 
-    Http::assertSentCount(2);
+    Http::assertSentCount(4);
 });
 
 it('rejects more than two paystack split accounts for a customer', function () {
@@ -152,6 +161,114 @@ it('returns paystack banks for the admin split form', function () {
         ->assertOk()
         ->assertJsonPath('banks.0.name', 'Access Bank')
         ->assertJsonPath('banks.1.code', '058');
+});
+
+it('lets an admin verify customer keys and create a system settlement subaccount', function () {
+    config(['services.paystack.base_url' => 'https://api.paystack.co']);
+
+    Http::fake(function ($request) {
+        expect($request->hasHeader('Authorization', 'Bearer sk_test_customer'))->toBeTrue();
+
+        if (str_contains($request->url(), '/bank/resolve')) {
+            return Http::response(['status' => true, 'data' => [
+                'account_number' => '0123456789',
+                'account_name' => 'EaseVerifier Ltd',
+                'bank_id' => 1,
+            ]]);
+        }
+
+        if (str_contains($request->url(), '/subaccount')) {
+            return Http::response(['status' => true, 'data' => [
+                'subaccount_code' => 'ACCT_system_customer_gateway',
+                'account_name' => 'EaseVerifier Ltd',
+                'account_number' => '0123456789',
+                'settlement_bank' => 'Test Bank',
+            ]]);
+        }
+
+        return Http::response(['status' => true, 'data' => [
+            ['name' => 'Test Bank', 'code' => '058'],
+        ]]);
+    });
+
+    $admin = createSplitAdmin();
+    $customer = createSplitCustomer();
+
+    $this->actingAs($admin)
+        ->post("/admin/customers/{$customer->id}/paystack-gateway", [
+            'environment' => 'test',
+            'public_key' => 'pk_test_customer',
+            'secret_key' => 'sk_test_customer',
+            'is_trusted' => true,
+            'is_active' => true,
+            'system_bank_name' => 'Test Bank',
+            'system_bank_code' => '058',
+            'system_account_number' => '0123456789',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $gateway = PaystackGatewayAccount::firstOrFail();
+
+    expect($gateway->isReady())->toBeTrue()
+        ->and($gateway->key_fingerprint)->toBe('sk_test_...omer')
+        ->and($gateway->getRawOriginal('secret_key'))->not->toContain('sk_test_customer');
+
+    $this->assertDatabaseHas('customer_paystack_split_accounts', [
+        'customer_id' => $customer->customer->id,
+        'paystack_gateway_account_id' => $gateway->id,
+        'beneficiary_type' => 'system',
+        'subaccount_code' => 'ACCT_system_customer_gateway',
+        'is_active' => true,
+    ]);
+});
+
+it('versions customer paystack credentials when an admin rotates the secret', function () {
+    config(['services.paystack.base_url' => 'https://api.paystack.co']);
+
+    Http::fake(function ($request) {
+        if (str_contains($request->url(), '/bank/resolve')) {
+            return Http::response(['status' => true, 'data' => ['account_number' => '0123456789', 'account_name' => 'EaseVerifier Ltd']]);
+        }
+
+        if (str_contains($request->url(), '/subaccount')) {
+            $suffix = $request->hasHeader('Authorization', 'Bearer sk_test_second') ? 'second' : 'first';
+
+            return Http::response(['status' => true, 'data' => [
+                'subaccount_code' => 'ACCT_'.$suffix,
+                'account_name' => 'EaseVerifier Ltd',
+                'account_number' => '0123456789',
+            ]]);
+        }
+
+        return Http::response(['status' => true, 'data' => [['name' => 'Test Bank', 'code' => '058']]]);
+    });
+
+    $admin = createSplitAdmin();
+    $customer = createSplitCustomer();
+    $payload = [
+        'environment' => 'test',
+        'public_key' => 'pk_test_first',
+        'secret_key' => 'sk_test_first',
+        'is_trusted' => true,
+        'is_active' => true,
+        'system_bank_name' => 'Test Bank',
+        'system_bank_code' => '058',
+        'system_account_number' => '0123456789',
+    ];
+
+    $this->actingAs($admin)->post("/admin/customers/{$customer->id}/paystack-gateway", $payload)->assertSessionHasNoErrors();
+    $first = PaystackGatewayAccount::firstOrFail();
+
+    $this->actingAs($admin)->post("/admin/customers/{$customer->id}/paystack-gateway", array_merge($payload, [
+        'public_key' => 'pk_test_second',
+        'secret_key' => 'sk_test_second',
+    ]))->assertSessionHasNoErrors();
+
+    expect(PaystackGatewayAccount::count())->toBe(2)
+        ->and($first->fresh()->is_active)->toBeFalse()
+        ->and($first->fresh()->secret_key)->toBe('sk_test_first')
+        ->and(PaystackGatewayAccount::latest('id')->first()->secret_key)->toBe('sk_test_second');
 });
 
 it('shows split ledger to admin and only the owning customer', function () {

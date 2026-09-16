@@ -128,6 +128,11 @@ class Customer extends Model
         return $this->hasMany(CustomerPaystackSplitLedger::class);
     }
 
+    public function paystackGatewayAccounts(): HasMany
+    {
+        return $this->hasMany(PaystackGatewayAccount::class);
+    }
+
     /**
      * Get all branches for this customer.
      */

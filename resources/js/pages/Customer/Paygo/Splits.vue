@@ -10,6 +10,9 @@ interface SplitLedger {
     service_name?: string | null;
     subaccount_label?: string | null;
     subaccount_code: string;
+    gateway_owner_type: 'system' | 'customer';
+    settlement_strategy?: string | null;
+    beneficiary_type: 'system' | 'customer';
     flat_amount: number;
     transaction_amount: number;
     main_account_remainder: number;
@@ -68,7 +71,7 @@ watch(search, () => applyFilters(1));
                         Paystack settlement
                     </div>
                     <h1>Split Ledger</h1>
-                    <p>See PayGo payments settled directly to your configured Paystack subaccounts.</p>
+                    <p>See how each PayGo payment was settled through Paystack.</p>
                 </div>
                 <v-btn color="primary" variant="outlined" prepend-icon="mdi-cash-fast" href="/customer/paygo-services">PayGo Services</v-btn>
             </section>
@@ -120,6 +123,7 @@ watch(search, () => applyFilters(1));
                                 <th>Payment</th>
                                 <th>Service</th>
                                 <th>Subaccount</th>
+                                <th>Gateway</th>
                                 <th>Split Amount</th>
                                 <th>Transaction</th>
                                 <th>Main Remainder</th>
@@ -138,6 +142,10 @@ watch(search, () => applyFilters(1));
                                     <div>{{ ledger.subaccount_label || '-' }}</div>
                                     <div class="text-caption text-grey">{{ ledger.subaccount_code }}</div>
                                 </td>
+                                <td>
+                                    <v-chip size="small" variant="tonal" :color="ledger.gateway_owner_type === 'customer' ? 'primary' : 'secondary'">{{ ledger.gateway_owner_type }} key</v-chip>
+                                    <div class="text-caption text-grey mt-1">{{ ledger.beneficiary_type }} beneficiary</div>
+                                </td>
                                 <td class="font-weight-bold text-success">{{ formatCurrency(ledger.flat_amount) }}</td>
                                 <td>{{ formatCurrency(ledger.transaction_amount) }}</td>
                                 <td>{{ formatCurrency(ledger.main_account_remainder) }}</td>
@@ -145,7 +153,7 @@ watch(search, () => applyFilters(1));
                                 <td>{{ formatDate(ledger.paid_at) }}</td>
                             </tr>
                             <tr v-if="!ledgers.data.length">
-                                <td colspan="8" class="text-center text-grey py-8">No Paystack split settlements yet.</td>
+                                <td colspan="9" class="text-center text-grey py-8">No Paystack split settlements yet.</td>
                             </tr>
                         </tbody>
                     </v-table>

@@ -7,10 +7,13 @@ use App\Models\Customer;
 use App\Models\CustomerPaygoService;
 use App\Models\CustomerResultPinPricing;
 use App\Models\CustomerServicePricing;
+use App\Models\CustomerPaystackSplitAccount;
+use App\Models\PaystackGatewayAccount;
 use App\Models\ResultPinProduct;
 use App\Models\User;
 use App\Models\VerificationService;
 use App\Services\PaystackService;
+use App\Services\PaystackGatewayResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -109,6 +112,7 @@ class CustomerController extends Controller
     {
         $customer->load([
             'customer.paystackSplitAccounts' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+            'customer.paystackGatewayAccounts' => fn ($query) => $query->latest('id'),
             'wallet',
             'transactions' => fn ($q) => $q->latest()->take(20),
         ]);
@@ -175,6 +179,7 @@ class CustomerController extends Controller
             'resultPinPricing' => $resultPinPricing,
             'paygoResultServices' => $paygoResultServices,
             'paystackSplitAccounts' => $customer->customer?->paystackSplitAccounts
+                ?->where('beneficiary_type', 'customer')
                 ?->map(fn ($account) => [
                     'id' => $account->id,
                     'label' => $account->label,
@@ -187,6 +192,7 @@ class CustomerController extends Controller
                     'is_active' => $account->is_active,
                 ])
                 ->values() ?? [],
+            'paystackGateway' => $this->paystackGatewayPayload($customer->customer),
         ]);
     }
 
@@ -407,6 +413,8 @@ class CustomerController extends Controller
 
         $existingIds = collect($splits)->pluck('id')->filter()->values();
         $existingAccounts = $profile->paystackSplitAccounts()
+            ->whereNull('paystack_gateway_account_id')
+            ->where('beneficiary_type', 'customer')
             ->whereIn('id', $existingIds)
             ->get()
             ->keyBy('id');
@@ -515,11 +523,178 @@ class CustomerController extends Controller
             }
 
             $profile->paystackSplitAccounts()
+                ->whereNull('paystack_gateway_account_id')
+                ->where('beneficiary_type', 'customer')
                 ->when($savedIds !== [], fn ($query) => $query->whereNotIn('id', $savedIds))
                 ->delete();
         });
 
         return back()->with('success', 'Paystack split accounts updated successfully.');
+    }
+
+    public function updatePaystackGateway(Request $request, User $customer, PaystackGatewayResolver $resolver)
+    {
+        $profile = $customer->customer;
+        abort_unless($profile, 404);
+
+        $existing = $profile->paystackGatewayAccounts()
+            ->where('owner_type', 'customer')
+            ->where('environment', $request->string('environment')->value())
+            ->latest('id')
+            ->first();
+
+        $validated = $request->validate([
+            'environment' => ['required', Rule::in(PaystackGatewayAccount::ENVIRONMENTS)],
+            'public_key' => [$existing ? 'nullable' : 'required', 'string', 'max:255'],
+            'secret_key' => [$existing ? 'nullable' : 'required', 'string', 'max:255'],
+            'is_trusted' => ['required', 'boolean'],
+            'is_active' => ['required', 'boolean'],
+            'system_bank_name' => ['required', 'string', 'max:120'],
+            'system_bank_code' => ['required', 'string', 'max:20'],
+            'system_account_number' => [($this->gatewayHasSystemSubaccount($existing) && ! $request->filled('secret_key')) ? 'nullable' : 'required', 'nullable', 'digits:10'],
+        ]);
+
+        $publicKey = filled($validated['public_key'] ?? null) ? trim($validated['public_key']) : $existing?->public_key;
+        $secretKey = filled($validated['secret_key'] ?? null) ? trim($validated['secret_key']) : $existing?->secret_key;
+        $prefix = $validated['environment'] === 'live' ? 'live' : 'test';
+
+        if (! str_starts_with((string) $publicKey, "pk_{$prefix}_") || ! str_starts_with((string) $secretKey, "sk_{$prefix}_")) {
+            throw ValidationException::withMessages([
+                'secret_key' => 'The public and secret keys must both match the selected Paystack environment.',
+            ]);
+        }
+
+        $paystack = PaystackService::withCredentials($secretKey, $publicKey);
+        $connection = $paystack->verifyCredentials();
+
+        if (! ($connection['success'] ?? false)) {
+            throw ValidationException::withMessages([
+                'secret_key' => $connection['message'] ?? 'Paystack rejected these credentials.',
+            ]);
+        }
+
+        $accountNumber = preg_replace('/\D/', '', (string) ($validated['system_account_number'] ?? ''));
+        $rotating = $existing && filled($validated['secret_key'] ?? null)
+            && $existing->key_fingerprint !== PaystackGatewayAccount::fingerprint($secretKey);
+        $needsSubaccount = $rotating || filled($accountNumber) || ! $this->gatewayHasSystemSubaccount($existing);
+        $resolved = null;
+        $subaccount = null;
+
+        if ($needsSubaccount) {
+            $resolved = $paystack->resolveBankAccount($accountNumber, $validated['system_bank_code']);
+
+            if (! ($resolved['success'] ?? false)) {
+                throw ValidationException::withMessages([
+                    'system_account_number' => $resolved['message'] ?? 'Paystack could not resolve the EaseVerifier settlement account.',
+                ]);
+            }
+
+            $subaccount = $paystack->createSubaccount(
+                businessName: 'EaseVerifier Settlement',
+                bankCode: $validated['system_bank_code'],
+                accountNumber: $accountNumber,
+                description: 'EaseVerifier system settlement for '.$customer->name,
+                metadata: ['beneficiary_type' => 'system', 'customer_user_id' => $customer->id],
+            );
+
+            if (! ($subaccount['success'] ?? false) || blank($subaccount['subaccount_code'] ?? null)) {
+                throw ValidationException::withMessages([
+                    'system_account_number' => $subaccount['message'] ?? 'Paystack could not create the EaseVerifier settlement subaccount.',
+                ]);
+            }
+        }
+
+        DB::transaction(function () use ($request, $profile, $existing, $validated, $publicKey, $secretKey, $accountNumber, $resolved, $subaccount, $rotating) {
+            if ($rotating) {
+                $existing->update(['is_active' => false, 'rotated_at' => now()]);
+            }
+
+            $gateway = ($existing && ! $rotating) ? $existing : new PaystackGatewayAccount([
+                'owner_type' => 'customer',
+                'customer_id' => $profile->id,
+                'environment' => $validated['environment'],
+            ]);
+
+            $gateway->fill([
+                'label' => $profile->company_name ?: 'Customer Paystack',
+                'public_key' => $publicKey,
+                'secret_key' => $secretKey,
+                'key_fingerprint' => PaystackGatewayAccount::fingerprint($secretKey),
+                'is_trusted' => $validated['is_trusted'],
+                'is_active' => $validated['is_active'],
+                'verification_status' => 'verified',
+                'verified_at' => $gateway->verified_at ?? now(),
+                'last_verified_at' => now(),
+                'created_by_admin_id' => $gateway->created_by_admin_id ?? $request->user()->id,
+                'rotated_at' => null,
+            ])->save();
+
+            if ($subaccount) {
+                $profile->paystackSplitAccounts()
+                    ->where('paystack_gateway_account_id', $gateway->id)
+                    ->where('beneficiary_type', 'system')
+                    ->update(['is_active' => false]);
+
+                CustomerPaystackSplitAccount::create([
+                    'customer_id' => $profile->id,
+                    'paystack_gateway_account_id' => $gateway->id,
+                    'beneficiary_type' => 'system',
+                    'label' => 'EaseVerifier system settlement',
+                    'subaccount_code' => $subaccount['subaccount_code'],
+                    'account_name' => $subaccount['account_name'] ?: ($resolved['account_name'] ?? null),
+                    'bank_name' => $validated['system_bank_name'],
+                    'bank_code' => $validated['system_bank_code'],
+                    'account_number' => $accountNumber,
+                    'account_number_last4' => substr($accountNumber, -4),
+                    'flat_amount' => 0.01,
+                    'sort_order' => 1,
+                    'is_active' => true,
+                    'metadata' => ['paystack_subaccount' => $subaccount['data'] ?? null],
+                ]);
+            }
+        });
+
+        return back()->with('success', 'Customer Paystack gateway verified and saved.');
+    }
+
+    protected function paystackGatewayPayload(?Customer $profile): ?array
+    {
+        if (! $profile) {
+            return null;
+        }
+
+        $gateway = $profile->paystackGatewayAccounts->first();
+        if (! $gateway) {
+            return null;
+        }
+
+        $systemSubaccount = $profile->paystackSplitAccounts
+            ->first(fn ($account) => (int) $account->paystack_gateway_account_id === (int) $gateway->id && $account->beneficiary_type === 'system' && $account->is_active);
+
+        return [
+            'id' => $gateway->id,
+            'environment' => $gateway->environment,
+            'key_fingerprint' => $gateway->key_fingerprint,
+            'is_trusted' => $gateway->is_trusted,
+            'is_active' => $gateway->is_active,
+            'verification_status' => $gateway->verification_status,
+            'last_verified_at' => $gateway->last_verified_at,
+            'system_subaccount' => $systemSubaccount ? [
+                'subaccount_code' => $systemSubaccount->subaccount_code,
+                'bank_name' => $systemSubaccount->bank_name,
+                'bank_code' => $systemSubaccount->bank_code,
+                'account_name' => $systemSubaccount->account_name,
+                'account_number_last4' => $systemSubaccount->account_number_last4,
+            ] : null,
+        ];
+    }
+
+    protected function gatewayHasSystemSubaccount(?PaystackGatewayAccount $gateway): bool
+    {
+        return $gateway?->subaccounts()
+            ->where('beneficiary_type', 'system')
+            ->where('is_active', true)
+            ->exists() ?? false;
     }
 
     protected function paystackSplitBusinessName(User $customer, array $split, int $index): string

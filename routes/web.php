@@ -150,6 +150,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::post('customers/{customer}/paygo-result-services/{service}', [AdminCustomerController::class, 'updateResultPaygoService'])->name('customers.paygo-result-services.update');
     Route::get('paystack-banks', [AdminCustomerController::class, 'paystackBanks'])->name('paystack.banks');
     Route::post('customers/{customer}/paystack-splits', [AdminCustomerController::class, 'updatePaystackSplits'])->name('customers.paystack-splits.update');
+    Route::post('customers/{customer}/paystack-gateway', [AdminCustomerController::class, 'updatePaystackGateway'])->name('customers.paystack-gateway.update');
 
     // Services
     Route::resource('services', AdminServiceController::class);

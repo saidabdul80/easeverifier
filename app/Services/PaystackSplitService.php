@@ -4,17 +4,30 @@ namespace App\Services;
 
 use App\Models\Customer;
 use App\Models\CustomerPaystackSplitAccount;
+use App\Models\PaystackGatewayAccount;
 use RuntimeException;
 
 class PaystackSplitService
 {
-    public function buildDynamicFlatSplit(?Customer $customer, int $amountInKobo, string $paymentReference): ?array
+    public function buildDynamicFlatSplit(
+        ?Customer $customer,
+        int $amountInKobo,
+        string $paymentReference,
+        ?PaystackGatewayAccount $gateway = null,
+        ?int $systemAmountInKobo = null,
+    ): ?array
     {
         if (! $customer || $amountInKobo <= 0) {
             return null;
         }
 
+        if ($gateway) {
+            return $this->buildCustomerGatewaySplit($customer, $gateway, $amountInKobo, $paymentReference, $systemAmountInKobo);
+        }
+
         $accounts = $customer->paystackSplitAccounts()
+            ->whereNull('paystack_gateway_account_id')
+            ->where('beneficiary_type', 'customer')
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
@@ -67,6 +80,8 @@ class PaystackSplitService
                 'main_account_remainder' => ($amountInKobo - $totalShare) / 100,
                 'main_account_remainder_kobo' => $amountInKobo - $totalShare,
                 'wallet_credit_skipped' => true,
+                'gateway_owner_type' => 'system',
+                'settlement_strategy' => 'system_gateway_customer_subaccount',
                 'subaccounts' => $accounts
                     ->map(fn (CustomerPaystackSplitAccount $account) => [
                         'id' => $account->id,
@@ -74,9 +89,74 @@ class PaystackSplitService
                         'subaccount_code' => $account->subaccount_code,
                         'share' => $this->amountToKobo((float) $account->flat_amount),
                         'flat_amount' => (float) $account->flat_amount,
+                        'beneficiary_type' => 'customer',
                     ])
                     ->values()
                     ->all(),
+            ],
+        ];
+    }
+
+    private function buildCustomerGatewaySplit(
+        Customer $customer,
+        PaystackGatewayAccount $gateway,
+        int $amountInKobo,
+        string $paymentReference,
+        ?int $systemAmountInKobo,
+    ): array {
+        $account = $customer->paystackSplitAccounts()
+            ->where('paystack_gateway_account_id', $gateway->id)
+            ->where('beneficiary_type', 'system')
+            ->where('is_active', true)
+            ->first();
+
+        if (! $account || blank($account->subaccount_code)) {
+            throw new RuntimeException('This customer Paystack account is missing an active EaseVerifier settlement subaccount.');
+        }
+
+        $systemShare = (int) ($systemAmountInKobo ?? 0);
+
+        if ($systemShare < 100 || $systemShare >= $amountInKobo) {
+            throw new RuntimeException('The EaseVerifier settlement amount must be at least NGN 1.00 and lower than the transaction amount.');
+        }
+
+        $splitReference = 'SPLIT-'.$paymentReference;
+        $customerRemainder = $amountInKobo - $systemShare;
+
+        return [
+            'payment_options' => [
+                'subaccount' => $account->subaccount_code,
+                'transaction_charge' => $customerRemainder,
+                'bearer' => 'account',
+                'metadata' => json_encode([
+                    'paystack_split_reference' => $splitReference,
+                    'paystack_split_type' => 'flat',
+                    'paystack_split_share' => $systemShare,
+                    'paystack_gateway_account_id' => $gateway->id,
+                ]),
+            ],
+            'metadata' => [
+                'applied' => true,
+                'type' => 'flat',
+                'bearer_type' => 'account',
+                'reference' => $splitReference,
+                'method' => 'single_subaccount',
+                'total_split_amount' => $systemShare / 100,
+                'total_split_amount_kobo' => $systemShare,
+                'main_account_remainder' => $customerRemainder / 100,
+                'main_account_remainder_kobo' => $customerRemainder,
+                'wallet_credit_skipped' => true,
+                'gateway_owner_type' => 'customer',
+                'gateway_account_id' => $gateway->id,
+                'settlement_strategy' => 'customer_gateway_system_subaccount',
+                'subaccounts' => [[
+                    'id' => $account->id,
+                    'label' => $account->label,
+                    'subaccount_code' => $account->subaccount_code,
+                    'share' => $systemShare,
+                    'flat_amount' => $systemShare / 100,
+                    'beneficiary_type' => 'system',
+                ]],
             ],
         ];
     }

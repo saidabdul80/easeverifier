@@ -14,6 +14,10 @@ class CustomerPaystackSplitLedger extends Model
         'customer_id',
         'user_id',
         'paygo_verification_intent_id',
+        'paystack_gateway_account_id',
+        'gateway_owner_type',
+        'settlement_strategy',
+        'beneficiary_type',
         'payment_reference',
         'split_reference',
         'subaccount_code',
@@ -52,5 +56,10 @@ class CustomerPaystackSplitLedger extends Model
     public function paygoIntent(): BelongsTo
     {
         return $this->belongsTo(PaygoVerificationIntent::class, 'paygo_verification_intent_id');
+    }
+
+    public function paystackGatewayAccount(): BelongsTo
+    {
+        return $this->belongsTo(PaystackGatewayAccount::class);
     }
 }

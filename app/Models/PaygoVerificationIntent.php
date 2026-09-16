@@ -18,6 +18,11 @@ class PaygoVerificationIntent extends Model
         'verification_service_id',
         'flow_type',
         'transaction_id',
+        'paystack_gateway_account_id',
+        'paystack_gateway_owner_type',
+        'paystack_environment',
+        'paystack_key_fingerprint',
+        'settlement_strategy',
         'verification_request_id',
         'reference',
         'nin_hash',
@@ -106,5 +111,10 @@ class PaygoVerificationIntent extends Model
     public function resultAttempts(): HasMany
     {
         return $this->hasMany(PaygoResultAttempt::class);
+    }
+
+    public function paystackGatewayAccount(): BelongsTo
+    {
+        return $this->belongsTo(PaystackGatewayAccount::class);
     }
 }
