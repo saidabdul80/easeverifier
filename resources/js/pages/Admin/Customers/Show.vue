@@ -83,7 +83,7 @@ const buildPaygoResultRows = (services: any[] = []) => services.map((row: any) =
     form: {
         name: row.paygo_service?.name || `${String(row.board).toUpperCase()} Result Verification`,
         price: row.paygo_service?.price ?? row.suggested_price,
-        reference_price: row.paygo_service?.reference_price ?? row.suggested_reference_price,
+        reference_system_price: row.reference_system_price,
         is_active: row.paygo_service?.is_active ?? false,
     },
 }));
@@ -275,7 +275,7 @@ const savePaygoResultService = (row: any) => {
     router.post(`/admin/customers/${props.customer.id}/paygo-result-services/${row.service_id}`, row.form, {
         preserveScroll: true,
         onError: (errors) => {
-            paygoResultErrors.value[row.service_id] = errors.reference_price || errors.price || errors.name || 'Unable to save PayGo result page.';
+            paygoResultErrors.value[row.service_id] = errors.reference_system_price || errors.price || errors.name || 'Unable to save PayGo result page.';
         },
         onFinish: () => {
             savingPaygoServiceId.value = null;
@@ -423,7 +423,7 @@ onMounted(loadPaystackBanks);
                                     v-model="resultFetchAccessForm.paygo_result_reference_system_price"
                                     type="number"
                                     min="0"
-                                    label="Portal reference system price"
+                                    label="EaseVerifier portal reference settlement"
                                     variant="outlined"
                                     density="compact"
                                     class="mt-4"
@@ -720,10 +720,10 @@ onMounted(loadPaystackBanks);
                                     <tr>
                                         <th>Board</th>
                                         <th>System Price</th>
-                                        <th>Portal Ref System</th>
+                                        <th>Portal Ref Price</th>
                                         <th>Public Name</th>
                                         <th>Public Price</th>
-                                        <th>Portal Ref Price</th>
+                                        <th>Customer Ref Price</th>
                                         <th>Status</th>
                                         <th>Links</th>
                                         <th></th>
@@ -736,7 +736,16 @@ onMounted(loadPaystackBanks);
                                             <div class="text-caption text-grey">{{ row.service_name }}</div>
                                         </td>
                                         <td class="money-cell">{{ formatCurrency(row.system_price) }}</td>
-                                        <td class="money-cell">{{ formatCurrency(row.reference_system_price) }}</td>
+                                        <td class="price-input-cell">
+                                            <v-text-field
+                                                v-model="row.form.reference_system_price"
+                                                type="number"
+                                                min="1"
+                                                density="compact"
+                                                variant="outlined"
+                                                hide-details
+                                            />
+                                        </td>
                                         <td class="name-input-cell">
                                             <v-text-field
                                                 v-model="row.form.name"
@@ -755,13 +764,9 @@ onMounted(loadPaystackBanks);
                                             />
                                         </td>
                                         <td class="price-input-cell">
-                                            <v-text-field
-                                                v-model="row.form.reference_price"
-                                                type="number"
-                                                density="compact"
-                                                variant="outlined"
-                                                hide-details
-                                            />
+                                            <span class="money-cell">
+                                                {{ formatCurrency(row.paygo_service?.reference_price ?? row.suggested_reference_price) }}
+                                            </span>
                                         </td>
                                         <td class="status-cell">
                                             <v-switch

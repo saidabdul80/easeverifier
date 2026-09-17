@@ -939,6 +939,96 @@ it('initializes a result reference package with the school supplied reference an
         ->and($intent->fresh()->system_price_snapshot)->toBe('300.00');
 });
 
+it('uses the admin reference package settlement for the EaseVerifier customer gateway split', function () {
+    config([
+        'services.paystack.public_key' => 'pk_test_system',
+        'services.paystack.secret_key' => 'sk_test_system',
+        'services.paystack.base_url' => 'https://api.paystack.co',
+    ]);
+
+    Http::fake([
+        '*/transaction/initialize' => Http::response([
+            'status' => true,
+            'data' => [
+                'authorization_url' => 'https://checkout.test/reference-package',
+                'access_code' => 'ACCESS_REFERENCE_PACKAGE',
+                'reference' => 'APP-REFERENCE-SPLIT',
+            ],
+        ]),
+    ]);
+    Log::spy();
+
+    $user = createPaygoCustomer()->fresh('customer');
+    $user->customer->update(['paygo_result_reference_system_price' => 1000]);
+    $service = createPaygoResultService(price: 200);
+    $paygoService = createPaygoServiceFor($user, $service, price: 300);
+    $paygoService->update(['reference_price' => 1400]);
+    $gateway = PaystackGatewayAccount::create([
+        'owner_type' => 'customer',
+        'customer_id' => $user->customer->id,
+        'label' => 'School Paystack',
+        'environment' => 'test',
+        'public_key' => 'pk_test_customer',
+        'secret_key' => 'sk_test_customer',
+        'key_fingerprint' => PaystackGatewayAccount::fingerprint('sk_test_customer'),
+        'is_trusted' => true,
+        'is_active' => true,
+        'verification_status' => 'verified',
+        'verified_at' => now(),
+    ]);
+
+    CustomerPaystackSplitAccount::create([
+        'customer_id' => $user->customer->id,
+        'paystack_gateway_account_id' => $gateway->id,
+        'beneficiary_type' => 'system',
+        'label' => 'EaseVerifier settlement',
+        'subaccount_code' => 'ACCT_easeverifier',
+        'bank_name' => 'Test Bank',
+        'bank_code' => '058',
+        'account_number' => '0123456789',
+        'account_number_last4' => '6789',
+        'account_name' => 'EaseVerifier Ltd',
+        'flat_amount' => 0.01,
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    $this->withHeaders(['X-Inertia' => 'true'])
+        ->post("/paygo/results/{$paygoService->public_slug}", array_merge(paygoWaecParams('4310516058'), [
+            'email' => 'student@example.com',
+            'phone' => '08012345678',
+            'reference' => 'APP-REFERENCE-SPLIT',
+        ]))
+        ->assertStatus(409)
+        ->assertHeader('X-Inertia-Location', 'https://checkout.test/reference-package');
+
+    Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        return $request->url() === 'https://api.paystack.co/transaction/initialize'
+            && $request->hasHeader('Authorization', 'Bearer sk_test_customer')
+            && $request['amount'] === 140000
+            && $request['subaccount'] === 'ACCT_easeverifier'
+            && $request['transaction_charge'] === 40000
+            && $request['bearer'] === 'account';
+    });
+
+    Log::shouldHaveReceived('info')
+        ->with('EaseVerifier PayGo Paystack split prepared', \Mockery::on(fn (array $context) => $context['payment_reference'] === 'APP-REFERENCE-SPLIT'
+            && $context['is_reference_package'] === true
+            && $context['transaction_amount_kobo'] === 140000
+            && $context['system_share_kobo'] === 100000
+            && $context['customer_remainder_kobo'] === 40000
+            && $context['transaction_charge_kobo'] === 40000
+            && $context['subaccount_code'] === 'ACCT_easeverifier'
+        ));
+
+    $intent = PaygoVerificationIntent::where('reference', 'APP-REFERENCE-SPLIT')->firstOrFail();
+
+    expect((float) $intent->amount)->toBe(1400.0)
+        ->and((float) $intent->system_price_snapshot)->toBe(1000.0)
+        ->and(data_get($intent->metadata, 'paystack_split.total_split_amount_kobo'))->toBe(100000)
+        ->and(data_get($intent->metadata, 'paystack_split.main_account_remainder_kobo'))->toBe(40000);
+});
+
 it('keeps failed result reference payments on the local result form', function () {
     config([
         'services.paystack.public_key' => 'paystack-public',

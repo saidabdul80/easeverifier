@@ -1,9 +1,9 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\CustomerPaygoService;
 use App\Models\CustomerPaystackSplitAccount;
 use App\Models\CustomerPaystackSplitLedger;
-use App\Models\CustomerPaygoService;
 use App\Models\PaygoVerificationIntent;
 use App\Models\PaystackGatewayAccount;
 use App\Models\User;
@@ -52,6 +52,47 @@ function createSplitCustomer(): User
 
     return $user->fresh('customer');
 }
+
+it('lets admin update the EaseVerifier reference settlement without overwriting the customer price', function () {
+    $admin = createSplitAdmin();
+    $customer = createSplitCustomer();
+    $service = VerificationService::updateOrCreate(
+        ['slug' => 'waec-result-fetch'],
+        [
+            'name' => 'WAEC Result Fetch',
+            'default_price' => 200,
+            'cost_price' => 100,
+            'is_active' => true,
+            'sort_order' => 1,
+        ],
+    );
+    $paygoService = CustomerPaygoService::create([
+        'user_id' => $customer->id,
+        'verification_service_id' => $service->id,
+        'name' => 'WAEC Result Verification',
+        'public_slug' => CustomerPaygoService::generatePublicSlug('WAEC Result Verification'),
+        'verify_secret_hash' => hash('sha256', CustomerPaygoService::generateSecret()),
+        'price' => 300,
+        'reference_price' => 1400,
+        'is_active' => true,
+        'callback_mode' => 'redirect',
+    ]);
+
+    $this->actingAs($admin)
+        ->post("/admin/customers/{$customer->id}/paygo-result-services/{$service->id}", [
+            'name' => 'WAEC Result Verification',
+            'price' => 300,
+            'reference_system_price' => 1000,
+            'is_active' => true,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect($customer->customer->fresh()->paygo_result_reference_system_price)->toBe('1000.00')
+        ->and($paygoService->fresh()->reference_price)->toBe('1400.00')
+        ->and($paygoService->fresh()->resultReferenceSystemPrice())->toBe(1000.0)
+        ->and($paygoService->fresh()->resultReferencePrice())->toBe(1400.0);
+});
 
 it('allows admin to save up to two paystack split accounts for a customer', function () {
     config([

@@ -5,20 +5,20 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerPaygoService;
+use App\Models\CustomerPaystackSplitAccount;
 use App\Models\CustomerResultPinPricing;
 use App\Models\CustomerServicePricing;
-use App\Models\CustomerPaystackSplitAccount;
 use App\Models\PaystackGatewayAccount;
 use App\Models\ResultPinProduct;
 use App\Models\User;
 use App\Models\VerificationService;
-use App\Services\PaystackService;
 use App\Services\PaystackGatewayResolver;
+use App\Services\PaystackService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
 
@@ -320,12 +320,11 @@ class CustomerController extends Controller
         $validated = $request->validate([
             'name' => 'nullable|string|max:120',
             'price' => 'required|numeric|min:1',
-            'reference_price' => 'nullable|numeric|min:1',
+            'reference_system_price' => 'required|numeric|min:1',
             'is_active' => 'required|boolean',
         ]);
 
         $minimum = (float) $customer->getPriceForService($service);
-        $referenceMinimum = $customer->customer?->paygoResultReferenceSystemPrice($minimum) ?? max(1, $minimum * 2);
 
         if ((float) $validated['price'] <= $minimum) {
             return back()->withErrors([
@@ -333,11 +332,14 @@ class CustomerController extends Controller
             ]);
         }
 
-        if (filled($validated['reference_price'] ?? null) && (float) $validated['reference_price'] <= $referenceMinimum) {
-            return back()->withErrors([
-                'reference_price' => 'The portal reference package price must be above NGN '.number_format($referenceMinimum, 2).'.',
-            ]);
+        $profile = $customer->customer()->firstOrNew(['user_id' => $customer->id]);
+        $profile->paygo_result_reference_system_price = $validated['reference_system_price'];
+
+        if (! $profile->account_type) {
+            $profile->account_type = 'individual';
         }
+
+        $profile->save();
 
         $paygoService = CustomerPaygoService::firstOrNew([
             'user_id' => $customer->id,
@@ -355,11 +357,10 @@ class CustomerController extends Controller
         $paygoService->fill([
             'name' => $validated['name'] ?: strtoupper($this->boardFromResultFetchService($service)).' Result Verification',
             'price' => $validated['price'],
-            'reference_price' => $validated['reference_price'] ?? null,
             'is_active' => $validated['is_active'],
         ])->save();
 
-        return back()->with('success', 'Customer PayGo result page updated successfully.');
+        return back()->with('success', 'Customer PayGo result page and EaseVerifier settlement price updated successfully.');
     }
 
     public function paystackBanks(PaystackService $paystack)

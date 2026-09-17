@@ -570,6 +570,24 @@ class PublicPaygoVerificationController extends Controller
             ]);
         }
 
+        Log::info('EaseVerifier PayGo Paystack split prepared', [
+            'payment_reference' => $intent->reference,
+            'flow_type' => $intent->flow_type,
+            'is_reference_package' => $intent->isResultReferenceFlow(),
+            'gateway_owner_type' => $intent->paystack_gateway_owner_type,
+            'gateway_account_id' => $intent->paystack_gateway_account_id,
+            'settlement_strategy' => $intent->settlement_strategy,
+            'transaction_amount' => (float) $intent->amount,
+            'transaction_amount_kobo' => $amountInKobo/100,
+            'system_price_snapshot' => (float) $intent->system_price_snapshot,
+            'system_share_kobo' => data_get($split, 'metadata.total_split_amount_kobo')/100,
+            'customer_remainder_kobo' => data_get($split, 'metadata.main_account_remainder_kobo')/100,
+            'subaccount_code' => data_get($split, 'payment_options.subaccount'),
+            'transaction_charge_kobo' => data_get($split, 'payment_options.transaction_charge'),
+            'fee_bearer' => data_get($split, 'payment_options.bearer'),
+            'split_applied' => (bool) data_get($split, 'metadata.applied', false),
+        ]);
+
         $payment = $paystack->initializeTransaction(
             email: $email,
             amountInKobo: $amountInKobo,
