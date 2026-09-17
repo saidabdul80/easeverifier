@@ -578,10 +578,10 @@ class PublicPaygoVerificationController extends Controller
             'gateway_account_id' => $intent->paystack_gateway_account_id,
             'settlement_strategy' => $intent->settlement_strategy,
             'transaction_amount' => (float) $intent->amount,
-            'transaction_amount_kobo' => $amountInKobo/100,
+            'transaction_amount_kobo' => $amountInKobo / 100,
             'system_price_snapshot' => (float) $intent->system_price_snapshot,
-            'system_share_kobo' => data_get($split, 'metadata.total_split_amount_kobo')/100,
-            'customer_remainder_kobo' => data_get($split, 'metadata.main_account_remainder_kobo')/100,
+            'system_share_kobo' => data_get($split, 'metadata.total_split_amount_kobo') / 100,
+            'customer_remainder_kobo' => data_get($split, 'metadata.main_account_remainder_kobo') / 100,
             'subaccount_code' => data_get($split, 'payment_options.subaccount'),
             'transaction_charge_kobo' => data_get($split, 'payment_options.transaction_charge'),
             'fee_bearer' => data_get($split, 'payment_options.bearer'),
@@ -1184,9 +1184,13 @@ class PublicPaygoVerificationController extends Controller
             return $this->redirectAfterPayment($intent, false, $message);
         }
 
-        $intent->loadMissing('paygoService');
+        $intent = $intent->fresh() ?? $intent;
+        $paygoService = $this->displayPaygoServiceForResultContext($intent, true);
+        $paygoService ??= $intent->paygoService()
+            ->with(['user.customer', 'verificationService'])
+            ->first();
 
-        if (! $intent->paygoService) {
+        if (! $paygoService) {
             return redirect()->route('home')->with('error', $message);
         }
 
@@ -1202,7 +1206,7 @@ class PublicPaygoVerificationController extends Controller
 
         return redirect()
             ->route('paygo.results.service', array_merge([
-                'publicSlug' => $intent->paygoService->public_slug,
+                'publicSlug' => $paygoService->public_slug,
             ], $query))
             ->with('error', ResultVerificationErrorFormatter::publicMessage($message));
     }

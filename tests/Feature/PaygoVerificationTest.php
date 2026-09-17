@@ -1014,9 +1014,9 @@ it('uses the admin reference package settlement for the EaseVerifier customer ga
     Log::shouldHaveReceived('info')
         ->with('EaseVerifier PayGo Paystack split prepared', \Mockery::on(fn (array $context) => $context['payment_reference'] === 'APP-REFERENCE-SPLIT'
             && $context['is_reference_package'] === true
-            && $context['transaction_amount_kobo'] === 140000
-            && $context['system_share_kobo'] === 100000
-            && $context['customer_remainder_kobo'] === 40000
+            && $context['transaction_amount_kobo'] === 1400
+            && $context['system_share_kobo'] === 1000
+            && $context['customer_remainder_kobo'] === 400
             && $context['transaction_charge_kobo'] === 40000
             && $context['subaccount_code'] === 'ACCT_easeverifier'
         ));
@@ -1657,9 +1657,12 @@ it('keeps provider result errors local instead of using the success redirect', f
     $error = 'RESULT CHECKER CARD HAS BEEN USED BY ANOTHER CANDIDATE RESULT CHECKER CARD HAS BEEN USED BY ANOTHER CANDIDATE';
     $user = createPaygoCustomer();
     $user->customer->update(['paygo_result_reference_system_price' => 200]);
-    $service = createPaygoResultService(price: 100);
-    $paygoService = createPaygoServiceFor($user, $service, price: 200);
-    $paygoService->update([
+    $originalService = createPaygoResultService('neco-everify-result-fetch', 100);
+    $originalPaygoService = createPaygoServiceFor($user, $originalService, price: 200);
+    $originalPaygoService->update(['reference_price' => 400]);
+    $waecService = createPaygoResultService(price: 100);
+    $waecPaygoService = createPaygoServiceFor($user, $waecService, price: 200);
+    $waecPaygoService->update([
         'reference_price' => 400,
         'success_url' => 'http://quickapple.test/std/result_verify_callback.php',
     ]);
@@ -1695,9 +1698,9 @@ it('keeps provider result errors local instead of using the success redirect', f
     });
 
     $intent = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
-        $paygoService->fresh(['user.customer', 'verificationService']),
+        $originalPaygoService->fresh(['user.customer', 'verificationService']),
         'APP-CARD-USED',
-        ['params' => paygoWaecParams('4271710002')],
+        ['params' => ['examno' => 'NECO-ORIGINAL-LOOKUP']],
     );
     app(PaygoVerificationService::class)->completePayment($intent->reference, [
         'amount' => 400,
@@ -1706,14 +1709,16 @@ it('keeps provider result errors local instead of using the success redirect', f
         'channel' => 'card',
     ]);
 
-    $formUrl = "/paygo/results/{$paygoService->public_slug}?reference=APP-CARD-USED";
+    $formUrl = "/paygo/results/{$waecPaygoService->public_slug}?reference=APP-CARD-USED";
     $this->from($formUrl)
-        ->post("/paygo/results/{$paygoService->public_slug}", array_merge(paygoWaecParams('4271710002'), [
+        ->post("/paygo/results/{$waecPaygoService->public_slug}", array_merge(paygoWaecParams('4271710002'), [
             'reference' => 'APP-CARD-USED',
         ]))
         ->assertRedirect($formUrl)
         ->assertSessionHas('error', $error);
 
     expect($intent->fresh()->status)->toBe('paid')
-        ->and($intent->fresh()->verification_attempts)->toBe(0);
+        ->and($intent->fresh()->verification_attempts)->toBe(0)
+        ->and($intent->fresh()->metadata['latest_customer_paygo_service_id'])->toBe($waecPaygoService->id)
+        ->and($intent->fresh()->customer_paygo_service_id)->toBe($originalPaygoService->id);
 });
