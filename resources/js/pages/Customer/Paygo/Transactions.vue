@@ -31,13 +31,18 @@ interface WalletTransaction {
 }
 
 interface PaymentIntent {
+    id: number;
     reference: string;
     service_name?: string | null;
+    flow_type: string;
+    package_type: 'reference' | 'normal';
     amount: number;
     system_price: number;
     earning: number;
     status: string;
     verification_attempts: number;
+    max_fetches?: number;
+    reference_fetches?: number;
     nin_last4?: string | null;
     paid_at?: string | null;
     used_at?: string | null;
@@ -136,7 +141,8 @@ const applyFilter = () => {
                                     <tr>
                                         <th>Reference</th>
                                         <th>Service</th>
-                                        <th>Amount</th>
+                                        <th>Package</th>
+                                        <th>Charged Amount</th>
                                         <th>System Price</th>
                                         <th>Earning</th>
                                         <th>NIN</th>
@@ -149,16 +155,21 @@ const applyFilter = () => {
                                     <tr v-for="intent in paymentIntents.data" :key="intent.reference">
                                         <td class="font-weight-bold">{{ intent.reference }}</td>
                                         <td>{{ intent.service_name || '-' }}</td>
+                                        <td>
+                                            <v-chip size="small" variant="tonal" :color="intent.package_type === 'reference' ? 'info' : 'default'">
+                                                {{ intent.package_type === 'reference' ? 'Reference package' : 'Normal payment' }}
+                                            </v-chip>
+                                        </td>
                                         <td>{{ formatCurrency(intent.amount) }}</td>
                                         <td>{{ formatCurrency(intent.system_price) }}</td>
                                         <td class="text-success font-weight-bold">{{ formatCurrency(intent.earning) }}</td>
                                         <td>{{ intent.nin_last4 ? `****${intent.nin_last4}` : '-' }}</td>
-                                        <td>{{ intent.verification_attempts }}/3</td>
+                                        <td>{{ intent.reference_fetches ?? intent.verification_attempts }}/{{ intent.max_fetches || 3 }}</td>
                                         <td><v-chip size="small" variant="tonal" :color="statusColor(intent.status)">{{ intent.status }}</v-chip></td>
                                         <td>{{ formatDate(intent.created_at) }}</td>
                                     </tr>
                                     <tr v-if="!paymentIntents.data.length">
-                                        <td colspan="9" class="text-center text-grey py-8">No PayGo payment transactions found.</td>
+                                        <td colspan="10" class="text-center text-grey py-8">No PayGo payment transactions found.</td>
                                     </tr>
                                 </tbody>
                             </v-table>

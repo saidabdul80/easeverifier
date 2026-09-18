@@ -760,6 +760,84 @@ it('allows a customer to publish a paygo result verification page', function () 
         );
 });
 
+it('identifies reference packages in customer PayGo transactions', function () {
+    $user = createPaygoCustomer();
+    $user->customer->update(['paygo_result_reference_system_price' => 200]);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 300);
+    $paygoService->update(['reference_price' => 1000]);
+
+    app(PaygoVerificationService::class)->createIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        ['params' => paygoWaecParams('4140325098')],
+    );
+    app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        'QAP-REFERENCE-PACKAGE',
+        ['params' => paygoWaecParams('4271710002')],
+    );
+
+    $this->actingAs($user)
+        ->getJson("/customer/paygo-services/{$paygoService->id}/transactions")
+        ->assertOk()
+        ->assertJsonPath('payment_intents.0.reference', 'QAP-REFERENCE-PACKAGE')
+        ->assertJsonPath('payment_intents.0.flow_type', 'result_reference')
+        ->assertJsonPath('payment_intents.0.package_type', 'reference')
+        ->assertJsonPath('payment_intents.0.amount', 1000)
+        ->assertJsonPath('payment_intents.0.system_price', 200)
+        ->assertJsonPath('payment_intents.0.earning', 800)
+        ->assertJsonPath('payment_intents.0.max_fetches', 2)
+        ->assertJsonPath('payment_intents.1.flow_type', 'result')
+        ->assertJsonPath('payment_intents.1.package_type', 'normal')
+        ->assertJsonPath('payment_intents.1.amount', 300)
+        ->assertJsonPath('payment_intents.1.system_price', 100)
+        ->assertJsonPath('payment_intents.1.earning', 200);
+});
+
+it('shows realistic PayGo analytics on the customer transactions page', function () {
+    $this->withoutVite();
+
+    $user = createPaygoCustomer();
+    $user->customer->update(['paygo_result_reference_system_price' => 200]);
+    $service = createPaygoResultService(price: 100);
+    $paygoService = createPaygoServiceFor($user, $service, price: 300);
+    $paygoService->update(['reference_price' => 1000]);
+
+    $normalIntent = app(PaygoVerificationService::class)->createIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        ['params' => paygoWaecParams('4140325098')],
+    );
+    $normalIntent->update(['status' => 'paid', 'paid_at' => now()]);
+
+    $referenceIntent = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        'QAP-ANALYTICS-PAID',
+        ['params' => paygoWaecParams('4271710002')],
+    );
+    $referenceIntent->update(['status' => 'paid', 'paid_at' => now()]);
+
+    app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        'QAP-ANALYTICS-PENDING',
+        ['params' => paygoWaecParams('4253217003')],
+    );
+
+    $this->actingAs($user)
+        ->get('/customer/transactions?tab=paygo')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Customer/Transactions/Index')
+            ->where('activeTab', 'paygo')
+            ->has('paygoIntents.data', 3)
+            ->where('paygoStats.gross_revenue', 1300)
+            ->where('paygoStats.system_settlement', 300)
+            ->where('paygoStats.net_earnings', 1000)
+            ->where('paygoStats.successful_payments', 2)
+            ->where('paygoStats.reference_packages', 1)
+            ->where('paygoStats.this_month_revenue', 1300)
+            ->where('paygoStats.this_month_earnings', 1000));
+});
+
 it('reuses a paid paygo result intent instead of initializing another payment while pulls remain', function () {
     config([
         'services.paystack.public_key' => 'paystack-public',

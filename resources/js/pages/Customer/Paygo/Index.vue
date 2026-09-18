@@ -43,7 +43,10 @@ interface PaygoService {
 }
 
 interface ServicePaymentIntent {
+    id: number;
     reference: string;
+    flow_type: string;
+    package_type: 'reference' | 'normal';
     amount: number;
     system_price: number;
     earning: number;
@@ -255,8 +258,16 @@ const openTransactionsDialog = async (service: PaygoService) => {
             return response.json();
         }));
 
-        servicePaymentIntents.value = responses.flatMap((payload) => payload.payment_intents || []);
-        serviceWalletTransactions.value = responses.flatMap((payload) => payload.wallet_transactions || []);
+        servicePaymentIntents.value = responses
+            .flatMap((payload) => payload.payment_intents || [])
+            .sort((left, right) => {
+                const dateDifference = new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+
+                return dateDifference || right.id - left.id;
+            });
+        serviceWalletTransactions.value = responses
+            .flatMap((payload) => payload.wallet_transactions || [])
+            .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
     } finally {
         transactionsLoading.value = false;
     }
@@ -665,7 +676,8 @@ const verifyPostBody = `{
                                     <thead>
                                         <tr>
                                             <th>Reference</th>
-                                            <th>Amount</th>
+                                            <th>Package</th>
+                                            <th>Charged Amount</th>
                                             <th>System Price</th>
                                             <th>Earning</th>
                                             <th>Lookup</th>
@@ -677,6 +689,11 @@ const verifyPostBody = `{
                                     <tbody>
                                         <tr v-for="intent in servicePaymentIntents" :key="intent.reference">
                                             <td class="font-weight-bold">{{ intent.reference }}</td>
+                                            <td>
+                                                <v-chip size="small" variant="tonal" :color="intent.package_type === 'reference' ? 'info' : 'default'">
+                                                    {{ intent.package_type === 'reference' ? 'Reference package' : 'Normal payment' }}
+                                                </v-chip>
+                                            </td>
                                             <td>{{ formatCurrency(intent.amount) }}</td>
                                             <td>{{ formatCurrency(intent.system_price) }}</td>
                                             <td class="text-success font-weight-bold">{{ formatCurrency(intent.earning) }}</td>
@@ -686,7 +703,7 @@ const verifyPostBody = `{
                                             <td>{{ formatDate(intent.created_at) }}</td>
                                         </tr>
                                         <tr v-if="!transactionsLoading && !servicePaymentIntents.length">
-                                            <td colspan="8" class="text-center text-grey py-8">No payment transactions found for this service.</td>
+                                            <td colspan="9" class="text-center text-grey py-8">No payment transactions found for this service.</td>
                                         </tr>
                                     </tbody>
                                 </v-table>

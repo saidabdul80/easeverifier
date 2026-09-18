@@ -206,12 +206,15 @@ class PaygoServiceController extends Controller
                     'created_at' => $transaction->created_at,
                 ]),
             'paymentIntents' => $paymentIntentQuery
-                ->latest()
+                ->latest('id')
                 ->paginate(20, ['*'], 'payment_page')
                 ->withQueryString()
                 ->through(fn (PaygoVerificationIntent $intent) => [
+                    'id' => $intent->id,
                     'reference' => $intent->reference,
                     'service_name' => $intent->paygoService?->name,
+                    'flow_type' => $intent->flow_type,
+                    'package_type' => $intent->isResultReferenceFlow() ? 'reference' : 'normal',
                     'amount' => (float) $intent->amount,
                     'system_price' => (float) $intent->system_price_snapshot,
                     'earning' => max(0, (float) $intent->amount - (float) $intent->system_price_snapshot),
@@ -236,10 +239,13 @@ class PaygoServiceController extends Controller
             'payment_intents' => PaygoVerificationIntent::query()
                 ->where('user_id', $request->user()->id)
                 ->where('customer_paygo_service_id', $paygoService->id)
-                ->latest()
+                ->latest('id')
                 ->get()
                 ->map(fn (PaygoVerificationIntent $intent) => [
+                    'id' => $intent->id,
                     'reference' => $intent->reference,
+                    'flow_type' => $intent->flow_type,
+                    'package_type' => $intent->isResultReferenceFlow() ? 'reference' : 'normal',
                     'amount' => (float) $intent->amount,
                     'system_price' => (float) $intent->system_price_snapshot,
                     'earning' => max(0, (float) $intent->amount - (float) $intent->system_price_snapshot),
