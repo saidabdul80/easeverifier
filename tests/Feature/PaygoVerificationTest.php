@@ -836,6 +836,39 @@ it('shows realistic PayGo analytics on the customer transactions page', function
             ->where('paygoStats.reference_packages', 1)
             ->where('paygoStats.this_month_revenue', 1300)
             ->where('paygoStats.this_month_earnings', 1000));
+
+    $filteredUrl = '/customer/transactions?'.http_build_query([
+        'tab' => 'paygo',
+        'paygo_status' => 'paid',
+        'paygo_package' => 'reference',
+        'paygo_date_from' => today()->toDateString(),
+        'paygo_date_to' => today()->toDateString(),
+    ]);
+
+    $this->actingAs($user)
+        ->get($filteredUrl)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('paygoIntents.data', 1)
+            ->where('paygoIntents.data.0.reference', 'QAP-ANALYTICS-PAID')
+            ->where('paygoStats.gross_revenue', 1000)
+            ->where('paygoStats.system_settlement', 200)
+            ->where('paygoStats.net_earnings', 800)
+            ->where('paygoStats.successful_payments', 1)
+            ->where('paygoStats.reference_packages', 1));
+
+    $exportResponse = $this->actingAs($user)->get('/customer/transactions/export?'.http_build_query([
+        'tab' => 'paygo',
+        'paygo_status' => 'paid',
+        'paygo_package' => 'reference',
+        'paygo_date_from' => today()->toDateString(),
+        'paygo_date_to' => today()->toDateString(),
+    ]));
+
+    $exportResponse->assertOk();
+    expect($exportResponse->streamedContent())
+        ->toContain('QAP-ANALYTICS-PAID')
+        ->not->toContain('QAP-ANALYTICS-PENDING');
 });
 
 it('reuses a paid paygo result intent instead of initializing another payment while pulls remain', function () {

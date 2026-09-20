@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\CustomerPaygoService;
+use App\Models\PaygoVerificationIntent;
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
@@ -117,4 +119,81 @@ it('does not crash the admin dashboard when the source override table has not be
             ->component('Admin/Dashboard')
             ->where('recentVerifications.0.reference', 'VER-DASH-001')
         );
+});
+
+it('filters admin PayGo analytics and recent payments from the same scope', function () {
+    $admin = createAdminVerificationUser('admin');
+    $customer = createAdminVerificationUser('customer');
+    $otherCustomer = createAdminVerificationUser('customer');
+    $service = VerificationService::updateOrCreate(
+        ['slug' => 'waec-result-fetch'],
+        ['name' => 'WAEC Result Fetch', 'description' => 'Test', 'default_price' => 200, 'cost_price' => 100, 'is_active' => true, 'sort_order' => 1],
+    );
+    $paygoService = CustomerPaygoService::create([
+        'user_id' => $customer->id,
+        'verification_service_id' => $service->id,
+        'name' => 'WAEC Result Verification',
+        'public_slug' => CustomerPaygoService::generatePublicSlug('WAEC Result Verification'),
+        'verify_secret_hash' => hash('sha256', CustomerPaygoService::generateSecret()),
+        'price' => 300,
+        'reference_price' => 1000,
+        'is_active' => true,
+    ]);
+
+    $intentData = [
+        'customer_paygo_service_id' => $paygoService->id,
+        'verification_service_id' => $service->id,
+        'flow_type' => 'result_reference',
+        'nin_hash' => null,
+        'lookup_hash' => PaygoVerificationIntent::hashLookup('waec:4271710002'),
+        'lookup_label' => 'WAEC 4271710002',
+        'payload' => [],
+        'amount' => 1000,
+        'system_price_snapshot' => 550,
+        'verification_attempts' => 0,
+        'max_fetches_snapshot' => 2,
+        'reference_fetches' => 0,
+        'metadata' => [],
+    ];
+
+    PaygoVerificationIntent::create(array_merge($intentData, [
+        'user_id' => $customer->id,
+        'reference' => 'QAP-ADMIN-FILTER-PAID',
+        'status' => 'paid',
+        'paid_at' => now(),
+    ]));
+    PaygoVerificationIntent::create(array_merge($intentData, [
+        'user_id' => $customer->id,
+        'reference' => 'QAP-ADMIN-FILTER-PENDING',
+        'status' => 'pending',
+    ]));
+    PaygoVerificationIntent::create(array_merge($intentData, [
+        'user_id' => $otherCustomer->id,
+        'reference' => 'QAP-OTHER-CUSTOMER',
+        'status' => 'paid',
+        'paid_at' => now(),
+    ]));
+
+    $url = route('admin.dashboard', [
+        'paygo_customer' => $customer->id,
+        'paygo_status' => 'paid',
+        'paygo_package' => 'reference',
+        'paygo_date_from' => today()->toDateString(),
+        'paygo_date_to' => today()->toDateString(),
+    ]);
+
+    $this->actingAs($admin)
+        ->get($url)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Dashboard')
+            ->where('paygoStats.total_payments', 1)
+            ->where('paygoStats.successful_payments', 1)
+            ->where('paygoStats.gross_revenue', 1000)
+            ->where('paygoStats.system_settlement', 550)
+            ->where('paygoStats.customer_earnings', 450)
+            ->where('paygoStats.reference_packages', 1)
+            ->where('paygoStats.conversion_rate', 100)
+            ->has('recentPaygo', 1)
+            ->where('recentPaygo.0.reference', 'QAP-ADMIN-FILTER-PAID'));
 });

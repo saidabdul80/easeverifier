@@ -65,8 +65,7 @@ class TransactionController extends Controller
         ];
 
         $paidStatuses = ['paid', 'verifying', 'used'];
-        $paidPaygo = PaygoVerificationIntent::query()
-            ->where('user_id', $user->id)
+        $paidPaygo = $this->filteredPaygoIntentsQuery($request)
             ->whereIn('status', $paidStatuses);
         $paidPaygoThisMonth = (clone $paidPaygo)
             ->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()]);
@@ -91,7 +90,7 @@ class TransactionController extends Controller
             'paygoIntents' => $paygoIntents,
             'paygoStats' => $paygoStats,
             'filters' => $request->only(['search', 'type', 'category', 'min_amount', 'date_from', 'date_to']),
-            'paygoFilters' => $request->only(['paygo_search', 'paygo_status', 'paygo_package']),
+            'paygoFilters' => $request->only(['paygo_search', 'paygo_status', 'paygo_package', 'paygo_date_from', 'paygo_date_to']),
             'activeTab' => $request->string('tab')->value() === 'paygo' ? 'paygo' : 'wallet',
         ]);
     }
@@ -208,6 +207,8 @@ class TransactionController extends Controller
             })
             ->when($request->filled('paygo_status'), fn (Builder $query) => $query->where('status', $request->string('paygo_status')))
             ->when($request->string('paygo_package')->value() === 'reference', fn (Builder $query) => $query->where('flow_type', 'result_reference'))
-            ->when($request->string('paygo_package')->value() === 'normal', fn (Builder $query) => $query->where('flow_type', '!=', 'result_reference'));
+            ->when($request->string('paygo_package')->value() === 'normal', fn (Builder $query) => $query->where('flow_type', '!=', 'result_reference'))
+            ->when($request->filled('paygo_date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('paygo_date_from')))
+            ->when($request->filled('paygo_date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('paygo_date_to')));
     }
 }

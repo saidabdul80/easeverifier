@@ -9,7 +9,7 @@ const props = defineProps<{
     filters?: { search?: string; type?: string; category?: string; min_amount?: string; date_from?: string; date_to?: string };
     paygoIntents?: { data: any[]; current_page: number; last_page: number; per_page: number; total: number };
     paygoStats?: { gross_revenue: number; system_settlement: number; net_earnings: number; successful_payments: number; reference_packages: number; this_month_revenue: number; this_month_earnings: number };
-    paygoFilters?: { paygo_search?: string; paygo_status?: string; paygo_package?: string };
+    paygoFilters?: { paygo_search?: string; paygo_status?: string; paygo_package?: string; paygo_date_from?: string; paygo_date_to?: string };
     activeTab?: 'wallet' | 'paygo';
 }>();
 
@@ -22,6 +22,8 @@ const currentPage = ref(props.transactions?.current_page || 1);
 const paygoSearch = ref(props.paygoFilters?.paygo_search || '');
 const paygoStatus = ref(props.paygoFilters?.paygo_status || '');
 const paygoPackage = ref(props.paygoFilters?.paygo_package || '');
+const paygoDateFrom = ref(props.paygoFilters?.paygo_date_from || '');
+const paygoDateTo = ref(props.paygoFilters?.paygo_date_to || '');
 const paygoCurrentPage = ref(props.paygoIntents?.current_page || 1);
 
 const totalPages = computed(() => props.transactions?.last_page || 1);
@@ -34,6 +36,8 @@ const exportUrl = computed(() => {
         if (paygoSearch.value) params.set('paygo_search', paygoSearch.value);
         if (paygoStatus.value) params.set('paygo_status', paygoStatus.value);
         if (paygoPackage.value) params.set('paygo_package', paygoPackage.value);
+        if (paygoDateFrom.value) params.set('paygo_date_from', paygoDateFrom.value);
+        if (paygoDateTo.value) params.set('paygo_date_to', paygoDateTo.value);
 
         return `/customer/transactions/export?${params.toString()}`;
     }
@@ -79,11 +83,13 @@ const applyPaygoFilters = () => {
         paygo_search: paygoSearch.value || undefined,
         paygo_status: paygoStatus.value || undefined,
         paygo_package: paygoPackage.value || undefined,
+        paygo_date_from: paygoDateFrom.value || undefined,
+        paygo_date_to: paygoDateTo.value || undefined,
         paygo_page: 1,
     }, { preserveState: true, replace: true });
 };
 
-watch([paygoStatus, paygoPackage], () => applyPaygoFilters());
+watch([paygoStatus, paygoPackage, paygoDateFrom, paygoDateTo], () => applyPaygoFilters());
 
 const goToPaygoPage = (page: number) => {
     paygoCurrentPage.value = page;
@@ -92,6 +98,8 @@ const goToPaygoPage = (page: number) => {
         paygo_search: paygoSearch.value || undefined,
         paygo_status: paygoStatus.value || undefined,
         paygo_package: paygoPackage.value || undefined,
+        paygo_date_from: paygoDateFrom.value || undefined,
+        paygo_date_to: paygoDateTo.value || undefined,
         paygo_page: page,
     }, { preserveState: true, replace: true });
 };
@@ -334,6 +342,8 @@ const statusColor = (status: string) => {
                     />
                     <v-select v-model="paygoStatus" :items="paygoStatusOptions" item-title="title" item-value="value" label="Status" variant="outlined" density="compact" hide-details style="max-width: 180px;" />
                     <v-select v-model="paygoPackage" :items="paygoPackageOptions" item-title="title" item-value="value" label="Package" variant="outlined" density="compact" hide-details style="max-width: 210px;" />
+                    <v-text-field v-model="paygoDateFrom" type="date" label="From" variant="outlined" density="compact" hide-details style="max-width: 170px;" />
+                    <v-text-field v-model="paygoDateTo" type="date" label="To" variant="outlined" density="compact" hide-details style="max-width: 170px;" />
                 </div>
 
                 <div class="table-wrap">
