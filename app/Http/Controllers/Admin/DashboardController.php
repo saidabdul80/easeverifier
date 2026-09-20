@@ -11,6 +11,7 @@ use App\Models\VerificationService;
 use App\Models\Wallet;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -36,6 +37,49 @@ class DashboardController extends Controller
                 ->where('type', 'debit')
                 ->sum('amount'),
         ];
+
+        $platformTrendStart = now()->subDays(6)->startOfDay();
+        $platformTrendEnd = now()->endOfDay();
+        $platformDates = collect(range(0, 6))->map(fn (int $offset) => $platformTrendStart->copy()->addDays($offset));
+        $platformDateExpression = $this->dailyDateExpression('created_at');
+        $customerSignups = User::role('customer')
+            ->whereBetween('created_at', [$platformTrendStart, $platformTrendEnd])
+            ->selectRaw("{$platformDateExpression} as activity_date, COUNT(*) as aggregate")
+            ->groupByRaw($platformDateExpression)
+            ->pluck('aggregate', 'activity_date');
+        $customerRunningTotal = User::role('customer')->where('created_at', '<', $platformTrendStart)->count();
+        $dailyVerifications = VerificationRequest::whereBetween('created_at', [$platformTrendStart, $platformTrendEnd])
+            ->selectRaw("{$platformDateExpression} as activity_date, COUNT(*) as aggregate")
+            ->groupByRaw($platformDateExpression)
+            ->pluck('aggregate', 'activity_date');
+        $verificationDateExpression = $this->dailyDateExpression('verification_requests.created_at');
+        $dailyVerificationRevenue = VerificationRequest::where('verification_requests.status', 'completed')
+            ->whereBetween('verification_requests.created_at', [$platformTrendStart, $platformTrendEnd])
+            ->whereNotNull('verification_requests.transaction_id')
+            ->join('transactions', 'verification_requests.transaction_id', '=', 'transactions.id')
+            ->where('transactions.type', 'debit')
+            ->selectRaw("{$verificationDateExpression} as activity_date, SUM(transactions.amount) as aggregate")
+            ->groupByRaw($verificationDateExpression)
+            ->pluck('aggregate', 'activity_date');
+        $dailyWalletActivity = Transaction::where('status', 'completed')
+            ->whereBetween('created_at', [$platformTrendStart, $platformTrendEnd])
+            ->selectRaw("{$platformDateExpression} as activity_date, SUM(amount) as aggregate")
+            ->groupByRaw($platformDateExpression)
+            ->pluck('aggregate', 'activity_date');
+
+        $platformTrend = $platformDates->map(function (Carbon $date) use (&$customerRunningTotal, $customerSignups, $dailyVerifications, $dailyVerificationRevenue, $dailyWalletActivity) {
+            $key = $date->toDateString();
+            $customerRunningTotal += (int) ($customerSignups[$key] ?? 0);
+
+            return [
+                'date' => $key,
+                'label' => $date->format('M j'),
+                'customers' => $customerRunningTotal,
+                'verifications' => (int) ($dailyVerifications[$key] ?? 0),
+                'verification_revenue' => (float) ($dailyVerificationRevenue[$key] ?? 0),
+                'wallet_activity' => (float) ($dailyWalletActivity[$key] ?? 0),
+            ];
+        })->values();
 
         $recentVerifications = VerificationRequest::with(['user', 'verificationService'])
             ->latest()
@@ -79,6 +123,35 @@ class DashboardController extends Controller
             'conversion_rate' => $paygoTotal > 0 ? round(($paygoSuccessful / $paygoTotal) * 100, 1) : 0,
         ];
 
+        $trendEnd = $request->filled('paygo_date_to')
+            ? Carbon::parse($request->date('paygo_date_to'))->endOfDay()
+            : now()->endOfDay();
+        $trendStart = $trendEnd->copy()->subDays(6)->startOfDay();
+        $paygoDateExpression = $this->dailyDateExpression('created_at');
+        $trendPayments = (clone $filteredPaygo)
+            ->whereIn('status', $paidStatuses)
+            ->whereBetween('created_at', [$trendStart, $trendEnd])
+            ->selectRaw("{$paygoDateExpression} as activity_date, SUM(amount) as gross, SUM(system_price_snapshot) as settlement, COUNT(*) as payments")
+            ->groupByRaw($paygoDateExpression)
+            ->get()
+            ->keyBy('activity_date');
+
+        $paygoTrend = collect(range(0, 6))->map(function (int $offset) use ($trendStart, $trendPayments) {
+            $date = $trendStart->copy()->addDays($offset);
+            $payments = $trendPayments[$date->toDateString()] ?? null;
+            $gross = (float) ($payments?->gross ?? 0);
+            $settlement = (float) ($payments?->settlement ?? 0);
+
+            return [
+                'date' => $date->toDateString(),
+                'label' => $date->format('M j'),
+                'gross' => $gross,
+                'settlement' => $settlement,
+                'earnings' => max(0, $gross - $settlement),
+                'payments' => (int) ($payments?->payments ?? 0),
+            ];
+        })->values();
+
         $recentPaygo = (clone $filteredPaygo)
             ->with(['user:id,name,email', 'paygoService:id,name', 'verificationService:id,name,slug'])
             ->latest('id')
@@ -103,7 +176,9 @@ class DashboardController extends Controller
             'recentVerifications' => $recentVerifications,
             'recentTransactions' => $recentTransactions,
             'monthlyRevenue' => $monthlyRevenue,
+            'platformTrend' => $platformTrend,
             'paygoStats' => $paygoStats,
+            'paygoTrend' => $paygoTrend,
             'recentPaygo' => $recentPaygo,
             'paygoFilters' => $request->only(['paygo_customer', 'paygo_status', 'paygo_package', 'paygo_date_from', 'paygo_date_to']),
             'customerOptions' => User::role('customer')
@@ -140,6 +215,14 @@ class DashboardController extends Controller
         return match (DB::connection()->getDriverName()) {
             'sqlite' => "CAST(strftime('%m', verification_requests.created_at) AS INTEGER) as month, CAST(strftime('%Y', verification_requests.created_at) AS INTEGER) as year, SUM(transactions.amount) as total",
             default => 'MONTH(verification_requests.created_at) as month, YEAR(verification_requests.created_at) as year, SUM(transactions.amount) as total',
+        };
+    }
+
+    private function dailyDateExpression(string $column): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => "date({$column})",
+            default => "DATE({$column})",
         };
     }
 }

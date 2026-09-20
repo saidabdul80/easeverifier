@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\VerificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -80,6 +81,36 @@ class DashboardController extends Controller
             'pending' => $pendingCount,
         ];
 
+        $activityStart = now()->subDays(6)->startOfDay();
+        $activityEnd = now()->endOfDay();
+        $verificationDate = $this->dailyDateExpression('created_at');
+        $dailyVerifications = $user->verificationRequests()
+            ->whereBetween('created_at', [$activityStart, $activityEnd])
+            ->selectRaw("{$verificationDate} as activity_date, COUNT(*) as total, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status = 'completed' THEN amount_charged ELSE 0 END) as spent")
+            ->groupByRaw($verificationDate)
+            ->get()
+            ->keyBy('activity_date');
+        $dailyTransactions = $user->transactions()
+            ->where('status', 'completed')
+            ->whereBetween('created_at', [$activityStart, $activityEnd])
+            ->selectRaw("{$verificationDate} as activity_date, SUM(amount) as volume")
+            ->groupByRaw($verificationDate)
+            ->pluck('volume', 'activity_date');
+
+        $activityTrend = collect(range(0, 6))->map(function (int $offset) use ($activityStart, $dailyVerifications, $dailyTransactions) {
+            $date = $activityStart->copy()->addDays($offset);
+            $activity = $dailyVerifications[$date->toDateString()] ?? null;
+
+            return [
+                'date' => $date->toDateString(),
+                'label' => $date->format('M j'),
+                'verifications' => (int) ($activity?->total ?? 0),
+                'completed' => (int) ($activity?->completed ?? 0),
+                'spent' => (float) ($activity?->spent ?? 0),
+                'transaction_volume' => (float) ($dailyTransactions[$date->toDateString()] ?? 0),
+            ];
+        })->values();
+
         $recentVerifications = $user->verificationRequests()
             ->with(['verificationService:id,name', 'branch:id,name'])
             ->latest()
@@ -106,12 +137,14 @@ class DashboardController extends Controller
             ->get()
             ->map(function ($service) use ($user) {
                 $service->price = $user->getPriceForService($service);
+
                 return $service;
             });
 
         return Inertia::render('Customer/Dashboard', [
             'stats' => $stats,
             'verificationCounts' => $verificationCounts,
+            'activityTrend' => $activityTrend,
             'recentVerifications' => $recentVerifications,
             'recentTransactions' => $recentTransactions,
             'services' => $services->take(4)->values(),
@@ -123,5 +156,13 @@ class DashboardController extends Controller
                 'wallet_balance' => (float) ($branch->wallet?->total_balance ?? 0),
             ])->values(),
         ]);
+    }
+
+    private function dailyDateExpression(string $column): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => "date({$column})",
+            default => "DATE({$column})",
+        };
     }
 }

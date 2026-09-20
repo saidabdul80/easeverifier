@@ -1,515 +1,56 @@
 <script setup lang="ts">
 import { Head, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
-import { computed } from 'vue';
-import { useDisplay } from 'vuetify';
+import InteractiveLineChart from '@/components/dashboard/InteractiveLineChart.vue';
 
-const props = defineProps<{
-    stats?: Record<string, any>;
-    verificationCounts?: Record<string, number>;
-    recentVerifications?: any[];
-    recentTransactions?: any[];
-    services?: any[];
-    branches?: any[];
-}>();
-
-const page = usePage();
-const user = computed(() => page.props.auth?.user);
-const { smAndDown } = useDisplay();
-
-const formatCurrency = (amount: any) =>
-    new Intl.NumberFormat('en-NG', {
-        style: 'currency',
-        currency: 'NGN',
-        minimumFractionDigits: 0,
-    }).format(amount || 0);
-
-const firstName = computed(() => user.value?.name?.split(' ')[0] || 'there');
-
-const statCards = computed(() => [
-    {
-        label: 'Completed',
-        value: props.stats?.successful_verifications || 0,
-        tone: 'success',
-        icon: 'mdi-check-decagram',
-    },
-    {
-        label: 'Pending',
-        value: props.stats?.pending_verifications || 0,
-        tone: 'warning',
-        icon: 'mdi-timer-sand',
-    },
-    {
-        label: 'Failed',
-        value: props.stats?.failed_verifications || 0,
-        tone: 'error',
-        icon: 'mdi-alert-circle',
-    },
-    {
-        label: 'API Keys',
-        value: props.stats?.api_key_count || 0,
-        tone: 'info',
-        icon: 'mdi-key-variant',
-    },
+type ActivityPoint = { date:string; label:string; verifications:number; completed:number; spent:number; transaction_volume:number };
+const props = defineProps<{ stats?:Record<string,number>; verificationCounts?:Record<string,number>; activityTrend?:ActivityPoint[]; recentVerifications?:any[]; recentTransactions?:any[]; services?:any[]; branches?:any[] }>();
+const page=usePage();
+const user=computed(()=>page.props.auth?.user as any);
+const firstName=computed(()=>user.value?.name?.split(' ')[0]||'there');
+const chartMetric=ref<'verifications'|'spent'>('verifications');
+const labels=computed(()=>(props.activityTrend||[]).map(point=>point.label));
+const successRate=computed(()=>props.stats?.success_rate||0);
+const donutStyle=computed(()=>({'--success':`${Math.min(successRate.value,100)*3.6}deg`}));
+const formatCurrency=(amount?:number)=>new Intl.NumberFormat('en-NG',{style:'currency',currency:'NGN',minimumFractionDigits:0}).format(amount||0);
+const formatDate=(date?:string)=>date?new Date(date).toLocaleString('en-NG',{dateStyle:'medium',timeStyle:'short'}):'-';
+const statusColor=(status:string)=>status==='completed'?'success':['pending','processing'].includes(status)?'warning':'error';
+const initials=(name?:string)=>name?.split(' ').map(part=>part[0]).join('').slice(0,2).toUpperCase()||'EV';
+const statCards=computed(()=>[
+ {label:'Available balance',value:formatCurrency(props.stats?.wallet_total_balance),detail:`${formatCurrency(props.stats?.bonus_balance)} bonus`,icon:'mdi-wallet-outline',tone:'green',series:'transaction_volume' as keyof ActivityPoint,color:'#16ae71',fill:'rgba(22,174,113,.13)',currency:true},
+ {label:'Verifications',value:props.stats?.total_verifications||0,detail:`${props.stats?.this_month_verifications||0} this month`,icon:'mdi-shield-check-outline',tone:'blue',series:'verifications' as keyof ActivityPoint,color:'#4083ef',fill:'rgba(64,131,239,.13)',currency:false},
+ {label:'Success rate',value:`${successRate.value}%`,detail:`${props.stats?.successful_verifications||0} completed`,icon:'mdi-check-decagram-outline',tone:'teal',series:'completed' as keyof ActivityPoint,color:'#12aaa2',fill:'rgba(18,170,162,.13)',currency:false},
+ {label:'Total spent',value:formatCurrency(props.stats?.total_spent),detail:`${formatCurrency(props.stats?.this_month_spent)} this month`,icon:'mdi-cash-check',tone:'amber',series:'spent' as keyof ActivityPoint,color:'#f3a20f',fill:'rgba(243,162,15,.13)',currency:true}
 ]);
 </script>
 
 <template>
-    <Head title="Dashboard - EaseVerifier" />
-    <CustomerLayout :user="($page.props.auth as any)?.user" :wallet="($page.props.auth as any)?.wallet">
-        <v-row class="mb-4" align="stretch">
-            <v-col cols="12" xl="8">
-                <v-card class="dashboard-hero h-100">
-                    <v-card-text class="pa-4 pa-md-5">
-                        <div class="hero-shell">
-                            <div class="hero-content">
-                                <div class="text-overline text-white text-opacity-80 mb-2">Customer Workspace</div>
-                                <h1 class="text-h5 text-md-h4 font-weight-bold text-white mb-2">Welcome back, {{ firstName }}.</h1>
-                                <p class="text-body-2 text-white text-opacity-80 mb-3">
-                                    Wallets, branches, and verifications in one view.
-                                </p>
+ <Head title="Dashboard - EaseVerifier"/>
+ <CustomerLayout :user="($page.props.auth as any)?.user" :wallet="($page.props.auth as any)?.wallet"><main class="customer-dashboard">
+  <header class="dashboard-header"><div><h1>Welcome back, {{firstName}}</h1><p>Monitor verification activity, balances, and recent account operations.</p></div><div class="header-actions"><v-btn class="outline-action" variant="outlined" prepend-icon="mdi-history" href="/customer/history">View history</v-btn><v-btn class="fund-action" color="secondary" prepend-icon="mdi-wallet-plus" href="/customer/wallet/fund">Fund wallet</v-btn><v-btn class="verify-action" color="primary" prepend-icon="mdi-shield-search" href="/customer/verify">New verification</v-btn></div></header>
 
-                                <div class="hero-actions">
-                                    <v-btn color="white" variant="flat" href="/customer/verify" prepend-icon="mdi-shield-search" size="small">
-                                        New Verification
-                                    </v-btn>
-                                    <v-btn color="white" variant="outlined" href="/customer/wallet/fund" prepend-icon="mdi-wallet-plus" size="small">
-                                        Fund Wallet
-                                    </v-btn>
-                                    <v-btn color="white" variant="text" href="/customer/branches" prepend-icon="mdi-source-branch" size="small">
-                                        Manage Branches
-                                    </v-btn>
-                                </div>
+  <section class="metric-grid"><article v-for="card in statCards" :key="card.label" class="metric-card" :class="`tone-${card.tone}`"><div class="metric-head"><span class="metric-icon"><v-icon>{{card.icon}}</v-icon></span><span>{{card.label}}</span><v-icon class="metric-arrow">mdi-chevron-right</v-icon></div><strong class="metric-value">{{card.value}}</strong><small>{{card.detail}}</small><div class="metric-chart"><InteractiveLineChart :labels="labels" :values="(activityTrend||[]).map(point=>Number(point[card.series]))" :color="card.color" :fill-color="card.fill" :currency="card.currency" :label="card.label"/></div></article></section>
 
-                                <div class="hero-inline-stats">
-                                    <div class="hero-inline-stat">
-                                        <span>Success</span>
-                                        <strong>{{ stats?.success_rate || 0 }}%</strong>
-                                    </div>
-                                    <div class="hero-inline-stat">
-                                        <span>This month</span>
-                                        <strong>{{ stats?.this_month_verifications || 0 }}</strong>
-                                    </div>
-                                    <div class="hero-inline-stat">
-                                        <span>Keys</span>
-                                        <strong>{{ stats?.api_key_count || 0 }}</strong>
-                                    </div>
-                                </div>
-                            </div>
+  <section class="analytics-layout">
+   <article class="panel activity-panel"><div class="panel-heading"><div class="panel-title"><span><v-icon>mdi-chart-line</v-icon></span><div><h2>Verification activity</h2><p>Daily activity from your account over the last seven days.</p></div></div><v-btn-toggle v-model="chartMetric" mandatory density="compact" color="primary" variant="outlined"><v-btn value="verifications">Requests</v-btn><v-btn value="spent">Spend</v-btn></v-btn-toggle></div><div class="activity-chart"><InteractiveLineChart :labels="labels" :values="(activityTrend||[]).map(point=>chartMetric==='spent'?point.spent:point.verifications)" :currency="chartMetric==='spent'" :label="chartMetric==='spent'?'Verification spend':'Verification requests'" color="#3478ed" fill-color="rgba(52,120,237,.14)" show-axes/></div></article>
+   <article class="panel health-panel"><div class="panel-title compact"><span><v-icon>mdi-chart-donut</v-icon></span><div><h2>Verification health</h2><p>All-time request status</p></div></div><div class="health-body"><div class="health-donut" :style="donutStyle"><div><strong>{{successRate}}%</strong><span>successful</span></div></div><div class="health-legend"><div><span><i class="success"/>Completed</span><strong>{{stats?.successful_verifications||0}}</strong></div><div><span><i class="warning"/>Pending</span><strong>{{stats?.pending_verifications||0}}</strong></div><div><span><i class="error"/>Failed</span><strong>{{stats?.failed_verifications||0}}</strong></div></div></div></article>
+  </section>
 
-                            <div class="hero-balance-panel">
-                                <div class="text-caption text-white text-opacity-70 mb-1">Available Balance</div>
-                                <div class="text-h6 text-md-h5 font-weight-bold text-white mb-1">
-                                    {{ formatCurrency(stats?.wallet_total_balance) }}
-                                </div>
-                                <div class="text-caption text-white text-opacity-80 mb-3">
-                                    Bonus: {{ formatCurrency(stats?.bonus_balance) }}
-                                </div>
+  <section class="workspace-grid">
+   <article class="panel services-panel"><div class="section-heading"><div><v-icon>mdi-shield-star-outline</v-icon><h2>Verification services</h2></div><v-btn variant="text" color="primary" append-icon="mdi-arrow-right" href="/customer/verify">All services</v-btn></div><div class="services-grid"><a v-for="service in services||[]" :key="service.id" class="service-item" :href="`/customer/verify/${service.id}`"><span class="service-icon"><v-icon>{{service.icon||'mdi-shield-check-outline'}}</v-icon></span><span class="service-copy"><strong>{{service.name}}</strong><small>{{service.description}}</small></span><span class="service-price">{{formatCurrency(service.price)}}</span><v-icon size="18">mdi-chevron-right</v-icon></a><div v-if="!services?.length" class="empty-state">No verification services are available.</div></div></article>
+   <article class="panel branches-panel"><div class="section-heading"><div><v-icon>mdi-source-branch</v-icon><h2>Branch wallets</h2></div><v-btn variant="text" color="primary" append-icon="mdi-arrow-right" href="/customer/branches">Manage</v-btn></div><div v-if="branches?.length" class="branch-list"><div v-for="branch in branches" :key="branch.id" class="branch-item"><span class="branch-avatar">{{initials(branch.name)}}</span><span><strong>{{branch.name}}</strong><small>{{branch.code}}</small></span><span class="branch-balance"><strong>{{formatCurrency(branch.wallet_balance)}}</strong><small :class="branch.is_active?'active':'inactive'">{{branch.is_active?'Active':'Inactive'}}</small></span></div></div><div v-else class="empty-state">You have not created any branches yet.</div></article>
+  </section>
 
-                                <div class="balance-meta-grid">
-                                    <div>
-                                        <div class="text-caption text-white text-opacity-70">Branches</div>
-                                        <div class="font-weight-bold text-white">{{ stats?.branch_count || 0 }}</div>
-                                    </div>
-                                    <div>
-                                        <div class="text-caption text-white text-opacity-70">Branch Balance</div>
-                                        <div class="font-weight-bold text-white">{{ formatCurrency(stats?.branch_balance) }}</div>
-                                    </div>
-                                    <div>
-                                        <div class="text-caption text-white text-opacity-70">Success Rate</div>
-                                        <div class="font-weight-bold text-white">{{ stats?.success_rate || 0 }}%</div>
-                                    </div>
-                                    <div>
-                                        <div class="text-caption text-white text-opacity-70">Month Spend</div>
-                                        <div class="font-weight-bold text-white">{{ formatCurrency(stats?.this_month_spent) }}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-
-            <v-col cols="12" xl="4">
-                <v-card class="h-100">
-                    <v-card-text class="pa-4">
-                        <div class="section-head mb-4">
-                            <div>
-                                <div class="text-overline text-grey-darken-1">Overview</div>
-                                <div class="text-h6 font-weight-bold">Activity Snapshot</div>
-                            </div>
-                            <v-chip color="primary" variant="tonal" size="small">
-                                {{ stats?.total_verifications || 0 }} total
-                            </v-chip>
-                        </div>
-
-                        <div class="snapshot-grid">
-                            <div
-                                v-for="card in statCards"
-                                :key="card.label"
-                                class="snapshot-card"
-                            >
-                                <v-avatar :color="`${card.tone}-lighten-5`" size="42">
-                                    <v-icon :color="card.tone">{{ card.icon }}</v-icon>
-                                </v-avatar>
-                                <div>
-                                    <div class="text-caption text-grey-darken-1">{{ card.label }}</div>
-                                    <div class="text-subtitle-1 font-weight-bold">{{ card.value }}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <v-divider class="my-4" />
-
-                        <div class="summary-row mb-2">
-                            <span class="text-caption text-grey-darken-1">Total Spent</span>
-                            <span class="font-weight-bold">{{ formatCurrency(stats?.total_spent) }}</span>
-                        </div>
-                        <div class="summary-row mb-2">
-                            <span class="text-caption text-grey-darken-1">This Month</span>
-                            <span class="font-weight-bold">{{ stats?.this_month_verifications || 0 }} requests</span>
-                        </div>
-                        <div class="summary-row">
-                            <span class="text-caption text-grey-darken-1">Active Branches</span>
-                            <span class="font-weight-bold">{{ stats?.active_branch_count || 0 }}</span>
-                        </div>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-        </v-row>
-
-        <v-row class="mb-4">
-            <v-col cols="12" lg="7">
-                <v-card class="h-100">
-                    <v-card-title class="section-head py-4">
-                        <span>Verification Services</span>
-                        <v-btn variant="text" color="primary" size="small" href="/customer/verify">All Services</v-btn>
-                    </v-card-title>
-                    <v-card-text class="pt-0">
-                        <div class="services-grid">
-                            <v-card v-for="service in services || []" :key="service.id" variant="outlined" class="service-card h-100" :href="`/customer/verify/${service.id}`">
-                                <v-card-text class="pa-3">
-                                    <div class="service-card-head">
-                                        <v-avatar color="primary-lighten-5" size="36">
-                                            <v-icon color="primary">{{ service.icon || 'mdi-shield-check' }}</v-icon>
-                                        </v-avatar>
-                                        <div class="flex-grow-1 min-w-0">
-                                            <div class="font-weight-bold text-body-2">{{ service.name }}</div>
-                                            <div class="text-caption text-grey line-clamp-1">{{ service.description }}</div>
-                                        </div>
-                                    </div>
-                                    <div class="summary-row mt-3">
-                                        <span class="text-caption text-grey-darken-1">Price</span>
-                                        <span class="font-weight-bold text-primary">{{ formatCurrency(service.price) }}</span>
-                                    </div>
-                                </v-card-text>
-                            </v-card>
-                        </div>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-
-            <v-col cols="12" lg="5">
-                <v-card class="h-100">
-                    <v-card-title class="section-head py-4">
-                        <span>Branch Wallets</span>
-                        <v-btn variant="text" color="primary" size="small" href="/customer/branches">View All</v-btn>
-                    </v-card-title>
-                    <v-card-text class="pt-0">
-                        <div v-if="branches?.length" class="grid gap-3">
-                            <div v-for="branch in branches" :key="branch.id" class="branch-row">
-                                <div class="min-w-0">
-                                    <div class="font-weight-bold text-truncate">{{ branch.name }}</div>
-                                    <div class="text-caption text-grey">{{ branch.code }}</div>
-                                </div>
-                                <div class="text-right">
-                                    <div class="font-weight-bold">{{ formatCurrency(branch.wallet_balance) }}</div>
-                                    <v-chip size="x-small" :color="branch.is_active ? 'success' : 'grey'" variant="tonal">
-                                        {{ branch.is_active ? 'Active' : 'Inactive' }}
-                                    </v-chip>
-                                </div>
-                            </div>
-                        </div>
-                        <v-alert v-else type="info" variant="tonal" density="compact">
-                            You have not created any branches yet.
-                        </v-alert>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-        </v-row>
-
-        <v-row>
-            <v-col cols="12" xl="7">
-                <v-card>
-                    <v-card-title class="section-head py-4">
-                        <span>Recent Verifications</span>
-                        <v-btn variant="text" color="primary" size="small" href="/customer/history">History</v-btn>
-                    </v-card-title>
-                    <v-card-text class="pt-0">
-                        <div v-if="smAndDown" class="grid gap-3">
-                            <v-card v-for="item in recentVerifications || []" :key="item.id" variant="outlined">
-                                <v-card-text class="pa-4">
-                                    <div class="d-flex align-start justify-space-between ga-3">
-                                        <div>
-                                            <div class="font-weight-bold">{{ item.verification_service?.name || 'N/A' }}</div>
-                                            <div class="text-caption text-grey">{{ item.branch?.name || 'Primary wallet' }}</div>
-                                        </div>
-                                        <v-chip :color="item.status === 'completed' ? 'success' : item.status === 'processing' ? 'warning' : 'error'" size="small" variant="tonal">
-                                            {{ item.status }}
-                                        </v-chip>
-                                    </div>
-                                    <div class="mt-3">
-                                        <code class="bg-grey-lighten-4 px-2 py-1 rounded">{{ item.search_parameter }}</code>
-                                    </div>
-                                    <div class="text-caption text-grey mt-3">{{ new Date(item.created_at).toLocaleString() }}</div>
-                                </v-card-text>
-                            </v-card>
-                            <v-alert v-if="!recentVerifications?.length" type="info" variant="tonal" density="compact">No verifications yet.</v-alert>
-                        </div>
-
-                        <v-table v-else density="comfortable">
-                            <thead>
-                                <tr>
-                                    <th>Service</th>
-                                    <th>Wallet</th>
-                                    <th>Query</th>
-                                    <th>Status</th>
-                                    <th>Time</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="item in recentVerifications || []" :key="item.id">
-                                    <td class="font-weight-medium">{{ item.verification_service?.name || 'N/A' }}</td>
-                                    <td>{{ item.branch?.name || 'Primary wallet' }}</td>
-                                    <td><code class="bg-grey-lighten-4 px-2 py-1 rounded">{{ item.search_parameter }}</code></td>
-                                    <td>
-                                        <v-chip :color="item.status === 'completed' ? 'success' : item.status === 'processing' ? 'warning' : 'error'" size="small" variant="tonal">
-                                            {{ item.status }}
-                                        </v-chip>
-                                    </td>
-                                    <td class="text-grey">{{ new Date(item.created_at).toLocaleString() }}</td>
-                                </tr>
-                                <tr v-if="!recentVerifications?.length">
-                                    <td colspan="5" class="text-center text-grey py-4">No verifications yet</td>
-                                </tr>
-                            </tbody>
-                        </v-table>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-
-            <v-col cols="12" xl="5">
-                <v-card>
-                    <v-card-title class="section-head py-4">
-                        <span>Recent Transactions</span>
-                        <v-btn variant="text" color="primary" size="small" href="/customer/transactions">Transactions</v-btn>
-                    </v-card-title>
-                    <v-card-text class="pt-0">
-                        <div v-if="recentTransactions?.length" class="grid gap-3">
-                            <div v-for="item in recentTransactions" :key="item.id" class="transaction-row">
-                                <div class="d-flex align-center ga-3 min-w-0">
-                                    <v-avatar :color="item.type === 'credit' ? 'success-lighten-5' : 'error-lighten-5'" size="40">
-                                        <v-icon :color="item.type === 'credit' ? 'success' : 'error'">
-                                            {{ item.type === 'credit' ? 'mdi-arrow-down' : 'mdi-arrow-up' }}
-                                        </v-icon>
-                                    </v-avatar>
-                                    <div class="min-w-0">
-                                        <div class="font-weight-bold text-truncate">{{ item.category }}</div>
-                                        <div class="text-caption text-grey text-truncate">{{ item.reference }}</div>
-                                    </div>
-                                </div>
-                                <div class="text-right">
-                                    <div :class="item.type === 'credit' ? 'text-success' : 'text-error'" class="font-weight-bold">
-                                        {{ item.type === 'credit' ? '+' : '-' }}{{ formatCurrency(item.amount) }}
-                                    </div>
-                                    <div class="text-caption text-grey">{{ new Date(item.created_at).toLocaleDateString() }}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <v-alert v-else type="info" variant="tonal" density="compact">
-                            No transactions yet.
-                        </v-alert>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-        </v-row>
-    </CustomerLayout>
+  <section class="records-grid">
+   <article class="panel records-panel"><div class="section-heading"><div><v-icon>mdi-shield-search-outline</v-icon><h2>Recent verifications</h2></div><v-btn variant="text" color="primary" append-icon="mdi-arrow-right" href="/customer/history">Full history</v-btn></div><div class="table-scroll"><table><thead><tr><th>Service</th><th>Wallet</th><th>Query</th><th>Status</th><th>Date</th></tr></thead><tbody><tr v-for="item in recentVerifications||[]" :key="item.id"><td><strong>{{item.verification_service?.name||'N/A'}}</strong></td><td>{{item.branch?.name||'Primary wallet'}}</td><td><code>{{item.search_parameter}}</code></td><td><v-chip :color="statusColor(item.status)" variant="tonal" size="small">{{item.status}}</v-chip></td><td class="date-cell">{{formatDate(item.created_at)}}</td></tr><tr v-if="!recentVerifications?.length"><td colspan="5" class="empty-state">No verifications yet.</td></tr></tbody></table></div></article>
+   <article class="panel transactions-panel"><div class="section-heading"><div><v-icon>mdi-swap-horizontal</v-icon><h2>Recent transactions</h2></div><v-btn variant="text" color="primary" icon="mdi-arrow-right" href="/customer/transactions" aria-label="All transactions"/></div><div v-if="recentTransactions?.length" class="transaction-list"><div v-for="item in recentTransactions" :key="item.id" class="transaction-item"><span class="transaction-icon" :class="item.type"><v-icon>{{item.type==='credit'?'mdi-arrow-down':'mdi-arrow-up'}}</v-icon></span><span><strong>{{item.category}}</strong><small>{{item.reference}}</small></span><span class="transaction-amount" :class="item.type"><strong>{{item.type==='credit'?'+':'-'}}{{formatCurrency(item.amount)}}</strong><small>{{formatDate(item.created_at)}}</small></span></div></div><div v-else class="empty-state">No transactions yet.</div></article>
+  </section>
+ </main></CustomerLayout>
 </template>
 
 <style scoped>
-.dashboard-hero {
-    background:
-        radial-gradient(circle at top left, rgba(142, 255, 179, 0.2), transparent 30%),
-        linear-gradient(135deg, #143822 0%, #0f2d1b 50%, #1d4d2c 100%);
-}
-
-.hero-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(270px, 0.95fr);
-    gap: 1rem;
-    align-items: stretch;
-}
-
-.hero-content {
-    display: flex;
-    flex-direction: column;
-}
-
-.hero-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.hero-inline-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.9rem;
-}
-
-.hero-inline-stat {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    min-width: 0;
-    padding: 0.45rem 0.7rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    color: white;
-}
-
-.hero-inline-stat span {
-    font-size: 0.72rem;
-    opacity: 0.72;
-}
-
-.hero-balance-panel {
-    min-width: 0;
-    padding: 0.9rem 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(8px);
-}
-
-.balance-meta-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.9rem;
-}
-
-.section-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-}
-
-.snapshot-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-}
-
-.snapshot-card {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    min-width: 0;
-    padding: 0.75rem 0.85rem;
-    border: 1px solid rgba(18, 18, 18, 0.06);
-    border-radius: 14px;
-    background: #fbfcfb;
-}
-
-.services-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.85rem;
-}
-
-.service-card-head {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-}
-
-.service-card {
-    transition: transform 0.16s ease, border-color 0.16s ease;
-}
-
-.service-card:hover {
-    transform: translateY(-2px);
-    border-color: rgba(28, 91, 52, 0.25);
-}
-
-.summary-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-}
-
-.branch-row,
-.transaction-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.8rem 0;
-    border-bottom: 1px solid rgba(18, 18, 18, 0.08);
-}
-
-.branch-row:last-child,
-.transaction-row:last-child {
-    border-bottom: 0;
-}
-
-.min-w-0 {
-    min-width: 0;
-}
-
-.line-clamp-1 {
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-@media (max-width: 959px) {
-    .hero-shell,
-    .services-grid,
-    .snapshot-grid {
-        grid-template-columns: 1fr;
-    }
-
-}
-
-@media (max-width: 600px) {
-    .hero-actions {
-        display: grid;
-        grid-template-columns: 1fr;
-    }
-
-    .branch-row,
-    .transaction-row,
-    .summary-row,
-    .section-head {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
-    .transaction-row .text-right,
-    .branch-row .text-right {
-        text-align: left !important;
-    }
-}
+.customer-dashboard{--ink:#091737;--muted:#7483a4;--line:#e4ebf6;--panel:#fff;color:var(--ink);max-width:1800px;margin:0 auto;letter-spacing:0}.dashboard-header{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:24px}.dashboard-header h1{margin:0 0 4px;font-size:1.65rem;line-height:1.2;font-weight:800}.dashboard-header p{margin:0;color:var(--muted);font-size:.88rem}.header-actions{display:flex;align-items:center;gap:10px}.header-actions .v-btn{height:44px;border-radius:8px;text-transform:none;font-weight:700;letter-spacing:0}.outline-action{color:#315fd9}.fund-action{box-shadow:none}.verify-action{box-shadow:0 7px 16px rgba(20,103,58,.2)}.metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;margin-bottom:18px}.metric-card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 7px 22px rgba(30,68,128,.07)}.metric-card{position:relative;min-height:200px;padding:17px 19px;overflow:hidden}.metric-head{display:flex;align-items:center;gap:10px;color:#647496;font-size:.79rem;font-weight:600}.metric-icon{width:41px;height:41px;display:grid;place-items:center;flex:none;border-radius:50%;background:#e3f8ed;color:#10aa70}.metric-arrow{margin-left:auto;width:30px;height:30px;padding:5px;border-radius:50%;background:#f5f8fd;color:#65789c}.metric-value{display:block;margin:17px 0 4px;font-size:1.75rem;color:#091737;white-space:nowrap}.metric-card small{color:var(--muted);font-size:.7rem}.metric-chart{position:absolute;left:18px;right:18px;bottom:10px;height:54px}.tone-blue .metric-icon{background:#e7f0ff;color:#3677ed}.tone-teal .metric-icon{background:#ddf8f4;color:#11aaa1}.tone-amber .metric-icon{background:#fff2d8;color:#ef9e0f}.analytics-layout{display:grid;grid-template-columns:minmax(0,2.3fr) minmax(300px,1fr);gap:18px;margin-bottom:18px}.activity-panel,.health-panel{padding:0 18px 18px}.panel-heading,.section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:68px;border-bottom:1px solid var(--line)}.panel-title,.section-heading>div{display:flex;align-items:center;gap:10px}.panel-title>span{width:36px;height:36px;display:grid;place-items:center;border-radius:50%;background:#e7f0ff;color:#3478ed}.panel-title h2,.section-heading h2{margin:0;font-size:.96rem;font-weight:800}.panel-title p{margin:3px 0 0;color:var(--muted);font-size:.7rem}.activity-chart{height:260px;padding-top:14px}.health-panel{padding-bottom:20px}.panel-title.compact{min-height:68px;border-bottom:1px solid var(--line)}.health-body{display:flex;align-items:center;justify-content:space-around;gap:20px;padding-top:24px}.health-donut{--success:0deg;width:142px;height:142px;display:grid;place-items:center;flex:none;position:relative;border-radius:50%;background:conic-gradient(#14ae71 var(--success),#f4a815 0 calc(var(--success) + 4deg),#e9eef6 0)}.health-donut:after{content:"";position:absolute;inset:15px;border-radius:50%;background:#fff}.health-donut>div{z-index:1;display:flex;flex-direction:column;align-items:center}.health-donut strong{font-size:1.5rem}.health-donut span{color:var(--muted);font-size:.68rem}.health-legend{min-width:145px;flex:1}.health-legend>div{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:9px 0;font-size:.72rem}.health-legend span{display:flex;align-items:center;color:#647496}.health-legend i{width:8px;height:8px;margin-right:7px;border-radius:50%}.health-legend i.success{background:#14ae71}.health-legend i.warning{background:#f4a815}.health-legend i.error{background:#e84657}.workspace-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:18px;margin-bottom:18px}.services-panel,.branches-panel,.records-panel,.transactions-panel{padding:0 18px 16px}.section-heading>div>.v-icon{color:#3478ed}.section-heading .v-btn{text-transform:none;letter-spacing:0}.services-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding-top:14px}.service-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;min-height:78px;padding:12px;color:inherit;text-decoration:none;border:1px solid var(--line);border-radius:8px;transition:border-color .15s,transform .15s}.service-item:hover{transform:translateY(-1px);border-color:#88a8e8}.service-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;background:#e6f7ee;color:#10a86d}.service-copy,.branch-item>span:nth-child(2),.transaction-item>span:nth-child(2){display:flex;flex-direction:column;min-width:0}.service-copy strong,.service-copy small,.branch-item strong,.branch-item small,.transaction-item strong,.transaction-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.service-copy strong{font-size:.76rem}.service-copy small{color:var(--muted);font-size:.66rem}.service-price{color:#0b8f5b;font-size:.78rem;font-weight:800}.branch-list,.transaction-list{padding-top:7px}.branch-item,.transaction-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}.branch-item:last-child,.transaction-item:last-child{border-bottom:0}.branch-avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:50%;background:#e7efff;color:#3471df;font-size:.72rem;font-weight:800}.branch-item strong,.transaction-item strong{font-size:.74rem}.branch-item small,.transaction-item small{color:var(--muted);font-size:.64rem}.branch-balance,.transaction-amount{display:flex;align-items:flex-end;flex-direction:column}.branch-balance small.active{color:#0ca66a}.branch-balance small.inactive{color:#9aa4b7}.records-grid{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(330px,1fr);gap:18px}.records-panel{overflow:hidden;padding-bottom:0}.table-scroll{overflow:auto;margin:0 -18px}table{width:100%;border-collapse:collapse;font-size:.72rem}th{padding:11px 16px;background:#f8faff;color:#586989;text-align:left;white-space:nowrap}td{padding:11px 16px;border-top:1px solid #edf1f7;color:#344464}td code{padding:4px 6px;border-radius:4px;background:#f2f5fa;color:#31588c}.date-cell{min-width:140px}.transaction-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:50%;background:#e4f8ef;color:#0da96b}.transaction-icon.debit{background:#feecef;color:#df4657}.transaction-amount.credit{color:#0ca76a}.transaction-amount.debit{color:#df4657}.empty-state{grid-column:1/-1;padding:28px;text-align:center;color:var(--muted);font-size:.78rem}
+@media(max-width:1200px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.analytics-layout,.workspace-grid,.records-grid{grid-template-columns:1fr}}
+@media(max-width:720px){.dashboard-header{align-items:flex-start;flex-direction:column}.header-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}.verify-action{grid-column:span 2}.metric-grid,.services-grid{grid-template-columns:1fr}.panel-heading{align-items:flex-start;flex-direction:column;padding:14px 0}.health-body{flex-direction:column}.health-legend{width:100%}.service-item{grid-template-columns:auto minmax(0,1fr) auto}.service-item>.v-icon{display:none}.customer-dashboard{padding-bottom:20px}}
 </style>

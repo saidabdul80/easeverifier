@@ -194,6 +194,13 @@ it('filters admin PayGo analytics and recent payments from the same scope', func
             ->where('paygoStats.customer_earnings', 450)
             ->where('paygoStats.reference_packages', 1)
             ->where('paygoStats.conversion_rate', 100)
+            ->has('platformTrend', 7)
+            ->has('paygoTrend', 7)
+            ->where('paygoTrend.6.date', today()->toDateString())
+            ->where('paygoTrend.6.gross', 1000)
+            ->where('paygoTrend.6.settlement', 550)
+            ->where('paygoTrend.6.earnings', 450)
+            ->where('paygoTrend.6.payments', 1)
             ->has('recentPaygo', 1)
             ->where('recentPaygo.0.reference', 'QAP-ADMIN-FILTER-PAID'));
 });
