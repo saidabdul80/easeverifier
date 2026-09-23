@@ -220,7 +220,7 @@ class VerificationController extends Controller
             'branches' => $request->user()->branches()
                 ->orderBy('name')
                 ->get(['id', 'name', 'code']),
-            'filters' => $request->only(['branch', 'service', 'status', 'date_from', 'date_to']),
+            'filters' => $request->only(['search', 'branch', 'service', 'status', 'date_from', 'date_to']),
         ]);
     }
 
@@ -301,6 +301,8 @@ class VerificationController extends Controller
 
     private function historyQuery(Request $request)
     {
+        $search = trim((string) $request->input('search', ''));
+
         return $request->user()->verificationRequests()
             ->select([
                 'id',
@@ -320,6 +322,12 @@ class VerificationController extends Controller
             ])
             ->with('verificationService:id,name')
             ->with('branch:id,name,code')
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $nestedQuery) use ($search) {
+                    $nestedQuery->where('reference', 'like', "%{$search}%")
+                        ->orWhere('search_parameter', 'like', "%{$search}%");
+                });
+            })
             ->when(
                 $request->string('branch')->value() === 'primary',
                 fn (Builder $query) => $query->whereNull('branch_id')
@@ -336,6 +344,8 @@ class VerificationController extends Controller
 
     private function historyExportQuery(Request $request): QueryBuilder
     {
+        $search = trim((string) $request->input('search', ''));
+
         return DB::table('verification_requests')
             ->leftJoin('verification_services', 'verification_services.id', '=', 'verification_requests.verification_service_id')
             ->where('verification_requests.user_id', $request->user()->id)
@@ -349,6 +359,12 @@ class VerificationController extends Controller
                 'verification_requests.created_at',
                 'verification_requests.completed_at',
             ])
+            ->when($search !== '', function (QueryBuilder $query) use ($search) {
+                $query->where(function (QueryBuilder $nestedQuery) use ($search) {
+                    $nestedQuery->where('verification_requests.reference', 'like', "%{$search}%")
+                        ->orWhere('verification_requests.search_parameter', 'like', "%{$search}%");
+                });
+            })
             ->when(
                 $request->string('branch')->value() === 'primary',
                 fn (QueryBuilder $query) => $query->whereNull('verification_requests.branch_id')

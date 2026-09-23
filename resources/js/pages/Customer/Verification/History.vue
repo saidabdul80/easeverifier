@@ -19,6 +19,7 @@ const props = defineProps<{
     services?: any[];
     branches?: Array<{ id: number; name: string; code: string }>;
     filters?: {
+        search?: string;
         branch?: string;
         service?: string;
         status?: string;
@@ -30,6 +31,7 @@ const props = defineProps<{
 
 const { smAndDown } = useDisplay();
 const toast = useToast();
+const search = ref(props.filters?.search || '');
 const filterBranch = ref(props.filters?.branch || '');
 const filterService = ref(props.filters?.service || '');
 const filterStatus = ref(props.filters?.status || '');
@@ -44,6 +46,7 @@ const totalPages = computed(() => props.verifications?.last_page || 1);
 const exportUrl = computed(() => {
     const params = new URLSearchParams();
 
+    if (search.value) params.set('search', search.value);
     if (filterBranch.value) params.set('branch', filterBranch.value);
     if (filterService.value) params.set('service', filterService.value);
     if (filterStatus.value) params.set('status', filterStatus.value);
@@ -58,12 +61,13 @@ const exportUrl = computed(() => {
 });
 
 watch(
-    [filterBranch, filterService, filterStatus, dateFrom, dateTo],
-    ([b, s, st, df, dt]) => {
+    [search, filterBranch, filterService, filterStatus, dateFrom, dateTo],
+    ([q, b, s, st, df, dt]) => {
         currentPage.value = 1;
         router.get(
             '/customer/history',
             {
+                search: q || undefined,
                 branch: b || undefined,
                 service: s || undefined,
                 status: st || undefined,
@@ -81,6 +85,7 @@ const goToPage = (page: number) => {
     router.get(
         '/customer/history',
         {
+            search: search.value || undefined,
             branch: filterBranch.value || undefined,
             service: filterService.value || undefined,
             status: filterStatus.value || undefined,
@@ -188,6 +193,17 @@ const headers = [
             <v-card-text>
                 <!-- Filters -->
                 <v-row class="mb-4">
+                    <v-col cols="12" sm="6" md="3">
+                        <v-text-field
+                            v-model="search"
+                            prepend-inner-icon="mdi-magnify"
+                            label="Search reference or parameter"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            clearable
+                        />
+                    </v-col>
                     <v-col v-if="branches?.length" cols="12" sm="6" md="3">
                         <v-select
                             v-model="filterBranch"

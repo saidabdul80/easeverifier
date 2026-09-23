@@ -6,6 +6,7 @@ use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Models\Wallet;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -281,6 +282,81 @@ it('exports customer verification history scoped to the authenticated user', fun
         ->not->toContain('VER-OUTSIDE-DATE-001')
         ->not->toContain('VER-OTHER-SERVICE-001')
         ->not->toContain('VER-THEIRS-001');
+});
+
+it('filters customer verification history by reference or search parameter', function () {
+    $customer = createUserWithRole('customer');
+    $otherCustomer = createUserWithRole('customer');
+    $service = createVerificationService();
+
+    createVerificationRequestForExport([
+        'user_id' => $customer->id,
+        'verification_service_id' => $service->id,
+        'reference' => 'VER-FILTERMATCH-REF',
+        'search_parameter' => '11111111111',
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'web',
+        'created_at' => now()->subMinutes(3),
+        'completed_at' => now(),
+    ]);
+
+    createVerificationRequestForExport([
+        'user_id' => $customer->id,
+        'verification_service_id' => $service->id,
+        'reference' => 'VER-PARAM-001',
+        'search_parameter' => 'FILTERMATCH-PARAM',
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'web',
+        'created_at' => now()->subMinutes(2),
+        'completed_at' => now(),
+    ]);
+
+    createVerificationRequestForExport([
+        'user_id' => $customer->id,
+        'verification_service_id' => $service->id,
+        'reference' => 'VER-NO-MATCH-001',
+        'search_parameter' => '99999999999',
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'web',
+        'created_at' => now()->subMinute(),
+        'completed_at' => now(),
+    ]);
+
+    createVerificationRequestForExport([
+        'user_id' => $otherCustomer->id,
+        'verification_service_id' => $service->id,
+        'reference' => 'VER-FILTERMATCH-OTHER',
+        'search_parameter' => 'FILTERMATCH-OTHER',
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'web',
+        'created_at' => now(),
+        'completed_at' => now(),
+    ]);
+
+    $this
+        ->actingAs($customer)
+        ->get(route('customer.verification.history', ['search' => 'FILTERMATCH']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Customer/Verification/History')
+            ->where('filters.search', 'FILTERMATCH')
+            ->where('verifications.total', 2));
+
+    $export = $this
+        ->actingAs($customer)
+        ->get(route('customer.verification.export', ['search' => 'FILTERMATCH']));
+
+    $export->assertOk();
+
+    expect($export->streamedContent())
+        ->toContain('VER-FILTERMATCH-REF')
+        ->toContain('VER-PARAM-001')
+        ->not->toContain('VER-NO-MATCH-001')
+        ->not->toContain('VER-FILTERMATCH-OTHER');
 });
 
 it('downloads a customer verification result as json and blocks other users', function () {
