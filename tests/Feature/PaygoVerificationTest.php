@@ -180,6 +180,83 @@ function paygoNecoParams(string $examNumber): array
     ];
 }
 
+it('keeps new PayGo payment intents valid for seven days', function () {
+    $this->freezeTime();
+
+    $user = createPaygoCustomer();
+    $service = createPaygoResultService();
+    $paygoService = createPaygoServiceFor($user, $service);
+    $paygoService->update(['reference_price' => 300]);
+    $paygoService = $paygoService->fresh(['user.customer', 'verificationService']);
+
+    $normalIntent = app(PaygoVerificationService::class)->createIntent(
+        $paygoService,
+        ['params' => paygoWaecParams('4140325098')],
+    );
+    $referenceIntent = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
+        $paygoService,
+        'SEVEN-DAY-REFERENCE',
+        ['params' => paygoWaecParams('4271710002')],
+    );
+
+    $expectedExpiry = now()->addDays(7)->toDateTimeString();
+
+    expect($normalIntent->expires_at->toDateTimeString())->toBe($expectedExpiry)
+        ->and($referenceIntent->expires_at->toDateTimeString())->toBe($expectedExpiry);
+});
+
+it('starts reference package validity from the confirmed payment time', function () {
+    $this->freezeTime();
+
+    $user = createPaygoCustomer();
+    $service = createPaygoResultService();
+    $paygoService = createPaygoServiceFor($user, $service);
+    $paygoService->update(['reference_price' => 300]);
+    $intent = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        'PAID-VALIDITY-REFERENCE',
+        ['params' => paygoWaecParams('4271710002')],
+    );
+    $paidAt = now()->addDays(3);
+
+    $intent = app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 300,
+        'reference' => $intent->reference,
+        'paid_at' => $paidAt,
+        'channel' => 'card',
+    ]);
+
+    expect($intent->paid_at->toDateTimeString())->toBe($paidAt->toDateTimeString())
+        ->and($intent->expires_at->toDateTimeString())->toBe($paidAt->copy()->addDays(7)->toDateTimeString());
+});
+
+it('restores an existing paid reference package within the seven day window', function () {
+    $this->freezeTime();
+
+    $user = createPaygoCustomer();
+    $service = createPaygoResultService();
+    $paygoService = createPaygoServiceFor($user, $service);
+    $paygoService->update(['reference_price' => 300]);
+    $intent = app(PaygoVerificationService::class)->createOrFindResultReferenceIntent(
+        $paygoService->fresh(['user.customer', 'verificationService']),
+        'EXISTING-PAID-REFERENCE',
+        ['params' => paygoWaecParams('4250223136')],
+    );
+    $paidAt = now()->subDays(2);
+    $intent->update([
+        'status' => 'expired',
+        'paid_at' => $paidAt,
+        'expires_at' => $paidAt->copy()->addDay(),
+    ]);
+
+    $migration = require database_path('migrations/2026_09_24_000001_extend_paid_reference_package_validity.php');
+    $migration->up();
+    $intent->refresh();
+
+    expect($intent->status)->toBe('paid')
+        ->and($intent->expires_at->toDateTimeString())->toBe($paidAt->copy()->addDays(7)->toDateTimeString());
+});
+
 function bindSuccessfulPaygoNecoResult(): void
 {
     app()->instance(NECOResult::class, new class implements ResultInterface

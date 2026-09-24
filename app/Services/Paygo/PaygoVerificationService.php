@@ -12,11 +12,14 @@ use App\Models\VerificationRequest;
 use App\Services\ResultVerify\ResultVerificationEngine;
 use App\Services\Verification\VerificationEngine;
 use App\Support\ResultVerificationErrorFormatter;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class PaygoVerificationService
 {
+    private const INTENT_VALIDITY_DAYS = 7;
+
     private const MAX_VERIFICATION_ATTEMPTS = 3;
 
     private const RESULT_REFERENCE_SUCCESS_LIMIT = 2;
@@ -72,7 +75,7 @@ class PaygoVerificationService
                 'max_fetches_snapshot' => $maxFetches,
                 'reference_fetches' => 0,
                 'buyer_phone' => $data['phone'] ?? null,
-                'expires_at' => now()->addHours(24),
+                'expires_at' => now()->addDays(self::INTENT_VALIDITY_DAYS),
                 'metadata' => array_merge([
                     'flow_type' => $isResultFlow ? 'result' : 'identity',
                     'nin_last4' => $isResultFlow ? null : substr($lookup, -4),
@@ -181,7 +184,7 @@ class PaygoVerificationService
                 'max_fetches_snapshot' => self::RESULT_REFERENCE_SUCCESS_LIMIT,
                 'reference_fetches' => 0,
                 'buyer_phone' => $data['phone'] ?? null,
-                'expires_at' => now()->addHours(24),
+                'expires_at' => now()->addDays(self::INTENT_VALIDITY_DAYS),
                 'metadata' => array_merge([
                     'flow_type' => 'result_reference',
                     'lookup_label' => $this->lookupLabel($paygoService, $lookup),
@@ -265,6 +268,9 @@ class PaygoVerificationService
             }
 
             if (in_array($intent->status, ['pending', 'failed'], true)) {
+                $paidAt = isset($paymentData['paid_at'])
+                    ? Carbon::parse($paymentData['paid_at'])
+                    : now();
                 $margin = max(0, (float) $intent->amount - (float) $intent->system_price_snapshot);
                 $splitApplied = (bool) data_get($intent->metadata, 'paystack_split.applied');
                 $paygoWallet = null;
@@ -292,7 +298,8 @@ class PaygoVerificationService
                 $intent->update([
                     'status' => 'paid',
                     'transaction_id' => null,
-                    'paid_at' => $paymentData['paid_at'] ?? now(),
+                    'paid_at' => $paidAt,
+                    'expires_at' => $paidAt->copy()->addDays(self::INTENT_VALIDITY_DAYS),
                     'metadata' => array_merge($intent->metadata ?? [], [
                         'payment_gateway' => 'paystack',
                         'payment_status' => 'success',

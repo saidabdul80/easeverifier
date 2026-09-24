@@ -1229,7 +1229,7 @@ class PublicPaygoVerificationController extends Controller
         } catch (Throwable $exception) {
             $publicMessage = ResultVerificationErrorFormatter::publicMessage($exception->getMessage());
             $intent->update([
-                'status' => 'paid',
+                'status' => $intent->status === 'expired' ? 'expired' : 'paid',
                 'metadata' => array_merge($intent->metadata ?? [], [
                     'verification_status' => 'failed',
                     'error_code' => 'RESULT_FETCH_FAILED',
