@@ -12,6 +12,8 @@ import {
     GraduationCap,
     LockKeyhole,
     LoaderCircle,
+    Maximize2,
+    Minimize2,
     Pause,
     Play,
     RotateCcw,
@@ -56,8 +58,11 @@ const stageUrls = [
 ];
 
 const activeStage = ref(0);
+const simulationRoot = ref<HTMLElement | null>(null);
 const browserUrl = ref(stageUrls[0]);
 const isPlaying = ref(false);
+const isFullscreen = ref(false);
+const fullscreenSupported = ref(false);
 const checkoutLoading = ref(false);
 const checkoutError = ref('');
 const checkoutUrl = ref('');
@@ -236,12 +241,36 @@ const handlePaymentMessage = (event: MessageEvent) => {
     void verifyPayment();
 };
 
-onMounted(() => window.addEventListener('message', handlePaymentMessage));
+const syncFullscreenState = () => {
+    isFullscreen.value = document.fullscreenElement === simulationRoot.value;
+};
+
+const toggleFullscreen = async () => {
+    if (!simulationRoot.value || !fullscreenSupported.value) return;
+
+    try {
+        if (document.fullscreenElement === simulationRoot.value) {
+            await document.exitFullscreen();
+            return;
+        }
+
+        await simulationRoot.value.requestFullscreen();
+    } catch {
+        fullscreenSupported.value = false;
+    }
+};
+
+onMounted(() => {
+    fullscreenSupported.value = Boolean(document.fullscreenEnabled);
+    window.addEventListener('message', handlePaymentMessage);
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+});
 
 onBeforeUnmount(() => {
     clearStageTimer();
     clearPaymentTimer();
     window.removeEventListener('message', handlePaymentMessage);
+    document.removeEventListener('fullscreenchange', syncFullscreenState);
 });
 </script>
 
@@ -281,7 +310,7 @@ onBeforeUnmount(() => {
         </button>
     </div>
     </section>
-    <section class="paygo-simulation" :class="{ 'is-playing': isPlaying }" aria-label="Interactive PayGo result verification simulation">
+    <section ref="simulationRoot" class="paygo-simulation" :class="{ 'is-playing': isPlaying }" aria-label="Interactive PayGo result verification simulation">
 
         <div class="simulation-viewport">
             <div class="browser-toolbar">
@@ -290,7 +319,18 @@ onBeforeUnmount(() => {
                     <LockKeyhole :size="13" />
                     <input v-model="browserUrl" type="text" aria-label="Simulation URL" spellcheck="false" />
                 </label>
-                <span class="browser-menu" aria-hidden="true">&#8942;</span>
+                <button
+                    v-if="fullscreenSupported"
+                    type="button"
+                    class="browser-fullscreen"
+                    :title="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
+                    :aria-label="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
+                    :aria-pressed="isFullscreen"
+                    @click="toggleFullscreen"
+                >
+                    <Minimize2 v-if="isFullscreen" :size="16" />
+                    <Maximize2 v-else :size="16" />
+                </button>
             </div>
             <Transition name="stage-change" mode="out-in">
                 <div v-if="activeStage === 0" key="portal" class="screen school-screen">
@@ -462,14 +502,23 @@ button:focus-visible,a:focus-visible { outline:3px solid rgba(35,100,170,.28); o
 .simulation-viewport { min-height:668px; }
 .screen { min-height:620px; }
 .simulation-viewport { background:#edf2ef; }
-.browser-toolbar { display:grid; grid-template-columns:58px minmax(0,1fr) 22px; align-items:center; gap:12px; min-height:48px; padding:0 14px; border-bottom:1px solid #d8dfe3; background:#f7f9fa; }
+.browser-toolbar { display:grid; grid-template-columns:58px minmax(0,1fr) 28px; align-items:center; gap:12px; min-height:48px; padding:0 14px; border-bottom:1px solid #d8dfe3; background:#f7f9fa; }
 .browser-lights { display:flex; gap:6px; }
 .browser-lights span { width:9px; height:9px; border-radius:50%; background:#ff665c; }
 .browser-lights span:nth-child(2) { background:#ffbd44; }
 .browser-lights span:nth-child(3) { background:#00ca4e; }
 .browser-address { display:flex; min-width:0; height:30px; align-items:center; gap:7px; padding:0 10px; border:1px solid #d8e0e4; border-radius:6px; background:#fff; color:#5f6d74; }
 .browser-address input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:#35434a; font:inherit; font-size:11px; letter-spacing:0; }
-.browser-menu { color:#68757b; font-size:20px; line-height:1; text-align:center; }
+.browser-fullscreen { display:grid; width:28px; height:28px; place-items:center; padding:0; border:0; border-radius:4px; background:transparent; color:#68757b; cursor:pointer; }
+.browser-fullscreen:hover { background:#e8eef1; color:#263740; }
+.paygo-simulation:fullscreen { width:100vw; height:100vh; border:0; border-radius:0; background:#edf2ef; box-shadow:none; }
+.paygo-simulation:fullscreen .simulation-viewport { display:flex; height:100vh; min-height:0; flex-direction:column; }
+.paygo-simulation:fullscreen .browser-toolbar { flex:0 0 48px; }
+.paygo-simulation:fullscreen .screen { min-height:0; flex:1 1 auto; overflow:auto; }
+.paygo-simulation:fullscreen .school-screen { display:flex; flex-direction:column; }
+.paygo-simulation:fullscreen .school-screen .screen-content { flex:1 1 auto; }
+.paygo-simulation:fullscreen .paystack-checkout-frame,
+.paygo-simulation:fullscreen .checkout-frame-state { height:100%; min-height:0; }
 .app-toolbar { display:flex; min-height:70px; align-items:center; justify-content:space-between; padding:0 28px; }
 .school-toolbar { border-bottom:1px solid #d9e0dc; background:#fff; }
 .brand-lockup,.student-name,.paystack-heading { display:flex; align-items:center; gap:11px; }
@@ -588,7 +637,7 @@ button:focus-visible,a:focus-visible { outline:3px solid rgba(35,100,170,.28); o
     .progress-track { display:none; }
     .simulation-viewport { min-height:738px; }
     .screen { min-height:690px; }
-    .browser-toolbar { grid-template-columns:42px minmax(0,1fr) 14px; gap:7px; padding:0 10px; }
+    .browser-toolbar { grid-template-columns:42px minmax(0,1fr) 28px; gap:7px; padding:0 10px; }
     .browser-address input { font-size:10px; }
     .screen-content { padding:24px 16px; }
     .table-head { display:none; }
