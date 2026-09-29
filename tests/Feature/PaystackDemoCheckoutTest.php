@@ -1,12 +1,9 @@
 <?php
 
-use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
-    $this->withoutMiddleware(ValidateCsrfToken::class);
-
     config()->set('services.paystack.test_public_key', 'pk_test_documentation');
     config()->set('services.paystack.test_secret_key', 'sk_test_documentation');
 });

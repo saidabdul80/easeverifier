@@ -26,6 +26,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // Exclude webhook from CSRF verification
         $middleware->validateCsrfTokens(except: [
             'webhook/*',
+            'paygo/demo/payment/initialize',
+            'paygo/demo/payment/verify',
         ]);
 
         $middleware->alias([
