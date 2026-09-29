@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import PaygoResultSimulation from '@/components/PaygoResultSimulation.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { home, login, register, services, pricing, documentation } from '@/routes';
 import { ref } from 'vue';
 
 const activeSection = ref('overview');
 const copied = ref(false);
+const appBaseUrl = 'https://verify.ashlabtech.ng';
 const baseUrl = 'https://verify.ashlabtech.ng/api/v1';
 const testNin = '11111111111';
 
@@ -56,6 +58,8 @@ const sections = [
     { id: 'authentication', title: 'Authentication', icon: 'mdi-lock' },
     { id: 'identity', title: 'Identity Verify', icon: 'mdi-card-account-details' },
     { id: 'result-verification', title: 'Result Verify', icon: 'mdi-certificate' },
+    { id: 'paygo', title: 'PayGo', icon: 'mdi-credit-card-outline' },
+    { id: 'implementation', title: 'Implementation', icon: 'mdi-code-braces' },
     { id: 'result-pins', title: 'Result PINs', icon: 'mdi-card-account-details-star-outline' },
     { id: 'wallet-history', title: 'Wallet & History', icon: 'mdi-wallet' },
     { id: 'errors', title: 'Errors', icon: 'mdi-alert-circle' },
@@ -157,12 +161,123 @@ const errorResponse = `{
   "error": "Insufficient wallet balance",
   "error_code": "INSUFFICIENT_FUNDS"
 }`;
+
+const resultImplementation = `const API_URL = '${baseUrl}';
+const API_KEY = process.env.EASEVERIFIER_API_KEY;
+
+async function verifyWaecResult(input) {
+  const response = await fetch(API_URL + '/results/waec/fetch', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + API_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify(input)
+  });
+
+  const payload = await response.json();
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error || 'Result verification failed');
+  }
+
+  return payload.data;
+}
+
+const result = await verifyWaecResult({
+  txtExamNumber: '1234567890',
+  ExamYear: '2024',
+  ExamType: 'MAY/JUN',
+  txtPIN: '123456789012',
+  txtCardSerialNo: 'WRN123456789'
+});`;
+
+const paygoPortalImplementation = `const portalRef = 'APPLICATION-90210';
+const checkout = new URL(
+  '${appBaseUrl}/paygo/results/customer/YOUR_REFERRAL_CODE'
+);
+
+checkout.search = new URLSearchParams({
+  candidate_id: 'STU-12345',
+  portal_ref: portalRef,
+  reference: portalRef,
+  sitting: '1',
+  state: 'YOUR_SIGNED_STATE'
+}).toString();
+
+// Send the browser to EaseVerifier to choose a board, enter result details,
+// and pay. A ready result returns to your configured success URL.
+window.location.assign(checkout.toString());
+
+// From your backend after the success redirect or webhook:
+const response = await fetch(
+  '${appBaseUrl}/api/paygo/results/' + encodeURIComponent(portalRef) +
+  '?portal_ref=' + encodeURIComponent(portalRef) + '&sitting=1',
+  { headers: { Accept: 'application/json' } }
+);
+const verifiedResult = await response.json();`;
+
+const webhookVerification = `import crypto from 'node:crypto';
+
+const expected = crypto
+  .createHmac('sha256', process.env.EASEVERIFIER_WEBHOOK_SECRET)
+  .update(JSON.stringify(req.body))
+  .digest('hex');
+
+const supplied = req.get('X-EaseVerifier-Signature') || '';
+const valid = supplied.length === expected.length &&
+  crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+
+if (!valid) return res.status(401).json({ received: false });
+
+// Store by payload.reference so webhook retries remain idempotent.
+const payload = req.body;
+return res.json({ received: true });`;
+
+const paygoWebhookPayload = `{
+  "event": "paygo.result.ready",
+  "reference": "APPLICATION-90210",
+  "candidate_id": "STU-12345",
+  "portal_ref": "APPLICATION-90210",
+  "sitting": 1,
+  "state": "YOUR_SIGNED_STATE",
+  "school_referral_code": "YOUR_REFERRAL_CODE",
+  "board": "WAEC",
+  "payment_status": "paid",
+  "result_status": "ready",
+  "lookup_label": "1234567890",
+  "result": {
+    "board": "WAEC",
+    "candidate": { "name": "TEST CANDIDATE" },
+    "subjects": [{ "subject": "MATHEMATICS", "grade": "A1" }]
+  },
+  "error": null,
+  "error_code": null,
+  "timestamp": "2026-09-29T10:30:00.000000Z"
+}`;
+
+const paygoPullResponse = `{
+  "success": true,
+  "status": 200,
+  "reference": "APPLICATION-90210",
+  "lookup_label": "WAEC 1234567890",
+  "candidate_id": "STU-12345",
+  "portal_ref": "APPLICATION-90210",
+  "sitting": 1,
+  "data": {
+    "board": "WAEC",
+    "candidate": { "name": "TEST CANDIDATE" },
+    "subjects": [{ "subject": "MATHEMATICS", "grade": "A1" }]
+  },
+  "fetches_remaining": 1,
+  "served_from": "reference_attempt_cache"
+}`;
 </script>
 
 <template>
     <Head title="API Documentation - EaseVerifier">
-        <meta name="description" content="EaseVerifier API documentation for identity verification, result verification, result PIN purchase, wallet balance, services, and verification history." />
-        <meta name="keywords" content="EaseVerifier API, NIN verification API, result verification API, WAEC API, NECO API, NABTEB API, NBAIS API, result PIN API" />
+        <meta name="description" content="EaseVerifier API documentation for identity verification, result verification, PayGo integration, result PIN purchase, wallet balance, services, and verification history." />
+        <meta name="keywords" content="EaseVerifier API, NIN verification API, result verification API, PayGo verification, WAEC API, NECO API, NABTEB API, NBAIS API, result PIN API" />
         <meta property="og:title" content="API Documentation - EaseVerifier" />
         <meta property="og:description" content="Complete integration guide for EaseVerifier API services." />
         <meta property="og:type" content="article" />
@@ -235,6 +350,7 @@ const errorResponse = `{
                                         <tr><td>Identity verification</td><td><code>POST /verify/nin</code>, <code>/verify/bvn</code>, <code>/verify/{service}</code></td><td>Wallet</td></tr>
                                         <tr><td>Result form metadata</td><td><code>GET /results/{board}/form</code></td><td>Wallet unless sandbox</td></tr>
                                         <tr><td>Result verification</td><td><code>POST /results/{board}/fetch</code></td><td>Wallet unless sandbox</td></tr>
+                                        <tr><td>PayGo verification</td><td><code>/paygo/...</code>, <code>/api/paygo/...</code></td><td>End-user Paystack payment</td></tr>
                                         <tr><td>Result PIN products</td><td><code>GET /result-pins/products</code></td><td>Free</td></tr>
                                         <tr><td>Result PIN purchase</td><td><code>POST /result-pins/purchase</code></td><td>Wallet</td></tr>
                                         <tr><td>History</td><td><code>GET /verifications</code>, <code>GET /verifications/{reference}</code></td><td>Free</td></tr>
@@ -322,6 +438,109 @@ const errorResponse = `{
                                 </v-card>
                             </section>
 
+                            <section v-show="activeSection === 'paygo'" class="mb-12">
+                                <h1 class="text-h4 font-weight-bold mb-4">PayGo Verification</h1>
+                                <p class="text-body-1 text-grey-darken-1 mb-6">
+                                    PayGo lets an end user pay for a verification through a public Paystack checkout. It does not use an API bearer token and does not debit your API wallet. Create and price the PayGo service in the customer dashboard, then use the generated public URLs.
+                                </p>
+
+                                <v-alert type="info" variant="tonal" class="mb-6">
+                                    PayGo payment references are valid for seven days from confirmed payment. Keep result references private because the public pull URL uses the reference as its access credential.
+                                </v-alert>
+
+                                <v-table class="mb-6">
+                                    <thead><tr><th>Flow</th><th>Endpoint</th><th>Purpose</th></tr></thead>
+                                    <tbody>
+                                        <tr><td>NIN checkout</td><td><code>GET|POST /paygo/{publicSlug}/initiate/{nin?}</code></td><td>Collect NIN details and initialize Paystack.</td></tr>
+                                        <tr><td>NIN result</td><td><code>GET|POST /api/paygo/{publicSlug}/verify/{nin?}</code></td><td>Use the paid NIN reference with its three-attempt allowance.</td></tr>
+                                        <tr><td>Result selector</td><td><code>GET /paygo/results/customer/{referralCode}</code></td><td>Let the payer choose an enabled examination board.</td></tr>
+                                        <tr><td>Board checkout</td><td><code>GET|POST /paygo/results/{publicSlug}</code></td><td>Collect board fields, initialize payment, and fetch the result.</td></tr>
+                                        <tr><td>Result pull</td><td><code>GET /api/paygo/results/{reference}</code></td><td>Return the stored verified result; limited to 30 requests per minute.</td></tr>
+                                    </tbody>
+                                </v-table>
+
+                                <v-card variant="outlined" class="mb-5">
+                                    <v-card-title>NIN PayGo Request</v-card-title>
+                                    <v-card-text>
+                                        <p class="text-body-2 mb-3">Request JSON explicitly to receive the Paystack checkout URL, then call the verify endpoint after payment. No bearer token is used.</p>
+                                        <pre class="bg-grey-darken-4 text-green-lighten-1 pa-4 rounded text-body-2" style="white-space: pre-wrap;">curl -X POST "{{ appBaseUrl }}/paygo/YOUR_PUBLIC_SLUG/initiate?response=json" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"nin":"12345678901","email":"payer@example.com"}'
+
+curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"reference":"PGO-REFERENCE","nin":"12345678901","consent":true}'</pre>
+                                    </v-card-text>
+                                </v-card>
+
+                                <h2 class="text-h6 font-weight-bold mb-3">Portal context</h2>
+                                <p class="text-body-2 text-grey-darken-1 mb-4">
+                                    Append <code>candidate_id</code>, <code>portal_ref</code>, <code>state</code>, and <code>sitting</code> to the selector or board URL. EaseVerifier returns this context on redirect and webhook callbacks. Supplying your own unique <code>reference</code> creates a reference package that can complete two successful result attempts during its seven-day validity window.
+                                </p>
+                                <p class="text-body-2 text-grey-darken-1 mb-4">
+                                    Standard result payments use the pull limit captured when payment starts, and each successful API pull consumes one. Reference packages count successful result attempts instead, so polling an already completed attempt does not consume another attempt.
+                                </p>
+
+                                <v-table class="mb-6">
+                                    <thead><tr><th>Callback mode</th><th>Behavior</th><th>Required setting</th></tr></thead>
+                                    <tbody>
+                                        <tr><td><code>redirect</code></td><td>A successful result returns to the success URL with status and portal context. Result errors remain on the EaseVerifier form so the payer can correct them.</td><td>Success and failure URLs</td></tr>
+                                        <tr><td><code>webhook</code></td><td>EaseVerifier posts the completed or failed result to your backend.</td><td>Customer webhook URL</td></tr>
+                                        <tr><td><code>hybrid</code></td><td>Sends the webhook and redirects the browser.</td><td>All callback URLs</td></tr>
+                                    </tbody>
+                                </v-table>
+
+                                <v-card variant="outlined" class="mb-5">
+                                    <v-card-title>Result Pull</v-card-title>
+                                    <v-card-text>
+                                        <pre class="bg-grey-darken-4 text-green-lighten-1 pa-4 rounded text-body-2" style="white-space: pre-wrap;">curl -H "Accept: application/json" \
+  "{{ appBaseUrl }}/api/paygo/results/APPLICATION-90210?portal_ref=APPLICATION-90210&amp;sitting=1"</pre>
+                                        <pre class="bg-grey-darken-4 text-blue-lighten-1 pa-4 rounded text-body-2 mt-4" style="white-space: pre-wrap;">{{ paygoPullResponse }}</pre>
+                                    </v-card-text>
+                                </v-card>
+
+                                <v-card variant="outlined">
+                                    <v-card-title>Webhook Payload</v-card-title>
+                                    <v-card-text>
+                                        <p class="text-body-2 mb-3">Webhook requests include <code>X-EaseVerifier-Event</code>, <code>X-EaseVerifier-Reference</code>, and <code>X-EaseVerifier-Signature</code>. A failed result uses the <code>paygo.result.failed</code> event with <code>result_status: failed</code>.</p>
+                                        <pre class="bg-grey-darken-4 text-blue-lighten-1 pa-4 rounded text-body-2" style="white-space: pre-wrap;">{{ paygoWebhookPayload }}</pre>
+                                    </v-card-text>
+                                </v-card>
+                            </section>
+
+                            <section v-show="activeSection === 'implementation'" class="mb-12">
+                                <h1 class="text-h4 font-weight-bold mb-4">Practical Implementation</h1>
+                                <p class="text-body-1 text-grey-darken-1 mb-6">
+                                    Keep bearer tokens and webhook secrets on your server. The direct API example below charges your wallet; the PayGo example sends the payer through checkout and retrieves the stored result afterward.
+                                </p>
+
+                                <PaygoResultSimulation class="mb-6" />
+
+                                <v-alert type="warning" variant="tonal" class="mb-6">
+                                    The result form endpoint and fetch endpoint are billed independently in live mode. Cache form field metadata on your server and refresh it only when needed.
+                                </v-alert>
+
+                                <v-card variant="outlined" class="mb-5">
+                                    <v-card-title>Direct WAEC API - Server-side JavaScript</v-card-title>
+                                    <v-card-text class="bg-grey-darken-4"><pre class="text-green-lighten-1 text-body-2" style="white-space: pre-wrap;">{{ resultImplementation }}</pre></v-card-text>
+                                </v-card>
+
+                                <v-card variant="outlined" class="mb-5">
+                                    <v-card-title>School Portal PayGo Flow</v-card-title>
+                                    <v-card-text class="bg-grey-darken-4"><pre class="text-green-lighten-1 text-body-2" style="white-space: pre-wrap;">{{ paygoPortalImplementation }}</pre></v-card-text>
+                                </v-card>
+
+                                <v-card variant="outlined">
+                                    <v-card-title>Verify the PayGo Webhook</v-card-title>
+                                    <v-card-text>
+                                        <p class="text-body-2 mb-3">Compute HMAC-SHA256 with the PayGo webhook secret and compare it with <code>X-EaseVerifier-Signature</code> using a timing-safe comparison. Also verify your signed <code>state</code> before updating a candidate record.</p>
+                                        <pre class="bg-grey-darken-4 text-green-lighten-1 pa-4 rounded text-body-2" style="white-space: pre-wrap;">{{ webhookVerification }}</pre>
+                                    </v-card-text>
+                                </v-card>
+                            </section>
+
                             <section v-show="activeSection === 'result-pins'" class="mb-12">
                                 <h1 class="text-h4 font-weight-bold mb-4">Result PINs</h1>
                                 <p class="text-body-1 text-grey-darken-1 mb-6">
@@ -398,12 +617,12 @@ const errorResponse = `{
                                 <v-table>
                                     <thead><tr><th>HTTP</th><th>Error Code</th><th>Meaning</th></tr></thead>
                                     <tbody>
-                                        <tr><td><code>400</code></td><td><code>SERVICE_UNAVAILABLE</code>, <code>PIN_PURCHASE_FAILED</code>, <code>UNKNOWN_ERROR</code></td><td>Request was understood but could not be completed.</td></tr>
+                                        <tr><td><code>400</code></td><td><code>SERVICE_UNAVAILABLE</code>, <code>PIN_PURCHASE_FAILED</code>, <code>RESULT_REFERENCE_INVALID</code>, <code>UNKNOWN_ERROR</code></td><td>Request was understood but could not be completed.</td></tr>
                                         <tr><td><code>401</code></td><td><code>UNAUTHORIZED</code></td><td>Missing, invalid, inactive, or IP-blocked API key.</td></tr>
                                         <tr><td><code>402</code></td><td><code>INSUFFICIENT_FUNDS</code></td><td>Wallet balance is too low.</td></tr>
                                         <tr><td><code>404</code></td><td><code>NOT_FOUND</code>, <code>PRODUCT_UNAVAILABLE</code>, <code>UNSUPPORTED_RESULT_BOARD</code></td><td>Requested record, product, or board was not found.</td></tr>
                                         <tr><td><code>422</code></td><td><code>VALIDATION_ERROR</code>, <code>TEST_NIN_REQUIRED</code></td><td>Required fields are missing or invalid.</td></tr>
-                                        <tr><td><code>429</code></td><td><code>RATE_LIMIT_EXCEEDED</code></td><td>API key exceeded its per-minute limit.</td></tr>
+                                        <tr><td><code>429</code></td><td><code>RATE_LIMIT_EXCEEDED</code>, <code>PULL_LIMIT_EXCEEDED</code></td><td>The API key or PayGo reference exceeded its configured limit.</td></tr>
                                     </tbody>
                                 </v-table>
                             </section>

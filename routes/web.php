@@ -24,6 +24,7 @@ use App\Http\Controllers\Customer\ResultPinController as CustomerResultPinContro
 use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
 use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
 use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
+use App\Http\Controllers\PaystackDemoController;
 use App\Http\Controllers\PublicPaygoVerificationController;
 use App\Http\Controllers\PublicResultPinController;
 use App\Http\Controllers\SitemapController;
@@ -89,6 +90,10 @@ Route::post('/result-pins/login', [PublicResultPinController::class, 'loginWithE
 Route::get('/result-pins/my-pins', [PublicResultPinController::class, 'orders'])->name('public.result-pins.orders');
 Route::get('/result-pins/orders/{order:reference}', [PublicResultPinController::class, 'show'])->name('public.result-pins.show');
 
+Route::post('/paygo/demo/payment/initialize', [PaystackDemoController::class, 'initialize'])->middleware('throttle:5,1')->name('paygo.demo.initialize');
+Route::post('/paygo/demo/payment/verify', [PaystackDemoController::class, 'verify'])->middleware('throttle:30,1')->name('paygo.demo.verify');
+Route::get('/paygo/demo/payment/frame/{accessCode}', [PaystackDemoController::class, 'frame'])->middleware('signed')->name('paygo.demo.frame');
+Route::get('/paygo/demo/payment/callback', [PaystackDemoController::class, 'callback'])->name('paygo.demo.callback');
 Route::match(['get', 'post'], '/paygo/{publicSlug}/initiate/{nin?}', [PublicPaygoVerificationController::class, 'initiate'])->name('paygo.initiate');
 Route::get('/paygo/callback', [PublicPaygoVerificationController::class, 'callback'])->name('paygo.callback');
 Route::get('/paygo/results/customer/{referralCode}', [PublicPaygoVerificationController::class, 'resultCustomer'])->name('paygo.results.customer');
