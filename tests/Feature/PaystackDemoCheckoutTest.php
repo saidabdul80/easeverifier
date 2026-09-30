@@ -30,7 +30,8 @@ it('initializes a fixed Paystack test checkout', function () {
     $this->get($initialize->json('frame_url'))
         ->assertOk()
         ->assertSee('https://js.paystack.co/v2/inline.js', false)
-        ->assertSee('checkout.resumeTransaction');
+        ->assertSee('checkout.resumeTransaction')
+        ->assertSee('easeverifier-paystack-demo-advance');
 
     Http::assertSent(fn (Request $request) => $request->url() === 'https://api.paystack.co/transaction/initialize'
         && $request['amount'] === 150000

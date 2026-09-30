@@ -61,17 +61,20 @@ const activeStage = ref(0);
 const simulationRoot = ref<HTMLElement | null>(null);
 const browserUrl = ref(stageUrls[0]);
 const isPlaying = ref(false);
+const isManuallyPaused = ref(false);
 const isFullscreen = ref(false);
 const fullscreenSupported = ref(false);
 const checkoutLoading = ref(false);
 const checkoutError = ref('');
 const checkoutUrl = ref('');
 const checkoutFrameUrl = ref('');
+const paymentConfirmed = ref(false);
 const paymentReference = ref('');
 const paymentVerificationToken = ref('');
 let stageTimer: ReturnType<typeof setTimeout> | null = null;
 let paymentTimer: ReturnType<typeof setTimeout> | null = null;
 let verificationAttempts = 0;
+let paymentVerificationInFlight = false;
 
 const journeyStep = computed(() => {
     if (activeStage.value === 0) return 0;
@@ -118,13 +121,19 @@ const scheduleNextStage = () => {
 
 const play = () => {
     if (activeStage.value >= stages.length - 1) activeStage.value = 0;
+    isManuallyPaused.value = false;
     isPlaying.value = true;
     scheduleNextStage();
 };
 
-const pause = () => {
+const stopPlayback = () => {
     isPlaying.value = false;
     clearStageTimer();
+};
+
+const pause = () => {
+    stopPlayback();
+    isManuallyPaused.value = true;
 };
 
 const resetPayment = () => {
@@ -133,13 +142,15 @@ const resetPayment = () => {
     checkoutError.value = '';
     checkoutUrl.value = '';
     checkoutFrameUrl.value = '';
+    paymentConfirmed.value = false;
     paymentReference.value = '';
     paymentVerificationToken.value = '';
     verificationAttempts = 0;
 };
 
 const restart = () => {
-    pause();
+    stopPlayback();
+    isManuallyPaused.value = false;
     resetPayment();
     activeStage.value = 0;
 };
@@ -154,10 +165,32 @@ const selectStage = (index: number) => {
 };
 
 const continueFlow = (nextStage: number) => {
-    pause();
+    stopPlayback();
     activeStage.value = nextStage;
-    isPlaying.value = true;
-    scheduleNextStage();
+
+    if (!isManuallyPaused.value) {
+        isPlaying.value = true;
+        scheduleNextStage();
+    }
+};
+
+const advancePausedFlow = (event: MouseEvent) => {
+    if (!isManuallyPaused.value || activeStage.value >= stages.length - 1) return;
+
+    const target = event.target as HTMLElement;
+
+    if (target.closest('button, a, input, select, textarea, label, iframe')) return;
+
+    if (activeStage.value === 4) {
+        if (paymentConfirmed.value) advancePaymentDemo();
+        return;
+    }
+
+    activeStage.value += 1;
+
+    if (activeStage.value === 4 && !checkoutUrl.value) {
+        void initializePaystackCheckout();
+    }
 };
 
 const csrfToken = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '';
@@ -183,7 +216,12 @@ const postJson = async (url: string, body: Record<string, string> = {}) => {
 };
 
 const verifyPayment = async () => {
-    if (!paymentReference.value) return;
+    if (activeStage.value !== 4 || !paymentReference.value || paymentVerificationInFlight) return;
+
+    clearPaymentTimer();
+    paymentVerificationInFlight = true;
+    verificationAttempts += 1;
+    let shouldRetry = false;
 
     try {
         const payment = await postJson('/paygo/demo/payment/verify', {
@@ -191,30 +229,43 @@ const verifyPayment = async () => {
             verification_token: paymentVerificationToken.value,
         });
 
+        if (activeStage.value !== 4) return;
+
         if (payment.complete) {
             clearPaymentTimer();
+            paymentConfirmed.value = true;
+
+            if (isManuallyPaused.value) return;
+
             activeStage.value = 5;
             isPlaying.value = true;
             scheduleNextStage();
             return;
         }
 
-        verificationAttempts += 1;
-        if (verificationAttempts < 25 && payment.status !== 'abandoned') {
-            paymentTimer = setTimeout(verifyPayment, 4000);
-        }
+        shouldRetry = true;
     } catch (error) {
         checkoutError.value = error instanceof Error ? error.message : 'Unable to verify the test payment.';
+        shouldRetry = true;
+    } finally {
+        paymentVerificationInFlight = false;
+
+        if (shouldRetry && activeStage.value === 4 && verificationAttempts < 150) {
+            paymentTimer = setTimeout(verifyPayment, 4000);
+        }
     }
 };
 
 const initializePaystackCheckout = async () => {
-    pause();
+    stopPlayback();
     resetPayment();
     checkoutLoading.value = true;
 
     try {
         const payment = await postJson('/paygo/demo/payment/initialize');
+
+        if (activeStage.value !== 4) return;
+
         paymentReference.value = payment.reference;
         paymentVerificationToken.value = payment.verification_token;
         checkoutUrl.value = payment.checkout_url;
@@ -229,13 +280,33 @@ const initializePaystackCheckout = async () => {
 };
 
 const goToPayment = () => {
-    pause();
+    stopPlayback();
     activeStage.value = 4;
     void initializePaystackCheckout();
 };
 
+const advancePaymentDemo = () => {
+    if (activeStage.value !== 4) return;
+
+    clearPaymentTimer();
+    checkoutLoading.value = false;
+    activeStage.value = 5;
+
+    if (!isManuallyPaused.value) {
+        isPlaying.value = true;
+        scheduleNextStage();
+    }
+};
+
 const handlePaymentMessage = (event: MessageEvent) => {
-    if (event.origin !== window.location.origin || event.data !== 'easeverifier-paystack-demo-returned') return;
+    if (event.origin !== window.location.origin) return;
+
+    if (event.data === 'easeverifier-paystack-demo-advance') {
+        advancePaymentDemo();
+        return;
+    }
+
+    if (event.data !== 'easeverifier-paystack-demo-returned') return;
 
     clearPaymentTimer();
     void verifyPayment();
@@ -310,27 +381,41 @@ onBeforeUnmount(() => {
         </button>
     </div>
     </section>
-    <section ref="simulationRoot" class="paygo-simulation" :class="{ 'is-playing': isPlaying }" aria-label="Interactive PayGo result verification simulation">
+    <section ref="simulationRoot" class="paygo-simulation" :class="{ 'is-playing': isPlaying, 'is-paused': isManuallyPaused }" aria-label="Interactive PayGo result verification simulation">
 
-        <div class="simulation-viewport">
-            <div class="browser-toolbar">
+        <div class="simulation-viewport" @click="advancePausedFlow">
+            <div class="browser-toolbar" @dblclick.self="advancePaymentDemo">
                 <div class="browser-lights" aria-hidden="true"><span /><span /><span /></div>
                 <label class="browser-address">
                     <LockKeyhole :size="13" />
                     <input v-model="browserUrl" type="text" aria-label="Simulation URL" spellcheck="false" />
                 </label>
-                <button
-                    v-if="fullscreenSupported"
-                    type="button"
-                    class="browser-fullscreen"
-                    :title="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
-                    :aria-label="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
-                    :aria-pressed="isFullscreen"
-                    @click="toggleFullscreen"
-                >
-                    <Minimize2 v-if="isFullscreen" :size="16" />
-                    <Maximize2 v-else :size="16" />
-                </button>
+                <div class="browser-actions">
+                    <button
+                        v-if="isFullscreen"
+                        type="button"
+                        class="browser-control"
+                        :title="activeStage === 4 ? 'Check payment status' : isPlaying ? 'Pause simulation' : 'Resume simulation'"
+                        :aria-label="activeStage === 4 ? 'Check payment status' : isPlaying ? 'Pause simulation' : 'Resume simulation'"
+                        @click="activeStage === 4 ? paymentConfirmed && isManuallyPaused ? advancePaymentDemo() : verifyPayment() : isPlaying ? pause() : play()"
+                    >
+                        <CheckCircle2 v-if="activeStage === 4" :size="16" />
+                        <Pause v-else-if="isPlaying" :size="16" />
+                        <Play v-else :size="16" fill="currentColor" />
+                    </button>
+                    <button
+                        v-if="fullscreenSupported"
+                        type="button"
+                        class="browser-control"
+                        :title="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
+                        :aria-label="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
+                        :aria-pressed="isFullscreen"
+                        @click="toggleFullscreen"
+                    >
+                        <Minimize2 v-if="isFullscreen" :size="16" />
+                        <Maximize2 v-else :size="16" />
+                    </button>
+                </div>
             </div>
             <Transition name="stage-change" mode="out-in">
                 <div v-if="activeStage === 0" key="portal" class="screen school-screen">
@@ -412,8 +497,8 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div v-else-if="activeStage === 4" key="payment" class="screen checkout-screen">
-                    <div v-if="checkoutLoading" class="checkout-frame-state">
+                <div v-else-if="activeStage === 4" key="payment" class="screen checkout-screen" @dblclick.self="advancePaymentDemo">
+                    <div v-if="checkoutLoading" class="checkout-frame-state" @dblclick="advancePaymentDemo">
                         <LoaderCircle :size="30" class="spin" />
                         <strong>Opening Paystack test checkout</strong>
                         <span>Initializing the NGN 1,500 transaction...</span>
@@ -425,7 +510,7 @@ onBeforeUnmount(() => {
                         title="Paystack test checkout"
                         allow="payment *"
                     />
-                    <div v-else class="checkout-frame-state checkout-failed">
+                    <div v-else class="checkout-frame-state checkout-failed" @dblclick="advancePaymentDemo">
                         <AlertCircle :size="30" />
                         <strong>Unable to load Paystack checkout</strong>
                         <span>{{ checkoutError }}</span>
@@ -502,15 +587,16 @@ button:focus-visible,a:focus-visible { outline:3px solid rgba(35,100,170,.28); o
 .simulation-viewport { min-height:668px; }
 .screen { min-height:620px; }
 .simulation-viewport { background:#edf2ef; }
-.browser-toolbar { display:grid; grid-template-columns:58px minmax(0,1fr) 28px; align-items:center; gap:12px; min-height:48px; padding:0 14px; border-bottom:1px solid #d8dfe3; background:#f7f9fa; }
+.browser-toolbar { display:grid; grid-template-columns:58px minmax(0,1fr) auto; align-items:center; gap:12px; min-height:48px; padding:0 14px; border-bottom:1px solid #d8dfe3; background:#f7f9fa; }
 .browser-lights { display:flex; gap:6px; }
 .browser-lights span { width:9px; height:9px; border-radius:50%; background:#ff665c; }
 .browser-lights span:nth-child(2) { background:#ffbd44; }
 .browser-lights span:nth-child(3) { background:#00ca4e; }
 .browser-address { display:flex; min-width:0; height:30px; align-items:center; gap:7px; padding:0 10px; border:1px solid #d8e0e4; border-radius:6px; background:#fff; color:#5f6d74; }
 .browser-address input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:#35434a; font:inherit; font-size:11px; letter-spacing:0; }
-.browser-fullscreen { display:grid; width:28px; height:28px; place-items:center; padding:0; border:0; border-radius:4px; background:transparent; color:#68757b; cursor:pointer; }
-.browser-fullscreen:hover { background:#e8eef1; color:#263740; }
+.browser-actions { display:flex; align-items:center; justify-content:flex-end; gap:4px; }
+.browser-control { display:grid; width:28px; height:28px; place-items:center; padding:0; border:0; border-radius:4px; background:transparent; color:#68757b; cursor:pointer; }
+.browser-control:hover { background:#e8eef1; color:#263740; }
 .paygo-simulation:fullscreen { width:100vw; height:100vh; border:0; border-radius:0; background:#edf2ef; box-shadow:none; }
 .paygo-simulation:fullscreen .simulation-viewport { display:flex; height:100vh; min-height:0; flex-direction:column; }
 .paygo-simulation:fullscreen .browser-toolbar { flex:0 0 48px; }
@@ -623,6 +709,9 @@ button:focus-visible,a:focus-visible { outline:3px solid rgba(35,100,170,.28); o
 .pass { color:#16824d; font-weight:700; }
 .spin { animation:spin 1s linear infinite; }
 .is-playing .pulse-action { animation:button-pulse 1.4s ease-in-out infinite; }
+.is-paused .simulation-viewport { cursor:pointer; }
+.is-paused input { cursor:text; }
+.is-paused button,.is-paused a { cursor:pointer; }
 .stage-change-enter-active,.stage-change-leave-active { transition:opacity 220ms ease,transform 220ms ease; }
 .stage-change-enter-from { opacity:0; transform:translateX(10px); }
 .stage-change-leave-to { opacity:0; transform:translateX(-10px); }
@@ -637,7 +726,7 @@ button:focus-visible,a:focus-visible { outline:3px solid rgba(35,100,170,.28); o
     .progress-track { display:none; }
     .simulation-viewport { min-height:738px; }
     .screen { min-height:690px; }
-    .browser-toolbar { grid-template-columns:42px minmax(0,1fr) 28px; gap:7px; padding:0 10px; }
+    .browser-toolbar { grid-template-columns:42px minmax(0,1fr) auto; gap:7px; padding:0 10px; }
     .browser-address input { font-size:10px; }
     .screen-content { padding:24px 16px; }
     .table-head { display:none; }

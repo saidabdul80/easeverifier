@@ -14,6 +14,10 @@
     <body>
         <p id="checkout-status">Opening Paystack test checkout...</p>
         <script>
+            document.addEventListener('dblclick', function () {
+                window.parent.postMessage('easeverifier-paystack-demo-advance', window.location.origin);
+            });
+
             window.addEventListener('load', function () {
                 if (typeof window.PaystackPop !== 'function') {
                     document.getElementById('checkout-status').textContent = 'Unable to load Paystack checkout.';
