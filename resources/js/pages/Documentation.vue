@@ -59,7 +59,7 @@ const sections = [
     { id: 'identity', title: 'Identity Verify', icon: 'mdi-card-account-details' },
     { id: 'result-verification', title: 'Result Verify', icon: 'mdi-certificate' },
     { id: 'paygo', title: 'PayGo', icon: 'mdi-credit-card-outline' },
-    { id: 'implementation', title: 'Implementation', icon: 'mdi-code-braces' },
+    { id: 'implementation', title: 'Result Verify Demo (Paygo)', icon: 'mdi-code-braces' },
     { id: 'result-pins', title: 'Result PINs', icon: 'mdi-card-account-details-star-outline' },
     { id: 'wallet-history', title: 'Wallet & History', icon: 'mdi-wallet' },
     { id: 'errors', title: 'Errors', icon: 'mdi-alert-circle' },
