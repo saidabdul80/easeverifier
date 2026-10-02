@@ -8,6 +8,7 @@ const activeSection = ref('overview');
 const copied = ref(false);
 const appBaseUrl = 'https://verify.ashlabtech.ng';
 const baseUrl = 'https://verify.ashlabtech.ng/api/v1';
+const mcpUrl = 'https://verify.ashlabtech.ng/api/mcp';
 const testNin = '11111111111';
 
 const identityServices = [
@@ -62,8 +63,19 @@ const sections = [
     { id: 'implementation', title: 'Result Verify Demo (Paygo)', icon: 'mdi-code-braces' },
     { id: 'result-pins', title: 'Result PINs', icon: 'mdi-card-account-details-star-outline' },
     { id: 'wallet-history', title: 'Wallet & History', icon: 'mdi-wallet' },
+    { id: 'mcp', title: 'MCP Server', icon: 'mdi-robot-outline' },
     { id: 'errors', title: 'Errors', icon: 'mdi-alert-circle' },
 ];
+
+const mcpConfig = `{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "easeverifier": {
+      "type": "streamable-http",
+      "url": "${mcpUrl}"
+    }
+  }
+}`;
 
 const resultBoards = [
     {
@@ -276,8 +288,8 @@ const paygoPullResponse = `{
 
 <template>
     <Head title="API Documentation - EaseVerifier">
-        <meta name="description" content="EaseVerifier API documentation for identity verification, result verification, PayGo integration, result PIN purchase, wallet balance, services, and verification history." />
-        <meta name="keywords" content="EaseVerifier API, NIN verification API, result verification API, PayGo verification, WAEC API, NECO API, NABTEB API, NBAIS API, result PIN API" />
+        <meta name="description" content="EaseVerifier API and MCP documentation for identity verification, result verification, PayGo integration, result PIN purchase, wallet balance, services, and verification history." />
+        <meta name="keywords" content="EaseVerifier API, EaseVerifier MCP, NIN verification API, result verification API, PayGo verification, WAEC API, NECO API, NABTEB API, NBAIS API, result PIN API" />
         <meta property="og:title" content="API Documentation - EaseVerifier" />
         <meta property="og:description" content="Complete integration guide for EaseVerifier API services." />
         <meta property="og:type" content="article" />
@@ -586,7 +598,7 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
                                     <thead><tr><th>Endpoint</th><th>Description</th><th>Query</th></tr></thead>
                                     <tbody>
                                         <tr><td><code>GET /wallet/balance</code></td><td>Current wallet or branch wallet balance.</td><td>None</td></tr>
-                                        <tr><td><code>GET /services</code></td><td>Active verification services.</td><td>None</td></tr>
+                                        <tr><td><code>GET /services</code></td><td>Active services with customer pricing and currency.</td><td>None</td></tr>
                                         <tr><td><code>GET /verifications</code></td><td>Paginated verification history.</td><td><code>service</code>, <code>status</code>, <code>per_page</code></td></tr>
                                         <tr><td><code>GET /verifications/{reference}</code></td><td>Single verification request by reference.</td><td>None</td></tr>
                                     </tbody>
@@ -605,6 +617,45 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
 }</pre>
                                     </v-card-text>
                                 </v-card>
+                            </section>
+
+                            <section v-show="activeSection === 'mcp'" class="mb-12">
+                                <h1 class="text-h4 font-weight-bold mb-4">MCP Server</h1>
+                                <p class="text-body-1 text-grey-darken-1 mb-6">
+                                    Connect an MCP client to the Streamable HTTP endpoint to use every authenticated EaseVerifier API service as a focused AI tool.
+                                </p>
+
+                                <v-table class="mb-6">
+                                    <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+                                    <tbody>
+                                        <tr><td>Endpoint</td><td><code>{{ mcpUrl }}</code></td></tr>
+                                        <tr><td>Transport</td><td><code>streamable-http</code></td></tr>
+                                        <tr><td>Authentication</td><td><code>Authorization: Bearer YOUR_BEARER_TOKEN</code></td></tr>
+                                        <tr><td>Protocol</td><td>MCP 2025-06-18 and compatible earlier versions</td></tr>
+                                    </tbody>
+                                </v-table>
+
+                                <v-card variant="outlined" class="mb-6">
+                                    <v-card-title>Agent Plugins configuration</v-card-title>
+                                    <v-card-text class="bg-grey-darken-4">
+                                        <pre class="text-green-lighten-1 text-body-2" style="white-space: pre-wrap;">{{ mcpConfig }}</pre>
+                                    </v-card-text>
+                                </v-card>
+
+                                <v-table class="mb-6">
+                                    <thead><tr><th>Tools</th><th>Behavior</th></tr></thead>
+                                    <tbody>
+                                        <tr><td><code>list_services</code>, <code>get_wallet_balance</code></td><td>Discover services, customer prices, currency, and wallet balance.</td></tr>
+                                        <tr><td><code>list_verifications</code>, <code>get_verification</code></td><td>Read verification history scoped to the connected customer or branch.</td></tr>
+                                        <tr><td><code>verify_identity</code></td><td>Run any active identity or business verification service.</td></tr>
+                                        <tr><td><code>get_result_requirements</code>, <code>verify_result</code>, <code>list_nbais_schools</code></td><td>Verify WAEC, NECO, NBAIS, and NABTEB results.</td></tr>
+                                        <tr><td><code>list_result_pin_products</code>, <code>purchase_result_pins</code></td><td>List current prices and purchase result checker PINs.</td></tr>
+                                    </tbody>
+                                </v-table>
+
+                                <v-alert type="warning" variant="tonal">
+                                    Verification, result form, result fetch, and PIN purchase tools may charge the wallet. MCP clients should request explicit user confirmation immediately before invoking them and must not retry an ambiguous chargeable call.
+                                </v-alert>
                             </section>
 
                             <section v-show="activeSection === 'errors'" class="mb-12">

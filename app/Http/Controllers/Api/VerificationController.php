@@ -62,7 +62,7 @@ class VerificationController extends Controller
 
         // Use caching for service lookup (faster)
         $service = VerificationService::where('slug', $serviceSlug)->first();
-        if (!$service || !$service->is_active) {
+        if (! $service || ! $service->is_active) {
             return response()->json([
                 'success' => false,
                 'error' => 'Service not available',
@@ -85,7 +85,7 @@ class VerificationController extends Controller
         // Check for existing successful verification for the same user, service, and search parameter
         $existingVerification = VerificationRequest::where('user_id', $user->id)
             ->when($branch, fn ($query) => $query->where('branch_id', $branch->id))
-            ->when(!$branch, fn ($query) => $query->whereNull('branch_id'))
+            ->when(! $branch, fn ($query) => $query->whereNull('branch_id'))
             ->where('verification_service_id', $service->id)
             ->where('search_parameter', $searchParameter)
             ->where('status', 'completed')
@@ -95,11 +95,12 @@ class VerificationController extends Controller
             ->first();
 
         if ($existingVerification?->canReuseResponseData()) {
-            Log::info('Returning cached verification result',[
+            Log::info('Returning cached verification result', [
                 'reference' => $existingVerification->reference,
             ]);
 
             $data = $existingVerification->response_data;
+
             return response()->json([
                 'success' => true,
                 'status' => 200,
@@ -124,12 +125,13 @@ class VerificationController extends Controller
 
         if ($result->isSuccessful()) {
             $data = $result->getData();
+
             return response()->json([
                 'success' => true,
-                'status'=>200,
+                'status' => 200,
                 'data' => $data,
                 'response_time' => $result->responseTime,
-                'message'=> $this->successMessage($service),
+                'message' => $this->successMessage($service),
                 'sandbox' => $result->sandbox,
             ]);
         }
@@ -208,8 +210,8 @@ class VerificationController extends Controller
             ->with('verificationService:id,name,slug')
             ->when($request->get('branch'), fn ($query, $branch) => $query->where('branch_id', $branch->id))
             ->when(! $request->get('branch'), fn ($query) => $query->whereNull('branch_id'))
-            ->when($request->service, fn($q, $s) => $q->whereHas('verificationService', fn($sq) => $sq->where('slug', $s)))
-            ->when($request->status, fn($q, $status) => $q->where('status', $status))
+            ->when($request->service, fn ($q, $s) => $q->whereHas('verificationService', fn ($sq) => $sq->where('slug', $s)))
+            ->when($request->status, fn ($q, $status) => $q->where('status', $status))
             ->latest()
             ->paginate($request->per_page ?? 20);
 
@@ -231,7 +233,7 @@ class VerificationController extends Controller
             ->with('verificationService:id,name,slug')
             ->first();
 
-        if (!$verification) {
+        if (! $verification) {
             return response()->json([
                 'success' => false,
                 'error' => 'Verification not found',
@@ -248,11 +250,23 @@ class VerificationController extends Controller
     /**
      * Get available services
      */
-    public function services(): JsonResponse
+    public function services(Request $request): JsonResponse
     {
+        $user = $request->user();
+        $wallet = $request->get('branch')?->wallet ?? $user->wallet;
+
         $services = VerificationService::active()
             ->ordered()
-            ->get(['id', 'name', 'slug', 'description', 'icon']);
+            ->get(['id', 'name', 'slug', 'description', 'icon', 'default_price'])
+            ->map(fn (VerificationService $service): array => [
+                'id' => $service->id,
+                'name' => $service->name,
+                'slug' => $service->slug,
+                'description' => $service->description,
+                'icon' => $service->icon,
+                'price' => $user->getPriceForService($service),
+                'currency' => $wallet?->currency ?? 'NGN',
+            ]);
 
         return response()->json([
             'success' => true,

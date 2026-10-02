@@ -74,7 +74,7 @@ it('rejects non-test nin values for test api keys', function () {
     $apiKey = ApiKey::generate($user->id, 'Sandbox', 'test');
 
     $response = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/verify/nin', [
         'nin' => '12345678901',
         'consent' => true,
@@ -95,7 +95,7 @@ it('allows the dedicated test nin for test api keys', function () {
     $apiKey = ApiKey::generate($user->id, 'Sandbox', 'test');
 
     $response = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/verify/nin', [
         'nin' => '11111111111',
         'consent' => true,
@@ -116,7 +116,7 @@ it('accepts service-specific identity request fields', function (string $endpoin
     $apiKey = ApiKey::generate($user->id, 'Sandbox', 'test');
 
     $response = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson($endpoint, [
         $field => $value,
         'consent' => true,
@@ -145,7 +145,7 @@ it('does not require wallet balance for test api keys without test providers', f
     $apiKey = ApiKey::generate($user->id, 'Sandbox', 'test');
 
     $response = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/verify/nin', [
         'nin' => '11111111111',
         'consent' => true,
@@ -166,7 +166,7 @@ it('does not apply the test nin restriction to live api keys', function () {
     $apiKey = ApiKey::generate($user->id, 'Production', 'live');
 
     $response = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/verify/nin', [
         'nin' => '12345678901',
         'consent' => true,
@@ -211,7 +211,7 @@ it('does not reuse cached verification data after provider mapping changes', fun
         ], 200);
 
     $firstResponse = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/verify/nin', [
         'nin' => '12345678901',
         'consent' => true,
@@ -239,7 +239,7 @@ it('does not reuse cached verification data after provider mapping changes', fun
     Carbon::setTestNow();
 
     $secondResponse = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/verify/nin', [
         'nin' => '12345678901',
         'consent' => true,
@@ -290,7 +290,7 @@ it('falls back to raw provider response when response mapping is empty', functio
     ]);
 
     $response = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/verify/nin', [
         'nin' => '12345678901',
         'consent' => true,
@@ -339,7 +339,7 @@ it('falls back to raw provider response when response mapping resolves only null
     ]);
 
     $response = $this->withHeaders([
-        'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
     ])->postJson('/api/v1/verify/nin', [
         'nin' => '98765432109',
         'consent' => true,
@@ -355,4 +355,24 @@ it('falls back to raw provider response when response mapping resolves only null
     expect($verification)->not->toBeNull()
         ->and($verification->status)->toBe('completed')
         ->and($verification->response_data)->toBe($rawResponse);
+});
+
+it('returns customer pricing when listing services', function () {
+    $user = createApiUser();
+    $service = createNinService();
+    $user->customPricing()->create([
+        'verification_service_id' => $service->id,
+        'price' => 75,
+        'is_active' => true,
+    ]);
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+
+    $this->withHeaders([
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
+    ])->getJson('/api/v1/services')
+        ->assertOk()
+        ->assertJsonPath('data.0.slug', 'nin')
+        ->assertJsonPath('data.0.price', 75)
+        ->assertJsonPath('data.0.currency', 'NGN');
 });

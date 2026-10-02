@@ -9,7 +9,18 @@ defineProps<{ user: { name: string; email: string } }>();
 const activeTab = ref('overview');
 const appBaseUrl = 'https://verify.ashlabtech.ng';
 const baseUrl = 'https://verify.ashlabtech.ng/api/v1';
+const mcpUrl = 'https://verify.ashlabtech.ng/api/mcp';
 const testNin = '11111111111';
+
+const mcpConfig = `{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "easeverifier": {
+      "type": "streamable-http",
+      "url": "${mcpUrl}"
+    }
+  }
+}`;
 
 const identityServices = [
     { name: 'NIN Verification', endpoint: 'POST /verify/nin', field: 'nin', searchValue: 'NIN' },
@@ -262,7 +273,7 @@ const paygoPullResponse = `{
         <div class="mb-6">
             <v-btn variant="text" prepend-icon="mdi-arrow-left" href="/customer/api" class="mb-2">Back to API Keys</v-btn>
             <h1 class="text-h4 font-weight-bold mb-1">API Documentation</h1>
-            <p class="text-body-2 text-grey">Integrate identity verification, result checks, payer-funded PayGo, result PIN purchases, wallet balance, and history.</p>
+            <p class="text-body-2 text-grey">Integrate identity verification, result checks, payer-funded PayGo, result PIN purchases, wallet balance, history, and AI clients through MCP.</p>
         </div>
 
         <v-tabs v-model="activeTab" color="primary" show-arrows class="mb-6">
@@ -274,6 +285,7 @@ const paygoPullResponse = `{
             <v-tab value="implementation">Implementation</v-tab>
             <v-tab value="pins">Result PINs</v-tab>
             <v-tab value="wallet">Wallet</v-tab>
+            <v-tab value="mcp">MCP</v-tab>
             <v-tab value="examples">Examples</v-tab>
             <v-tab value="errors">Errors</v-tab>
         </v-tabs>
@@ -512,11 +524,32 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
                             </thead>
                             <tbody>
                                 <tr><td><code>GET /wallet/balance</code></td><td>Current wallet or branch wallet balance.</td><td>None</td></tr>
-                                <tr><td><code>GET /services</code></td><td>Active verification services.</td><td>None</td></tr>
+                                <tr><td><code>GET /services</code></td><td>Active services with customer pricing and currency.</td><td>None</td></tr>
                                 <tr><td><code>GET /verifications</code></td><td>Paginated verification history.</td><td><code>service</code>, <code>status</code>, <code>per_page</code></td></tr>
                                 <tr><td><code>GET /verifications/{reference}</code></td><td>Single verification request by reference.</td><td>None</td></tr>
                             </tbody>
                         </v-table>
+                    </v-card-text>
+                </v-card>
+            </v-window-item>
+
+            <v-window-item value="mcp">
+                <v-card>
+                    <v-card-text class="pa-6">
+                        <h2 class="text-h5 font-weight-bold mb-4">MCP Server</h2>
+                        <p class="text-body-1 mb-4">
+                            Use the same customer API token with the EaseVerifier Streamable HTTP MCP endpoint. The server exposes identity verification, all supported result boards, PIN purchases, wallet balance, services, and verification history.
+                        </p>
+
+                        <v-alert type="info" variant="tonal" class="mb-4">
+                            <strong>Endpoint:</strong> <code>{{ mcpUrl }}</code>
+                        </v-alert>
+
+                        <pre class="bg-grey-darken-4 text-green-lighten-1 pa-4 rounded overflow-x-auto mb-4">{{ mcpConfig }}</pre>
+
+                        <v-alert type="warning" variant="tonal">
+                            Keep the API token outside plugin ZIP files and source control. Chargeable tools require explicit confirmation and should never be retried automatically after a timeout.
+                        </v-alert>
                     </v-card-text>
                 </v-card>
             </v-window-item>
