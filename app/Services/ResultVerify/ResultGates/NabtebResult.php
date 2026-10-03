@@ -47,7 +47,7 @@ class NabtebResult implements ResultInterface
                 'label' => 'Examination Year',
                 'type' => 'select',
                 'required' => true,
-                'options' => $this->yearOptions(1997, (int) config('services.nabteb.latest_year', 2025)),
+                'options' => $this->yearOptions(1997, (int) config('services.nabteb.latest_year', 2026)),
             ],
             [
                 'name' => 'serial',
