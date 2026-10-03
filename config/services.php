@@ -44,7 +44,7 @@ return [
     ],
 
     'nabteb' => [
-        'latest_year' => env('NABTEB_LATEST_YEAR', 2025),
+        'latest_year' => env('NABTEB_LATEST_YEAR', 2026),
         'connect_timeout' => env('NABTEB_CONNECT_TIMEOUT', 5),
         'timeout' => env('NABTEB_TIMEOUT', 12),
     ],
@@ -66,6 +66,8 @@ return [
         'session_timeout' => env('WAEC_SESSION_TIMEOUT', 20),
         'encrypt_timeout' => env('WAEC_ENCRYPT_TIMEOUT', 20),
         'display_timeout' => env('WAEC_DISPLAY_TIMEOUT', 35),
+        'instant_base_url' => env('WAEC_INSTANT_BASE_URL', 'https://verify.waeconline.org.ng'),
+        'instant_timeout' => env('WAEC_INSTANT_TIMEOUT', 35),
     ],
 
 ];
