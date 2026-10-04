@@ -1379,6 +1379,27 @@ HTML;
         ]);
 });
 
+it('parses NABTEB A2 and A3 grades returned by the live result table', function () {
+    $html = <<<'HTML'
+    <html><body><table>
+        <tr><th>Candidate Number</th><td>31293094</td></tr>
+        <tr><th>Candidate Name</th><td>AKINRINOLA AKEEM KEHINDE</td></tr>
+        <tr><th>OFFICE PRACTICE</th><td>A2</td></tr>
+        <tr><th>MATHEMATICS</th><td>A3</td></tr>
+        <tr><th>AGRICULTURAL SCIENCE</th><td>A2</td></tr>
+    </table></body></html>
+    HTML;
+
+    $parsed = app(NabtebResult::class)->parseResult($html);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['subjects'])->toBe([
+            ['subject' => 'OFFICE PRACTICE', 'grade' => 'A2', 'remark' => null, 'score' => null],
+            ['subject' => 'MATHEMATICS', 'grade' => 'A3', 'remark' => null, 'score' => null],
+            ['subject' => 'AGRICULTURAL SCIENCE', 'grade' => 'A2', 'remark' => null, 'score' => null],
+        ]);
+});
+
 it('maps NABTEB html error responses into structured errors', function () {
     $parsed = app(NabtebResult::class)->parseResult('<html><head><title>Length Required</title></head><body><h2>Length Required</h2><p>HTTP Error 411. The request must be chunked or have a content length.</p></body></html>');
 

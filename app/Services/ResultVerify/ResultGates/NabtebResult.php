@@ -77,7 +77,7 @@ class NabtebResult implements ResultInterface
                 cookieJar: $cookieJar,
             );
 
-            $response =  $this->request(
+            $response = $this->request(
                 url: $this->baseUrl.'/results.asp',
                 method: 'POST',
                 payload: [
@@ -110,7 +110,7 @@ class NabtebResult implements ResultInterface
         $html = trim($html, " \t\n\r\0\x0B'\",");
         $lower = strtolower($html);
 
-        $dom = new \DOMDocument();
+        $dom = new \DOMDocument;
         @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new \DOMXPath($dom);
 
@@ -313,7 +313,7 @@ class NabtebResult implements ResultInterface
         }
 
         $text = $this->normalizeText(strip_tags($html));
-        preg_match_all('/([A-Z][A-Z&\-\',\.\/\(\) ]{2,})\s+(A1|B2|B3|C4|C5|C6|D7|E8|P7|P8|F9|PASS|FAIL|ABS|ABSENT|WITHHELD)\b(?:\s+([A-Z ]{2,}))?/i', $text, $matches, PREG_SET_ORDER);
+        preg_match_all('/([A-Z][A-Z&\-\',\.\/\(\) ]{2,})\s+(A1|A2|A3|B2|B3|C4|C5|C6|D7|E8|P7|P8|F9|PASS|FAIL|ABS|ABSENT|WITHHELD)\b(?:\s+([A-Z ]{2,}))?/i', $text, $matches, PREG_SET_ORDER);
 
         foreach ($matches as $match) {
             $subject = $this->normalizeText((string) ($match[1] ?? ''));
@@ -344,11 +344,13 @@ class NabtebResult implements ResultInterface
 
         if ((str_contains($key, 'candidate') && str_contains($key, 'name')) || $key === 'name') {
             $candidate['name'] ??= $value;
+
             return;
         }
 
         if ((str_contains($key, 'candidate') && (str_contains($key, 'number') || str_contains($key, 'no'))) || str_contains($key, 'exam number')) {
             $candidate['exam_number'] ??= $value;
+
             return;
         }
 
@@ -364,12 +366,14 @@ class NabtebResult implements ResultInterface
 
         if (str_contains($key, 'exam year') || $key === 'year') {
             $candidate['exam_year'] ??= $value;
+
             return;
         }
 
         if (str_contains($key, 'centre') || str_contains($key, 'center') || str_contains($key, 'school')) {
             if (str_contains($key, 'number') || str_contains($key, 'no')) {
                 $candidate['centre_number'] ??= $value;
+
                 return;
             }
 
@@ -379,7 +383,7 @@ class NabtebResult implements ResultInterface
 
     private function looksLikeGrade(string $value): bool
     {
-        return (bool) preg_match('/^(A1|B2|B3|C4|C5|C6|D7|E8|P7|P8|F9|PASS|FAIL|ABS|ABSENT|WITHHELD)$/i', trim($value));
+        return (bool) preg_match('/^(A1|A2|A3|B2|B3|C4|C5|C6|D7|E8|P7|P8|F9|PASS|FAIL|ABS|ABSENT|WITHHELD)$/i', trim($value));
     }
 
     private function looksLikeMetadataLabel(string $value): bool
@@ -440,7 +444,7 @@ class NabtebResult implements ResultInterface
 
     private function extractHtmlErrorMessage(string $html): ?string
     {
-        $dom = new \DOMDocument();
+        $dom = new \DOMDocument;
         @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new \DOMXPath($dom);
 
@@ -480,7 +484,7 @@ class NabtebResult implements ResultInterface
             return false;
         }
 
-        if (mb_strlen($message) > 500 && !str_contains($lower, 'error') && !str_contains($lower, 'invalid') && !str_contains($lower, 'not found')) {
+        if (mb_strlen($message) > 500 && ! str_contains($lower, 'error') && ! str_contains($lower, 'invalid') && ! str_contains($lower, 'not found')) {
             return false;
         }
 
