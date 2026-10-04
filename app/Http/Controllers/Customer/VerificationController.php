@@ -159,7 +159,7 @@ class VerificationController extends Controller
         abort_unless(request()->user()?->hasResultFetchAccess(), 403);
 
         $board = $this->boardFromService($service);
-        $fields = $this->resultFactory->create($board)->formFields();
+        $fields = $this->resultFactory->createForForm($board)->formFields();
 
         if ($board === 'nbais') {
             $fields = collect($fields)

@@ -6,13 +6,12 @@ use App\Http\Controllers\Api\ResultPinController;
 use App\Mcp\Tools\Concerns\CallsEaseVerifierApi;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
-use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
 #[IsOpenWorld(false)]
-class ListResultPinProducts extends Tool
+class ListResultPinProducts extends AuthenticatedTool
 {
     use CallsEaseVerifierApi;
 

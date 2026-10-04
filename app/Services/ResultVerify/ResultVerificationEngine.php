@@ -62,7 +62,7 @@ class ResultVerificationEngine
         $board = strtolower($board);
 
         try {
-            $resultGate = $this->factory->create($board);
+            $resultGate = $this->factory->createForForm($board);
         } catch (InvalidArgumentException $exception) {
             return VerificationResult::failure($exception->getMessage(), 'UNSUPPORTED_RESULT_BOARD');
         }
@@ -136,7 +136,11 @@ class ResultVerificationEngine
             return VerificationResult::failure('Result board verification is not enabled for this account.', 'RESULT_FETCH_DISABLED');
         }
 
-        $missingFields = $this->missingRequiredFields($resultGate, $params);
+        $usesWaecInstant = $this->shouldUseWaecInstantDirectly($board, $params);
+        $activeResultGate = $usesWaecInstant
+            ? $this->factory->create('waec-instant')
+            : $resultGate;
+        $missingFields = $this->missingRequiredFields($activeResultGate, $params);
         if ($missingFields !== []) {
             return VerificationResult::failure(
                 'Missing required result verification fields: '.implode(', ', $missingFields),
@@ -213,7 +217,7 @@ class ResultVerificationEngine
             'branch_id' => $branch?->id,
             'verification_request_id' => $verificationRequest->id,
             'direction' => 'outbound',
-            'endpoint' => "result-board:{$board}",
+            'endpoint' => 'result-board:'.($usesWaecInstant ? 'waec-instant' : $board),
             'method' => 'POST',
             'request_headers' => [],
             'request_body' => ApiLog::requestSummary($this->sanitizeParams($params, $board)),
@@ -221,8 +225,9 @@ class ResultVerificationEngine
         ]);
 
         try {
-            $rawResponse = $resultGate->fetchResult($params);
-            $parsed = $resultGate->parseResult($rawResponse);
+            $rawResponse = $activeResultGate->fetchResult($params);
+            $parsed = $activeResultGate->parseResult($rawResponse);
+            $parsed = $this->enrichWaecResult($board, $params, $parsed);
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
 
             if (($parsed['status'] ?? null) === 'success') {
@@ -233,12 +238,18 @@ class ResultVerificationEngine
                 ]);
 
                 $data = $this->formatSuccessData($board, $parsed);
+                if ($usesWaecInstant) {
+                    $data['result_source'] = 'waec-instant';
+                }
                 $verificationRequest->markAsCompleted($data);
 
                 return VerificationResult::success($data, $responseTime);
             }
 
-            $fallback = $this->tryNecoFallback($board, $params, $verificationRequest);
+            $fallback = $usesWaecInstant
+                ? null
+                : $this->tryWaecFallback($board, $params, $parsed, $verificationRequest);
+            $fallback ??= $this->tryNecoFallback($board, $params, $verificationRequest);
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
 
             if ($fallback && ($fallback['parsed']['status'] ?? null) === 'success') {
@@ -253,6 +264,10 @@ class ResultVerificationEngine
                 $verificationRequest->markAsCompleted($data);
 
                 return VerificationResult::success($data, $responseTime);
+            }
+
+            if (($fallback['board'] ?? null) === 'waec-instant' && ($fallback['parsed']['status'] ?? null) === 'error') {
+                $parsed = $fallback['parsed'];
             }
 
             $apiLog->update([
@@ -581,6 +596,81 @@ class ResultVerificationEngine
         }
 
         return null;
+    }
+
+    protected function tryWaecFallback(
+        string $board,
+        array $params,
+        array $primaryResult,
+        VerificationRequest $verificationRequest,
+    ): ?array {
+        $errorCode = strtoupper((string) ($primaryResult['code'] ?? ''));
+        $errorMessage = strtolower((string) ($primaryResult['message'] ?? ''));
+        $pinAlreadyConsumed = str_contains($errorMessage, 'used by another')
+            || str_contains($errorMessage, 'already been used')
+            || str_contains($errorMessage, 'used up');
+
+        if (
+            strtolower($board) !== 'waec'
+            || ! in_array($errorCode, ['RESULT_NOT_FOUND', 'INVALID_PIN'], true)
+            || $pinAlreadyConsumed
+        ) {
+            return null;
+        }
+
+        try {
+            $fallbackGate = $this->factory->create('waec-instant');
+            $rawResponse = $fallbackGate->fetchResult($params);
+            $parsed = $fallbackGate->parseResult($rawResponse);
+            $parsed = $this->enrichWaecResult($board, $params, $parsed);
+
+            Log::info('WAEC instant verification fallback completed', [
+                'reference' => $verificationRequest->reference,
+                'status' => $parsed['status'] ?? null,
+                'code' => $parsed['code'] ?? null,
+            ]);
+
+            return [
+                'board' => 'waec-instant',
+                'parsed' => $parsed,
+            ];
+        } catch (Throwable $exception) {
+            Log::info('WAEC instant verification fallback failed', [
+                'reference' => $verificationRequest->reference,
+                'primary_code' => $errorCode,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        return null;
+    }
+
+    protected function shouldUseWaecInstantDirectly(string $board, array $params): bool
+    {
+        if (strtolower($board) !== 'waec') {
+            return false;
+        }
+
+        return blank($params['txtCardSerialNo'] ?? $params['serial'] ?? null);
+    }
+
+    protected function enrichWaecResult(string $board, array $params, array $parsed): array
+    {
+        if (strtolower($board) !== 'waec' || ($parsed['status'] ?? null) !== 'success') {
+            return $parsed;
+        }
+
+        $candidate = is_array($parsed['candidate'] ?? null) ? $parsed['candidate'] : [];
+        $candidate['exam_number'] = ($candidate['exam_number'] ?? null)
+            ?: trim((string) ($params['txtExamNumber'] ?? $params['ExamNumber'] ?? ''));
+        $candidate['exam_year'] = ($candidate['exam_year'] ?? null)
+            ?: trim((string) ($params['ExamYear'] ?? ''));
+        $candidate['exam_type'] = ($candidate['exam_type'] ?? null)
+            ?: trim((string) ($params['ExamType'] ?? ''));
+        $candidate['candidate_name'] = $candidate['candidate_name'] ?? $candidate['name'] ?? null;
+        $parsed['candidate'] = $candidate;
+
+        return $parsed;
     }
 
     protected function necoFallbackBoard(string $board): ?string

@@ -8,13 +8,12 @@ use Illuminate\JsonSchema\JsonSchema;
 use Illuminate\Support\Arr;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
-use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 
 #[IsDestructive]
 #[IsOpenWorld(false)]
-class VerifyResult extends Tool
+class VerifyResult extends AuthenticatedTool
 {
     use CallsEaseVerifierApi;
 
@@ -32,7 +31,7 @@ class VerifyResult extends Tool
             'ExamYear' => $schema->string()->description('WAEC examination year.'),
             'ExamType' => $schema->string()->description('WAEC examination type, for example MAY/JUN.'),
             'txtPIN' => $schema->string()->description('WAEC checker PIN.'),
-            'txtCardSerialNo' => $schema->string()->description('WAEC card serial number.'),
+            'txtCardSerialNo' => $schema->string()->description('Optional legacy WAEC card serial number. The current WAEC instant-verification flow only requires the checker PIN.'),
             'exam_year' => $schema->string()->description('NECO examination year.'),
             'exam_type' => $schema->string()->description('NECO or NABTEB examination type.'),
             'reg_no' => $schema->string()->description('NECO registration number.'),

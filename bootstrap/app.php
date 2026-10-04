@@ -35,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'api.auth' => \App\Http\Middleware\ApiAuthentication::class,
+            'mcp.oauth.context' => \App\Http\Middleware\McpOAuthContext::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

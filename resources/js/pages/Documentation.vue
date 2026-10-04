@@ -82,13 +82,12 @@ const resultBoards = [
         board: 'WAEC',
         form: 'GET /results/waec/form',
         fetch: 'POST /results/waec/fetch',
-        fields: ['txtExamNumber', 'ExamYear', 'ExamType', 'txtPIN', 'txtCardSerialNo'],
+        fields: ['txtExamNumber', 'ExamYear', 'ExamType', 'txtPIN'],
         sample: `{
   "txtExamNumber": "1234567890",
   "ExamYear": "2024",
   "ExamType": "MAY/JUN",
-  "txtPIN": "123456789012",
-  "txtCardSerialNo": "WRN123456789"
+  "txtPIN": "1111222233334444555"
 }`,
     },
     {
@@ -200,8 +199,7 @@ const result = await verifyWaecResult({
   txtExamNumber: '1234567890',
   ExamYear: '2024',
   ExamType: 'MAY/JUN',
-  txtPIN: '123456789012',
-  txtCardSerialNo: 'WRN123456789'
+  txtPIN: '1111222233334444555'
 });`;
 
 const paygoPortalImplementation = `const portalRef = 'APPLICATION-90210';
@@ -433,6 +431,9 @@ const paygoPullResponse = `{
                                 <v-alert type="warning" variant="tonal" class="mb-6">
                                     Result checker PINs, serials, and tokens can be consumed by the board provider. Submit only when the customer has authorized the lookup.
                                 </v-alert>
+                                <v-alert type="info" variant="tonal" class="mb-6">
+                                    WAEC verification now requires only the examination number, year, examination type, and purchased PIN. A card serial number is not required. Use <code>MAY/JUN</code> for school candidates and <code>NOV/DEC</code> for private candidates.
+                                </v-alert>
 
                                 <v-card v-for="board in resultBoards" :key="board.board" variant="outlined" class="mb-5">
                                     <v-card-title>{{ board.board }}</v-card-title>
@@ -622,7 +623,7 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
                             <section v-show="activeSection === 'mcp'" class="mb-12">
                                 <h1 class="text-h4 font-weight-bold mb-4">MCP Server</h1>
                                 <p class="text-body-1 text-grey-darken-1 mb-6">
-                                    Connect an MCP client to the Streamable HTTP endpoint to use every authenticated EaseVerifier API service as a focused AI tool.
+                                    Connect an MCP client to the Streamable HTTP endpoint to use EaseVerifier services as focused AI tools. MCP access uses OAuth 2.1 account linking; customer API keys remain dedicated to the REST API.
                                 </p>
 
                                 <v-table class="mb-6">
@@ -630,10 +631,15 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
                                     <tbody>
                                         <tr><td>Endpoint</td><td><code>{{ mcpUrl }}</code></td></tr>
                                         <tr><td>Transport</td><td><code>streamable-http</code></td></tr>
-                                        <tr><td>Authentication</td><td><code>Authorization: Bearer YOUR_BEARER_TOKEN</code></td></tr>
+                                        <tr><td>Authentication</td><td>OAuth 2.1 authorization code flow with PKCE (<code>S256</code>)</td></tr>
+                                        <tr><td>Protected resource metadata</td><td><code>{{ appBaseUrl }}/.well-known/oauth-protected-resource/api/mcp</code></td></tr>
                                         <tr><td>Protocol</td><td>MCP 2025-06-18 and compatible earlier versions</td></tr>
                                     </tbody>
                                 </v-table>
+
+                                <v-alert type="info" variant="tonal" class="mb-6">
+                                    ChatGPT and compatible MCP clients discover OAuth automatically from the endpoint. Sign in to EaseVerifier, review the requested access, and select <strong>Connect account</strong>. Do not place an API key in the plugin configuration.
+                                </v-alert>
 
                                 <v-card variant="outlined" class="mb-6">
                                     <v-card-title>Agent Plugins configuration</v-card-title>

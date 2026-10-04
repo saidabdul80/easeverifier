@@ -9,10 +9,13 @@ use App\Services\ResultVerify\ResultGates\NabtebResult;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
 use App\Services\ResultVerify\ResultGates\NecoEVerify;
 use App\Services\ResultVerify\ResultGates\NECOResult;
+use App\Services\ResultVerify\ResultGates\WAECInstantResult;
 use App\Services\ResultVerify\ResultGates\WAECResult;
 use App\Services\ResultVerify\ResultInterface;
 use App\Services\ResultVerify\ResultVerificationEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as HttpRequest;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
@@ -441,8 +444,9 @@ it('uses WAEC encrypted display flow instead of the retired DisplayResult endpoi
             string $cookieJar,
             int $timeout,
             bool $failOnHttpError = true,
+            string $step = 'request',
         ): string {
-            $this->calls[] = compact('url', 'method', 'payload', 'headers', 'timeout', 'failOnHttpError');
+            $this->calls[] = compact('url', 'method', 'payload', 'headers', 'timeout', 'failOnHttpError', 'step');
 
             return match (count($this->calls)) {
                 1 => '<html>WAEC form</html>',
@@ -478,6 +482,255 @@ it('uses WAEC encrypted display flow instead of the retired DisplayResult endpoi
         ->and($gateway->calls[2]['url'])->toBe('https://www.waecdirect.org/Result/Display?q=encrypted-token');
 });
 
+it('exposes the simplified WAEC form without a card serial field', function () {
+    $fields = collect(app(WAECInstantResult::class)->formFields());
+
+    expect($fields->pluck('name')->all())->toBe([
+        'txtExamNumber',
+        'ExamYear',
+        'ExamType',
+        'txtPIN',
+    ])->and($fields->firstWhere('name', 'ExamType')['options'])->toBe([
+        ['value' => 'MAY/JUN', 'label' => 'MAY/JUN (School Candidates)'],
+        ['value' => 'NOV/DEC', 'label' => 'NOV/DEC (Private Candidates)'],
+    ])->and($fields->firstWhere('name', 'txtPIN')['label'])->toBe('Result Checker PIN');
+});
+
+it('uses the WAEC instant verification post and session result flow', function () {
+    $calls = [];
+
+    Http::fake(function (HttpRequest $request) use (&$calls) {
+        $calls[] = [
+            'method' => $request->method(),
+            'url' => $request->url(),
+            'data' => $request->data(),
+        ];
+
+        if ($request->method() === 'POST') {
+            return Http::response(['state' => 1, 'msg' => 'Successful', 'data' => null]);
+        }
+
+        if (str_ends_with($request->url(), '/Home/InstantResultVerification')) {
+            return Http::response(<<<'HTML'
+                <html><body>
+                    <table><tr><td>Candidate Name</td><td>Instant Candidate</td></tr></table>
+                    <table><tr><td>ENGLISH LANGUAGE</td><td>C5</td></tr></table>
+                </body></html>
+                HTML);
+        }
+
+        return Http::response('<html>WAEC verification home</html>');
+    });
+
+    $gateway = app(WAECInstantResult::class);
+    $html = $gateway->fetchResult([
+        'txtExamNumber' => '4141607071',
+        'ExamYear' => '2026',
+        'ExamType' => 'NOV/DEC',
+        'txtPIN' => '1111222233334444555',
+    ]);
+    $parsed = $gateway->parseResult($html);
+
+    expect($calls)->toHaveCount(3)
+        ->and($calls[0]['method'])->toBe('GET')
+        ->and($calls[0]['url'])->toBe('https://verify.waeconline.org.ng/')
+        ->and($calls[1])->toBe([
+            'method' => 'POST',
+            'url' => 'https://verify.waeconline.org.ng/Home/InstantResultVerification',
+            'data' => [
+                'ExamType' => '2',
+                'PIN' => '1111222233334444555',
+                'ExamYear' => '2026',
+                'CandidateNo' => '4141607071',
+                'ExamName' => 'WASSCE (For Private Candidates)',
+            ],
+        ])
+        ->and($calls[2]['method'])->toBe('GET')
+        ->and($calls[2]['url'])->toBe('https://verify.waeconline.org.ng/Home/InstantResultVerification')
+        ->and($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['name'])->toBe('Instant Candidate')
+        ->and($parsed['subjects'][0]['grade'])->toBe('C5');
+});
+
+it('maps WAEC instant verification errors into result errors', function () {
+    $parsed = app(WAECInstantResult::class)->parseResult(json_encode([
+        'state' => -1,
+        'msg' => 'Candidate Record Not Found For 4141607071',
+        'data' => null,
+    ], JSON_THROW_ON_ERROR));
+
+    expect($parsed)->toBe([
+        'status' => 'error',
+        'code' => 'RESULT_NOT_FOUND',
+        'message' => 'Candidate Record Not Found For 4141607071',
+    ]);
+});
+
+it('falls back to WAEC instant verification without charging twice', function () {
+    $user = createResultApiUser(100);
+    $fetchService = createResultService('waec-result-fetch', 25);
+
+    $primaryGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'required' => true],
+                ['name' => 'ExamYear', 'required' => true],
+                ['name' => 'ExamType', 'required' => true],
+                ['name' => 'txtPIN', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '<html>Invalid card details</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'error',
+                'code' => 'INVALID_PIN',
+                'message' => 'Invalid card details.',
+            ];
+        }
+    };
+
+    $instantGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '<html>instant result</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'success',
+                'candidate' => ['name' => 'Fallback Candidate', 'exam_number' => '4141607071'],
+                'subjects' => [['subject' => 'ENGLISH LANGUAGE', 'grade' => 'C5', 'score' => null]],
+                'overall' => null,
+            ];
+        }
+    };
+
+    app()->instance(WAECResult::class, $primaryGateway);
+    app()->instance(WAECInstantResult::class, $instantGateway);
+
+    $result = app(ResultVerificationEngine::class)->verify($user, 'waec', [
+        'txtExamNumber' => '4141607071',
+        'ExamYear' => '2026',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '1111222233334444555',
+        'txtCardSerialNo' => 'WRN123456789',
+    ]);
+
+    $request = VerificationRequest::where('verification_service_id', $fetchService->id)->first();
+
+    expect($result->success)->toBeTrue()
+        ->and($result->data['result_source'])->toBe('waec-instant')
+        ->and($result->data['candidate']['name'])->toBe('Fallback Candidate')
+        ->and($result->data['candidate']['exam_year'])->toBe('2026')
+        ->and($result->data['candidate']['exam_type'])->toBe('MAY/JUN')
+        ->and($primaryGateway->calls)->toHaveCount(1)
+        ->and($instantGateway->calls)->toHaveCount(1)
+        ->and((float) $user->wallet()->first()->fresh()->balance)->toBe(75.0)
+        ->and(VerificationRequest::count())->toBe(1)
+        ->and($request->status)->toBe('completed');
+});
+
+it('uses WAEC instant verification directly when no card serial is supplied', function () {
+    $user = createResultApiUser(100);
+    createResultService('waec-result-fetch', 25);
+
+    $primaryGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'required' => true],
+                ['name' => 'ExamYear', 'required' => true],
+                ['name' => 'ExamType', 'required' => true],
+                ['name' => 'txtPIN', 'required' => true],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '<html>should not be called</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return ['status' => 'error', 'code' => 'UNKNOWN_ERROR', 'message' => 'Not used'];
+        }
+    };
+
+    $instantGateway = new class implements ResultInterface
+    {
+        public array $calls = [];
+
+        public function formFields(): array
+        {
+            return [];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            $this->calls[] = $params;
+
+            return '<html>instant result</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'success',
+                'candidate' => ['name' => 'Direct Instant Candidate', 'exam_number' => '4141607071'],
+                'subjects' => [['subject' => 'MATHEMATICS', 'grade' => 'B3', 'score' => null]],
+                'overall' => null,
+            ];
+        }
+    };
+
+    app()->instance(WAECResult::class, $primaryGateway);
+    app()->instance(WAECInstantResult::class, $instantGateway);
+
+    $result = app(ResultVerificationEngine::class)->verify($user, 'waec', [
+        'txtExamNumber' => '4141607071',
+        'ExamYear' => '2026',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '1111222233334444555',
+    ]);
+
+    expect($result->success)->toBeTrue()
+        ->and($result->data['result_source'])->toBe('waec-instant')
+        ->and($result->data['candidate']['exam_number'])->toBe('4141607071')
+        ->and($result->data['candidate']['exam_year'])->toBe('2026')
+        ->and($result->data['candidate']['exam_type'])->toBe('MAY/JUN')
+        ->and($primaryGateway->calls)->toHaveCount(0)
+        ->and($instantGateway->calls)->toHaveCount(1)
+        ->and((float) $user->wallet()->first()->fresh()->balance)->toBe(75.0);
+});
+
 it('parses WAEC current result display tables', function () {
     $html = <<<'HTML'
 <html>
@@ -509,6 +762,79 @@ HTML;
             'grade' => 'C4',
             'score' => null,
         ]);
+});
+
+it('parses WAEC instant candidate metadata outside tables', function () {
+    $html = <<<'HTML'
+    <html>
+    <body>
+        <section class="candidate-summary">
+            <div><span>Candidate's Name</span><strong>ADEOLA SAMPLE STUDENT</strong></div>
+            <dl>
+                <dt>Examination Number</dt><dd>4141607071</dd>
+                <dt>Examination Year</dt><dd>2026</dd>
+                <dt>Examination Type</dt><dd>WASSCE (For School Candidates)</dd>
+            </dl>
+        </section>
+        <table>
+            <tr><td>School Name</td><td>Ogunnire Comprehensive High School Ire-Ekiti</td></tr>
+            <tr><td>MATHEMATICS</td><td>B3</td></tr>
+        </table>
+    </body>
+    </html>
+    HTML;
+
+    $parsed = app(WAECInstantResult::class)->parseResult($html);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['name'])->toBe('ADEOLA SAMPLE STUDENT')
+        ->and($parsed['candidate']['candidate_name'])->toBe('ADEOLA SAMPLE STUDENT')
+        ->and($parsed['candidate']['exam_number'])->toBe('4141607071')
+        ->and($parsed['candidate']['exam_year'])->toBe('2026')
+        ->and($parsed['candidate']['exam_type'])->toBe('WASSCE (For School Candidates)')
+        ->and($parsed['candidate']['centre'])->toBe('Ogunnire Comprehensive High School Ire-Ekiti');
+});
+
+it('parses WAEC candidate names from ASP.NET result element identifiers', function () {
+    $html = <<<'HTML'
+    <html><body>
+        <span id="lblCandidateName">ADEOLA IDENTIFIER STUDENT</span>
+        <input type="hidden" name="CandidateNumber" value="4141607071">
+        <table><tr><td>MATHEMATICS</td><td>B3</td></tr></table>
+    </body></html>
+    HTML;
+
+    $parsed = app(WAECInstantResult::class)->parseResult($html);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['name'])->toBe('ADEOLA IDENTIFIER STUDENT')
+        ->and($parsed['candidate']['exam_number'])->toBe('4141607071');
+});
+
+it('parses the candidate name from the live WAEC instant result table', function () {
+    $html = <<<'HTML'
+    <html><body>
+        <table>
+            <thead><tr><th colspan="4">Personal Information</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td rowspan="4"><img src="/General/ShowPicture?CandidateNo=4141607071&amp;ExamYear=2026&amp;ExamType=1" alt="AYOMIDE"></td>
+                    <td>Name</td>
+                    <td>OMOJOLA  AYOMIDE MARCUS</td>
+                </tr>
+                <tr><td>Centre</td><td>Ogunnire Comprehensive High School Ire-Ekiti</td></tr>
+                <tr><td colspan="2">MATHEMATICS</td><td colspan="2">B3</td></tr>
+            </tbody>
+        </table>
+    </body></html>
+    HTML;
+
+    $parsed = app(WAECInstantResult::class)->parseResult($html);
+
+    expect($parsed['status'])->toBe('success')
+        ->and($parsed['candidate']['name'])->toBe('OMOJOLA AYOMIDE MARCUS')
+        ->and($parsed['candidate']['candidate_name'])->toBe('OMOJOLA AYOMIDE MARCUS')
+        ->and($parsed['candidate']['centre'])->toBe('Ogunnire Comprehensive High School Ire-Ekiti');
 });
 
 it('returns a clear NBAIS internal second stage error when a pin form is returned', function () {
@@ -967,7 +1293,7 @@ it('defines NABTEB eWorld form fields from the live checker flow', function () {
     ])
         ->and($fields['examtype']['options'])->toContain(['value' => '01', 'label' => 'MAY/JUN'])
         ->and($fields['examtype']['options'])->toContain(['value' => '07', 'label' => 'Common Entrance'])
-        ->and($fields['examyear']['options'][0])->toBe(['value' => '2025', 'label' => '2025'])
+        ->and($fields['examyear']['options'][0])->toBe(['value' => date('Y'), 'label' => date('Y')])
         ->and($fields['serial']['required'])->toBeTrue()
         ->and($fields['pin']['required'])->toBeTrue();
 });

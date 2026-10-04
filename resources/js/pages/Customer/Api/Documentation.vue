@@ -34,13 +34,12 @@ const resultBoards = [
         board: 'WAEC',
         form: 'GET /results/waec/form',
         fetch: 'POST /results/waec/fetch',
-        fields: ['txtExamNumber', 'ExamYear', 'ExamType', 'txtPIN', 'txtCardSerialNo'],
+        fields: ['txtExamNumber', 'ExamYear', 'ExamType', 'txtPIN'],
         sample: `{
   "txtExamNumber": "1234567890",
   "ExamYear": "2024",
   "ExamType": "MAY/JUN",
-  "txtPIN": "123456789012",
-  "txtCardSerialNo": "WRN123456789"
+  "txtPIN": "1111222233334444555"
 }`,
     },
     {
@@ -182,8 +181,7 @@ const result = await verifyWaecResult({
   txtExamNumber: '1234567890',
   ExamYear: '2024',
   ExamType: 'MAY/JUN',
-  txtPIN: '123456789012',
-  txtCardSerialNo: 'WRN123456789'
+  txtPIN: '1111222233334444555'
 });`;
 
 const paygoPortalImplementation = `const portalRef = 'APPLICATION-90210';
@@ -381,6 +379,9 @@ const paygoPullResponse = `{
                 <v-alert type="warning" variant="tonal" class="mb-4">
                     Result checker PINs, serials, and tokens may be consumed by the board provider. Submit only when the customer has authorized the lookup.
                 </v-alert>
+                <v-alert type="info" variant="tonal" class="mb-4">
+                    WAEC verification requires the examination number, year, examination type, and purchased PIN. No card serial number is required. Use <code>MAY/JUN</code> for school candidates and <code>NOV/DEC</code> for private candidates.
+                </v-alert>
 
                 <v-card v-for="board in resultBoards" :key="board.board" class="mb-4">
                     <v-card-title>{{ board.board }}</v-card-title>
@@ -538,17 +539,18 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
                     <v-card-text class="pa-6">
                         <h2 class="text-h5 font-weight-bold mb-4">MCP Server</h2>
                         <p class="text-body-1 mb-4">
-                            Use the same customer API token with the EaseVerifier Streamable HTTP MCP endpoint. The server exposes identity verification, all supported result boards, PIN purchases, wallet balance, services, and verification history.
+                            Connect your EaseVerifier account to the Streamable HTTP MCP endpoint with OAuth 2.1. The server exposes identity verification, all supported result boards, PIN purchases, wallet balance, services, and verification history to the connected customer account.
                         </p>
 
                         <v-alert type="info" variant="tonal" class="mb-4">
-                            <strong>Endpoint:</strong> <code>{{ mcpUrl }}</code>
+                            <strong>Endpoint:</strong> <code>{{ mcpUrl }}</code><br>
+                            ChatGPT discovers the OAuth login automatically. Sign in, review the permissions, and select <strong>Connect account</strong>. Your account must have API access enabled.
                         </v-alert>
 
                         <pre class="bg-grey-darken-4 text-green-lighten-1 pa-4 rounded overflow-x-auto mb-4">{{ mcpConfig }}</pre>
 
                         <v-alert type="warning" variant="tonal">
-                            Keep the API token outside plugin ZIP files and source control. Chargeable tools require explicit confirmation and should never be retried automatically after a timeout.
+                            Do not add a customer API key to the plugin ZIP. API keys are for direct REST integrations; MCP uses OAuth account linking. Chargeable tools require explicit confirmation and should never be retried automatically after a timeout.
                         </v-alert>
                     </v-card-text>
                 </v-card>

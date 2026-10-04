@@ -70,13 +70,13 @@ class WAECResult implements ResultInterface
         try {
             $payload = $this->resultPayload($params);
 
-            Log::info('WAEC result fetch started', [
-                'exam_number' => $payload['examNumber'],
-                'exam_year' => $payload['examYear'],
-                'exam_type' => $payload['examType'],
-                'has_pin' => $payload['pin'] !== '',
-                'has_serial' => $payload['serial'] !== '',
-            ]);
+            // Log::info('WAEC result fetch started', [
+            //     'exam_number' => $payload['examNumber'],
+            //     'exam_year' => $payload['examYear'],
+            //     'exam_type' => $payload['examType'],
+            //     'has_pin' => $payload['pin'] !== '',
+            //     'has_serial' => $payload['serial'] !== '',
+            // ]);
 
             $this->initSession($cookieJar);
             $encryptedQuery = $this->encryptPayload($payload, $cookieJar);
@@ -121,11 +121,11 @@ class WAECResult implements ResultInterface
                 step: 'display_query',
             );
 
-            Log::info('WAEC result fetch completed', [
-                'exam_number' => $payload['examNumber'],
-                'used_encrypted_payload' => false,
-                'elapsed_ms' => (int) ((microtime(true) - $startedAt) * 1000),
-            ]);
+            // Log::info('WAEC result fetch completed', [
+            //     'exam_number' => $payload['examNumber'],
+            //     'used_encrypted_payload' => false,
+            //     'elapsed_ms' => (int) ((microtime(true) - $startedAt) * 1000),
+            // ]);
 
             return $html;
         } finally {

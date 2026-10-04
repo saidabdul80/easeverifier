@@ -14,6 +14,13 @@ use App\Mcp\Tools\VerifyResult;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Transport\FakeTransporter;
 
+beforeEach(function () {
+    config([
+        'passport.private_key' => file_get_contents(base_path('tests/Fixtures/oauth-private.key')),
+        'passport.public_key' => file_get_contents(base_path('tests/Fixtures/oauth-public.key')),
+    ]);
+});
+
 it('advertises the complete customer api tool set', function () {
     $server = new EaseVerifierServer(new FakeTransporter);
 
@@ -67,6 +74,19 @@ it('marks wallet charging tools as destructive and not idempotent', function (st
     PurchaseResultPins::class,
 ]);
 
+it('advertises oauth on every tool', function () {
+    $server = new EaseVerifierServer(new FakeTransporter);
+
+    $server->createContext()->tools()->each(function (Tool $tool): void {
+        expect($tool->toArray())->toHaveKey('securitySchemes', [
+            [
+                'type' => 'oauth2',
+                'scopes' => ['mcp:use'],
+            ],
+        ]);
+    });
+});
+
 it('requires authentication for the streamable http endpoint', function () {
     $response = $this->postJson('/api/mcp', [
         'jsonrpc' => '2.0',
@@ -84,9 +104,8 @@ it('requires authentication for the streamable http endpoint', function () {
 
     $response
         ->assertUnauthorized()
-        ->assertHeader('WWW-Authenticate', 'Bearer realm="mcp", error="invalid_token"')
-        ->assertJson([
-            'success' => false,
-            'error_code' => 'UNAUTHORIZED',
-        ]);
+        ->assertHeader(
+            'WWW-Authenticate',
+            'Bearer realm="mcp", resource_metadata="http://localhost/.well-known/oauth-protected-resource/api/mcp"',
+        );
 });

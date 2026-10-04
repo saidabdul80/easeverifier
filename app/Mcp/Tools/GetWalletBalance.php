@@ -6,13 +6,12 @@ use App\Http\Controllers\Api\VerificationController;
 use App\Mcp\Tools\Concerns\CallsEaseVerifierApi;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
-use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
 #[IsOpenWorld(false)]
-class GetWalletBalance extends Tool
+class GetWalletBalance extends AuthenticatedTool
 {
     use CallsEaseVerifierApi;
 

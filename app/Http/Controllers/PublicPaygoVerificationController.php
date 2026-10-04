@@ -206,6 +206,12 @@ class PublicPaygoVerificationController extends Controller
             ->filter(fn ($value) => filled($value))
             ->toArray();
 
+        foreach (['txtCardSerialNo', 'serial'] as $legacyWaecField) {
+            if (filled($validated[$legacyWaecField] ?? null)) {
+                $params[$legacyWaecField] = $validated[$legacyWaecField];
+            }
+        }
+
         $externalReference = filled($validated['reference'] ?? null)
             ? (string) $validated['reference']
             : null;
@@ -893,7 +899,7 @@ class PublicPaygoVerificationController extends Controller
         $board = $paygoService->resultBoard();
         abort_unless($board, 404);
 
-        $fields = $this->resultFactory->create($board)->formFields();
+        $fields = $this->resultFactory->createForForm($board)->formFields();
 
         if ($board === 'nbais') {
             $fields = collect($fields)
@@ -920,6 +926,8 @@ class PublicPaygoVerificationController extends Controller
             'state' => 'nullable|string|max:500',
             'sitting' => 'nullable|integer|min:1|max:10',
             'reference' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9._=-]+$/'],
+            'txtCardSerialNo' => 'nullable|string|max:500',
+            'serial' => 'nullable|string|max:500',
         ];
 
         foreach ($fields as $field) {
