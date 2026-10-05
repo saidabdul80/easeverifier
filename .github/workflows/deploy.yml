@@ -57,7 +57,7 @@ jobs:
             git reset --hard origin/main
 
             echo "==> Installing PHP dependencies..."
-            composer install --no-interaction --prefer-dist --optimize-autoloader
+            composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
             echo "==> Installing frontend dependencies..."
             npm ci
