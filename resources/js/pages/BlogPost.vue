@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import AdSenseInArticle from '@/components/AdSenseInArticle.vue';
 import PublicTopNav from '@/components/PublicTopNav.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import { onMounted } from 'vue';
 
 interface Post {
     id: number;
@@ -23,19 +23,6 @@ const props = defineProps<{
     relatedPosts: Post[];
 }>();
 
-const adsenseScriptSelector = 'script[data-adsense-loader="true"]';
-
-onMounted(() => {
-    if (!document.head.querySelector(adsenseScriptSelector)) {
-        const adsenseScript = document.createElement('script');
-        adsenseScript.async = true;
-        adsenseScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5615909705062666';
-        adsenseScript.crossOrigin = 'anonymous';
-        adsenseScript.dataset.adsenseLoader = 'true';
-        document.head.appendChild(adsenseScript);
-    }
-});
-
 const formatDate = (date: string) => new Date(date).toLocaleDateString('en-NG', { year: 'numeric', month: 'long', day: 'numeric' });
 
 const getCategoryIcon = (category: string): string => {
@@ -54,6 +41,7 @@ const getCategoryIcon = (category: string): string => {
         <meta property="og:title" :content="post.title" />
         <meta property="og:description" :content="post.excerpt" />
         <meta property="og:type" content="article" />
+        <meta name="google-adsense-account" content="ca-pub-5615909705062666" />
         <link rel="canonical" :href="`https://verify.ashlabtech.ng/blog/${post.slug}`" />
     </Head>
     <v-app>
@@ -79,6 +67,7 @@ const getCategoryIcon = (category: string): string => {
                     <v-img v-if="post.featured_image" :src="post.featured_image" class="rounded-lg mb-8" max-height="400" cover />
 
                     <div class="blog-content text-body-1" v-html="post.content" />
+                    <AdSenseInArticle />
                 </article>
 
                 <v-divider class="my-12" />

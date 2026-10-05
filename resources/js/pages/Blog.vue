@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import AdSenseInArticle from '@/components/AdSenseInArticle.vue';
 import PublicTopNav from '@/components/PublicTopNav.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 
 interface Post {
     id: number;
@@ -21,19 +22,6 @@ const props = defineProps<{
     hottestPosts: Post[];
     categories: string[];
 }>();
-
-const adsenseScriptSelector = 'script[data-adsense-loader="true"]';
-
-onMounted(() => {
-    if (!document.head.querySelector(adsenseScriptSelector)) {
-        const adsenseScript = document.createElement('script');
-        adsenseScript.async = true;
-        adsenseScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5615909705062666';
-        adsenseScript.crossOrigin = 'anonymous';
-        adsenseScript.dataset.adsenseLoader = 'true';
-        document.head.appendChild(adsenseScript);
-    }
-});
 
 const selectedCategory = ref('All');
 
@@ -131,6 +119,8 @@ const formatDate = (date: string) =>
                             </div>
                         </v-col>
                     </v-row>
+
+                    <AdSenseInArticle />
 
                     <div class="chip-row mb-8">
                         <v-chip

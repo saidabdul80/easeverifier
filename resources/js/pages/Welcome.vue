@@ -2,7 +2,7 @@
 import PublicTopNav from '@/components/PublicTopNav.vue';
 import { about, blog, contact, cookies, documentation, pricing, privacy, register, services as servicesPage, terms } from '@/routes';
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 interface Post {
     id: number;
@@ -41,6 +41,21 @@ const structuredData = {
 
 let jsonLdScript: HTMLScriptElement | null = null;
 const adsenseScriptSelector = 'script[data-adsense-loader="true"]';
+const landingAdElement = ref<HTMLElement | null>(null);
+
+const initializeLandingAd = () => {
+    if (!landingAdElement.value || landingAdElement.value.dataset.adInitialized === 'true') {
+        return;
+    }
+
+    try {
+        const adsenseWindow = window as typeof window & { adsbygoogle?: Array<Record<string, never>> };
+        (adsenseWindow.adsbygoogle ??= []).push({});
+        landingAdElement.value.dataset.adInitialized = 'true';
+    } catch {
+        // Ad blockers and browser privacy settings may prevent AdSense initialization.
+    }
+};
 
 onMounted(() => {
     jsonLdScript = document.createElement('script');
@@ -56,6 +71,8 @@ onMounted(() => {
         adsenseScript.dataset.adsenseLoader = 'true';
         document.head.appendChild(adsenseScript);
     }
+
+    initializeLandingAd();
 });
 
 onUnmounted(() => {
@@ -163,6 +180,7 @@ const formatDate = (date: string) =>
         <meta name="keywords" content="NIN verification, BVN verification, CAC verification, identity verification Nigeria, KYC Nigeria, verification API, Nigerian identity verification, business verification" />
         <meta name="robots" content="index, follow" />
         <meta name="author" content="EaseVerifier" />
+        <meta name="google-adsense-account" content="ca-pub-5615909705062666" />
         <link rel="canonical" href="https://verify.ashlabtech.ng" />
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://verify.ashlabtech.ng/" />
@@ -366,6 +384,19 @@ const formatDate = (date: string) =>
                         </v-col>
                     </v-row>
                 </v-container>
+            </section>
+
+            <section class="landing-ad-shell" aria-label="Advertisement">
+                <div class="landing-ad-frame">
+                    <ins
+                        ref="landingAdElement"
+                        class="adsbygoogle landing-ad-unit"
+                        data-ad-client="ca-pub-5615909705062666"
+                        data-ad-slot="8780009655"
+                        data-ad-format="auto"
+                        data-full-width-responsive="true"
+                    />
+                </div>
             </section>
 
             <section class="cta-shell">
@@ -723,6 +754,24 @@ const formatDate = (date: string) =>
 .stack-list {
     display: grid;
     gap: 1rem;
+}
+
+.landing-ad-shell {
+    padding: 0 0 2rem;
+}
+
+.landing-ad-frame,
+.landing-ad-unit {
+    width: 100%;
+    min-height: 320px;
+}
+
+.landing-ad-frame {
+    overflow: hidden;
+}
+
+.landing-ad-unit {
+    display: block;
 }
 
 .cta-shell {
