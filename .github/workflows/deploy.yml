@@ -53,6 +53,21 @@ jobs:
 
             rm -f .deploy-write-check
 
+            if [ -d vendor ]; then
+              echo "==> Checking PHP dependency directory permissions..."
+              chmod -R u+rwX vendor 2>/dev/null || true
+
+              UNWRITABLE_VENDOR_DIR="$(find vendor -type d ! -writable -print -quit)"
+
+              if [ -n "${UNWRITABLE_VENDOR_DIR}" ]; then
+                DEPLOY_OWNER="$(id -un):$(id -gn)"
+                echo "The deploy user cannot update ${UNWRITABLE_VENDOR_DIR}."
+                echo "Repair ownership once on the server, then rerun this workflow:"
+                echo "  sudo chown -R ${DEPLOY_OWNER} '${{ env.APP_PATH }}/vendor'"
+                exit 1
+              fi
+            fi
+
             echo "==> Updating code..."
             git reset --hard origin/main
 
