@@ -85,7 +85,7 @@ class VerificationController extends Controller
     private function filteredVerificationsQuery(Request $request): Builder
     {
         $search = trim((string) $request->input('search', ''));
-        $supportsSourceOverrides = VerificationRequest::supportsSourceOverrides();
+        $supportsSourceOverrides = VerificationRequest::sourceOverrideTableExists();
 
         $relations = [
             'user:id,name,email',
@@ -111,12 +111,7 @@ class VerificationController extends Controller
                 'created_at',
                 'completed_at',
             ])
-            ->with(array_filter([
-                'user:id,name,email',
-                'verificationService:id,name',
-                'serviceProvider:id,name',
-                VerificationRequest::sourceOverrideTableExists() ? 'sourceOverride:id,verification_request_id,source' : null,
-            ]))
+            ->with($relations)
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $nestedQuery) use ($search) {
                     $nestedQuery->where('reference', 'like', "%{$search}%")
@@ -132,29 +127,20 @@ class VerificationController extends Controller
             ->when($request->filled('source'), function (Builder $query) use ($request, $supportsSourceOverrides) {
                 $source = $request->string('source')->toString();
 
-                if (! VerificationRequest::sourceOverrideTableExists()) {
+                if (! $supportsSourceOverrides) {
                     $query->where('source', $source);
 
                     return;
                 }
 
                 if ($source === 'paygo') {
-                    if (! $supportsSourceOverrides) {
-                        $query->whereRaw('1 = 0');
-
-                        return;
-                    }
-
                     $query->whereHas('sourceOverride', fn (Builder $sourceQuery) => $sourceQuery->where('source', 'paygo'));
 
                     return;
                 }
 
                 $query->where('source', $source);
-
-                if ($supportsSourceOverrides) {
-                    $query->whereDoesntHave('sourceOverride');
-                }
+                $query->whereDoesntHave('sourceOverride');
             })
             ->when($request->filled('date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
             ->when($request->filled('date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('date_to')));
