@@ -74,13 +74,17 @@ watch(mdAndUp, (isDesktop) => {
             <v-divider class="border-opacity-25" />
 
             <v-list nav density="comfortable" class="pa-2">
-                <v-list-item v-for="item in navItems" :key="item.title" :href="item.route" :prepend-icon="item.icon" :title="item.title" rounded="lg" color="secondary" class="mb-1" />
+                <Link v-for="item in navItems" :key="item.title" :href="item.route" class="text-decoration-none">
+                    <v-list-item :prepend-icon="item.icon" :title="item.title" rounded="lg" color="secondary" class="mb-1" />
+                </Link>
             </v-list>
 
             <template #append>
                 <v-divider class="border-opacity-25" />
                 <v-list nav class="pa-2">
-                    <v-list-item prepend-icon="mdi-cog" title="Settings" href="/settings/profile" rounded="lg" color="secondary" />
+                    <Link href="/settings/profile" class="text-decoration-none">
+                        <v-list-item prepend-icon="mdi-cog" title="Settings" rounded="lg" color="secondary" />
+                    </Link>
                 </v-list>
             </template>
         </v-navigation-drawer>
@@ -98,8 +102,12 @@ watch(mdAndUp, (isDesktop) => {
                     </v-btn>
                 </template>
                 <v-list density="compact" width="200">
-                    <v-list-item prepend-icon="mdi-account" title="Profile" href="/settings/profile" />
-                    <v-list-item prepend-icon="mdi-cog" title="Settings" href="/settings/profile" />
+                    <Link href="/settings/profile" class="text-decoration-none">
+                        <v-list-item prepend-icon="mdi-account" title="Profile" />
+                    </Link>
+                    <Link href="/settings/profile" class="text-decoration-none">
+                        <v-list-item prepend-icon="mdi-cog" title="Settings" />
+                    </Link>
                     <v-divider />
                     <v-list-item prepend-icon="mdi-logout" title="Logout" @click="logout" />
                 </v-list>

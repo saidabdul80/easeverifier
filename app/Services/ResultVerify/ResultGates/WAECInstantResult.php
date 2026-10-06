@@ -99,6 +99,12 @@ class WAECInstantResult extends WAECResult
                 'type' => 'text',
                 'required' => true,
             ],
+            [
+                'name' => 'txtCardSerialNo',
+                'label' => 'Card Serial Number (WAEC Direct cards only)',
+                'type' => 'text',
+                'required' => false,
+            ],
 
         ];
     }

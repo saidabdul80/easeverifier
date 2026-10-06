@@ -19,42 +19,89 @@ class DashboardController extends Controller
 {
     public function index(Request $request)
     {
-        $stats = [
-            'total_customers' => User::role('customer')->count(),
-            'active_customers' => User::role('customer')->where('is_active', true)->count(),
-            'total_services' => VerificationService::count(),
-            'active_services' => VerificationService::where('is_active', true)->count(),
-            'total_verifications' => VerificationRequest::count(),
-            'successful_verifications' => VerificationRequest::where('status', 'completed')->count(),
-            'failed_verifications' => VerificationRequest::where('status', 'failed')->count(),
-            'pending_verifications' => VerificationRequest::whereIn('status', ['pending', 'processing'])->count(),
-            'total_revenue' => Transaction::whereIn('id', $this->completedVerificationTransactionIdsQuery())
-                ->where('type', 'debit')
-                ->sum('amount'),
-            'total_wallet_balance' => Wallet::sum('balance'),
-            'today_verifications' => VerificationRequest::whereDate('created_at', today())->count(),
-            'today_revenue' => Transaction::whereIn('id', $this->completedVerificationTransactionIdsQuery()->whereDate('created_at', today()))
-                ->where('type', 'debit')
-                ->sum('amount'),
-        ];
+        $paygoData = null;
+        $loadPaygoData = function () use ($request, &$paygoData): array {
+            return $paygoData ??= $this->paygoDashboardData($request);
+        };
 
-        $platformTrendStart = now()->subDays(6)->startOfDay();
-        $platformTrendEnd = now()->endOfDay();
-        $platformDates = collect(range(0, 6))->map(fn (int $offset) => $platformTrendStart->copy()->addDays($offset));
-        $platformDateExpression = $this->dailyDateExpression('created_at');
+        return Inertia::render('Admin/Dashboard', [
+            'stats' => fn () => $this->platformStats(),
+            'recentVerifications' => fn () => $this->recentVerifications(),
+            'monthlyRevenue' => fn () => $this->monthlyRevenue(),
+            'platformTrend' => fn () => $this->platformTrend(),
+            'paygoStats' => fn () => $loadPaygoData()['stats'],
+            'paygoTrend' => fn () => $loadPaygoData()['trend'],
+            'recentPaygo' => fn () => $loadPaygoData()['recent'],
+            'paygoFilters' => $request->only(['paygo_customer', 'paygo_status', 'paygo_package', 'paygo_date_from', 'paygo_date_to']),
+            'customerOptions' => fn () => User::role('customer')
+                ->orderBy('name')
+                ->get(['users.id', 'users.name', 'users.email'])
+                ->map(fn (User $customer) => [
+                    'title' => $customer->name.' ('.$customer->email.')',
+                    'value' => $customer->id,
+                ]),
+        ]);
+    }
+
+    private function platformStats(): array
+    {
+        $todayStart = now()->startOfDay();
+        $todayEnd = now()->endOfDay();
+
+        $customerStats = User::role('customer')
+            ->selectRaw('COUNT(*) as total, SUM(CASE WHEN users.is_active = 1 THEN 1 ELSE 0 END) as active')
+            ->first();
+        $serviceStats = VerificationService::query()
+            ->selectRaw('COUNT(*) as total, SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active')
+            ->first();
+        $verificationStats = VerificationRequest::query()
+            ->selectRaw("COUNT(*) as total,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN status IN ('pending', 'processing') THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) as today", [$todayStart, $todayEnd])
+            ->first();
+
+        return [
+            'total_customers' => (int) ($customerStats?->total ?? 0),
+            'active_customers' => (int) ($customerStats?->active ?? 0),
+            'total_services' => (int) ($serviceStats?->total ?? 0),
+            'active_services' => (int) ($serviceStats?->active ?? 0),
+            'total_verifications' => (int) ($verificationStats?->total ?? 0),
+            'successful_verifications' => (int) ($verificationStats?->successful ?? 0),
+            'failed_verifications' => (int) ($verificationStats?->failed ?? 0),
+            'pending_verifications' => (int) ($verificationStats?->pending ?? 0),
+            'total_revenue' => (float) Transaction::whereIn('id', $this->completedVerificationTransactionIdsQuery())
+                ->where('type', 'debit')
+                ->sum('amount'),
+            'total_wallet_balance' => (float) Wallet::sum('balance'),
+            'today_verifications' => (int) ($verificationStats?->today ?? 0),
+            'today_revenue' => (float) Transaction::whereIn(
+                'id',
+                $this->completedVerificationTransactionIdsQuery()->whereBetween('created_at', [$todayStart, $todayEnd])
+            )->where('type', 'debit')->sum('amount'),
+        ];
+    }
+
+    private function platformTrend()
+    {
+        $trendStart = now()->subDays(6)->startOfDay();
+        $trendEnd = now()->endOfDay();
+        $dates = collect(range(0, 6))->map(fn (int $offset) => $trendStart->copy()->addDays($offset));
+        $dateExpression = $this->dailyDateExpression('created_at');
         $customerSignups = User::role('customer')
-            ->whereBetween('created_at', [$platformTrendStart, $platformTrendEnd])
-            ->selectRaw("{$platformDateExpression} as activity_date, COUNT(*) as aggregate")
-            ->groupByRaw($platformDateExpression)
+            ->whereBetween('created_at', [$trendStart, $trendEnd])
+            ->selectRaw("{$dateExpression} as activity_date, COUNT(*) as aggregate")
+            ->groupByRaw($dateExpression)
             ->pluck('aggregate', 'activity_date');
-        $customerRunningTotal = User::role('customer')->where('created_at', '<', $platformTrendStart)->count();
-        $dailyVerifications = VerificationRequest::whereBetween('created_at', [$platformTrendStart, $platformTrendEnd])
-            ->selectRaw("{$platformDateExpression} as activity_date, COUNT(*) as aggregate")
-            ->groupByRaw($platformDateExpression)
+        $customerRunningTotal = User::role('customer')->where('created_at', '<', $trendStart)->count();
+        $dailyVerifications = VerificationRequest::whereBetween('created_at', [$trendStart, $trendEnd])
+            ->selectRaw("{$dateExpression} as activity_date, COUNT(*) as aggregate")
+            ->groupByRaw($dateExpression)
             ->pluck('aggregate', 'activity_date');
         $verificationDateExpression = $this->dailyDateExpression('verification_requests.created_at');
         $dailyVerificationRevenue = VerificationRequest::where('verification_requests.status', 'completed')
-            ->whereBetween('verification_requests.created_at', [$platformTrendStart, $platformTrendEnd])
+            ->whereBetween('verification_requests.created_at', [$trendStart, $trendEnd])
             ->whereNotNull('verification_requests.transaction_id')
             ->join('transactions', 'verification_requests.transaction_id', '=', 'transactions.id')
             ->where('transactions.type', 'debit')
@@ -62,12 +109,12 @@ class DashboardController extends Controller
             ->groupByRaw($verificationDateExpression)
             ->pluck('aggregate', 'activity_date');
         $dailyWalletActivity = Transaction::where('status', 'completed')
-            ->whereBetween('created_at', [$platformTrendStart, $platformTrendEnd])
-            ->selectRaw("{$platformDateExpression} as activity_date, SUM(amount) as aggregate")
-            ->groupByRaw($platformDateExpression)
+            ->whereBetween('created_at', [$trendStart, $trendEnd])
+            ->selectRaw("{$dateExpression} as activity_date, SUM(amount) as aggregate")
+            ->groupByRaw($dateExpression)
             ->pluck('aggregate', 'activity_date');
 
-        $platformTrend = $platformDates->map(function (Carbon $date) use (&$customerRunningTotal, $customerSignups, $dailyVerifications, $dailyVerificationRevenue, $dailyWalletActivity) {
+        return $dates->map(function (Carbon $date) use (&$customerRunningTotal, $customerSignups, $dailyVerifications, $dailyVerificationRevenue, $dailyWalletActivity) {
             $key = $date->toDateString();
             $customerRunningTotal += (int) ($customerSignups[$key] ?? 0);
 
@@ -80,19 +127,21 @@ class DashboardController extends Controller
                 'wallet_activity' => (float) ($dailyWalletActivity[$key] ?? 0),
             ];
         })->values();
+    }
 
-        $recentVerifications = VerificationRequest::with(['user', 'verificationService'])
-            ->latest()
-            ->take(10)
+    private function recentVerifications()
+    {
+        return VerificationRequest::query()
+            ->select(['id', 'user_id', 'verification_service_id', 'reference', 'status', 'created_at'])
+            ->with(['user:id,name', 'verificationService:id,name'])
+            ->latest('id')
+            ->limit(4)
             ->get();
+    }
 
-        $recentTransactions = Transaction::with('user')
-            ->latest()
-            ->take(10)
-            ->get();
-
-        // Monthly revenue chart data (based on completed verifications)
-        $monthlyRevenue = VerificationRequest::where('verification_requests.status', 'completed')
+    private function monthlyRevenue()
+    {
+        return VerificationRequest::where('verification_requests.status', 'completed')
             ->whereNotNull('verification_requests.transaction_id')
             ->where('verification_requests.created_at', '>=', now()->subMonths(6))
             ->join('transactions', 'verification_requests.transaction_id', '=', 'transactions.id')
@@ -102,41 +151,39 @@ class DashboardController extends Controller
             ->orderBy('year')
             ->orderBy('month')
             ->get();
+    }
 
+    private function paygoDashboardData(Request $request): array
+    {
         $filteredPaygo = $this->filteredPaygoQuery($request);
+        $aggregate = (clone $filteredPaygo)
+            ->selectRaw("COUNT(*) as total_payments,
+                SUM(CASE WHEN status IN ('paid', 'verifying', 'used') THEN 1 ELSE 0 END) as successful_payments,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_payments,
+                SUM(CASE WHEN status IN ('failed', 'expired') THEN 1 ELSE 0 END) as failed_payments,
+                COALESCE(SUM(CASE WHEN status IN ('paid', 'verifying', 'used') THEN amount ELSE 0 END), 0) as gross_revenue,
+                COALESCE(SUM(CASE WHEN status IN ('paid', 'verifying', 'used') THEN system_price_snapshot ELSE 0 END), 0) as system_settlement,
+                SUM(CASE WHEN status IN ('paid', 'verifying', 'used') AND flow_type = 'result_reference' THEN 1 ELSE 0 END) as reference_packages")
+            ->first();
+        $paygoTotal = (int) ($aggregate?->total_payments ?? 0);
+        $paygoSuccessful = (int) ($aggregate?->successful_payments ?? 0);
+        $grossRevenue = (float) ($aggregate?->gross_revenue ?? 0);
+        $systemSettlement = (float) ($aggregate?->system_settlement ?? 0);
         $paidStatuses = ['paid', 'verifying', 'used'];
-        $paidPaygo = (clone $filteredPaygo)->whereIn('status', $paidStatuses);
-        $paygoGrossRevenue = (float) (clone $paidPaygo)->sum('amount');
-        $paygoSystemSettlement = (float) (clone $paidPaygo)->sum('system_price_snapshot');
-        $paygoTotal = (int) (clone $filteredPaygo)->count();
-        $paygoSuccessful = (int) (clone $paidPaygo)->count();
-
-        $paygoStats = [
-            'total_payments' => $paygoTotal,
-            'successful_payments' => $paygoSuccessful,
-            'pending_payments' => (int) (clone $filteredPaygo)->where('status', 'pending')->count(),
-            'failed_payments' => (int) (clone $filteredPaygo)->whereIn('status', ['failed', 'expired'])->count(),
-            'gross_revenue' => $paygoGrossRevenue,
-            'system_settlement' => $paygoSystemSettlement,
-            'customer_earnings' => max(0, $paygoGrossRevenue - $paygoSystemSettlement),
-            'reference_packages' => (int) (clone $paidPaygo)->where('flow_type', 'result_reference')->count(),
-            'conversion_rate' => $paygoTotal > 0 ? round(($paygoSuccessful / $paygoTotal) * 100, 1) : 0,
-        ];
 
         $trendEnd = $request->filled('paygo_date_to')
             ? Carbon::parse($request->date('paygo_date_to'))->endOfDay()
             : now()->endOfDay();
         $trendStart = $trendEnd->copy()->subDays(6)->startOfDay();
-        $paygoDateExpression = $this->dailyDateExpression('created_at');
+        $dateExpression = $this->dailyDateExpression('created_at');
         $trendPayments = (clone $filteredPaygo)
             ->whereIn('status', $paidStatuses)
             ->whereBetween('created_at', [$trendStart, $trendEnd])
-            ->selectRaw("{$paygoDateExpression} as activity_date, SUM(amount) as gross, SUM(system_price_snapshot) as settlement, COUNT(*) as payments")
-            ->groupByRaw($paygoDateExpression)
+            ->selectRaw("{$dateExpression} as activity_date, SUM(amount) as gross, SUM(system_price_snapshot) as settlement, COUNT(*) as payments")
+            ->groupByRaw($dateExpression)
             ->get()
             ->keyBy('activity_date');
-
-        $paygoTrend = collect(range(0, 6))->map(function (int $offset) use ($trendStart, $trendPayments) {
+        $trend = collect(range(0, 6))->map(function (int $offset) use ($trendStart, $trendPayments) {
             $date = $trendStart->copy()->addDays($offset);
             $payments = $trendPayments[$date->toDateString()] ?? null;
             $gross = (float) ($payments?->gross ?? 0);
@@ -151,8 +198,19 @@ class DashboardController extends Controller
                 'payments' => (int) ($payments?->payments ?? 0),
             ];
         })->values();
-
-        $recentPaygo = (clone $filteredPaygo)
+        $recent = (clone $filteredPaygo)
+            ->select([
+                'id',
+                'user_id',
+                'customer_paygo_service_id',
+                'verification_service_id',
+                'reference',
+                'flow_type',
+                'amount',
+                'system_price_snapshot',
+                'status',
+                'created_at',
+            ])
             ->with(['user:id,name,email', 'paygoService:id,name', 'verificationService:id,name,slug'])
             ->latest('id')
             ->limit(10)
@@ -171,24 +229,21 @@ class DashboardController extends Controller
                 'created_at' => $intent->created_at,
             ]);
 
-        return Inertia::render('Admin/Dashboard', [
-            'stats' => $stats,
-            'recentVerifications' => $recentVerifications,
-            'recentTransactions' => $recentTransactions,
-            'monthlyRevenue' => $monthlyRevenue,
-            'platformTrend' => $platformTrend,
-            'paygoStats' => $paygoStats,
-            'paygoTrend' => $paygoTrend,
-            'recentPaygo' => $recentPaygo,
-            'paygoFilters' => $request->only(['paygo_customer', 'paygo_status', 'paygo_package', 'paygo_date_from', 'paygo_date_to']),
-            'customerOptions' => User::role('customer')
-                ->orderBy('name')
-                ->get(['id', 'name', 'email'])
-                ->map(fn (User $customer) => [
-                    'title' => $customer->name.' ('.$customer->email.')',
-                    'value' => $customer->id,
-                ]),
-        ]);
+        return [
+            'stats' => [
+                'total_payments' => $paygoTotal,
+                'successful_payments' => $paygoSuccessful,
+                'pending_payments' => (int) ($aggregate?->pending_payments ?? 0),
+                'failed_payments' => (int) ($aggregate?->failed_payments ?? 0),
+                'gross_revenue' => $grossRevenue,
+                'system_settlement' => $systemSettlement,
+                'customer_earnings' => max(0, $grossRevenue - $systemSettlement),
+                'reference_packages' => (int) ($aggregate?->reference_packages ?? 0),
+                'conversion_rate' => $paygoTotal > 0 ? round(($paygoSuccessful / $paygoTotal) * 100, 1) : 0,
+            ],
+            'trend' => $trend,
+            'recent' => $recent,
+        ];
     }
 
     private function filteredPaygoQuery(Request $request): Builder
@@ -198,8 +253,8 @@ class DashboardController extends Controller
             ->when($request->filled('paygo_status'), fn (Builder $query) => $query->where('status', $request->string('paygo_status')))
             ->when($request->string('paygo_package')->value() === 'reference', fn (Builder $query) => $query->where('flow_type', 'result_reference'))
             ->when($request->string('paygo_package')->value() === 'normal', fn (Builder $query) => $query->where('flow_type', '!=', 'result_reference'))
-            ->when($request->filled('paygo_date_from'), fn (Builder $query) => $query->whereDate('created_at', '>=', $request->date('paygo_date_from')))
-            ->when($request->filled('paygo_date_to'), fn (Builder $query) => $query->whereDate('created_at', '<=', $request->date('paygo_date_to')));
+            ->when($request->filled('paygo_date_from'), fn (Builder $query) => $query->where('created_at', '>=', $request->date('paygo_date_from')->startOfDay()))
+            ->when($request->filled('paygo_date_to'), fn (Builder $query) => $query->where('created_at', '<=', $request->date('paygo_date_to')->endOfDay()));
     }
 
     private function completedVerificationTransactionIdsQuery(): Builder

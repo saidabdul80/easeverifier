@@ -22,7 +22,7 @@ const statusOptions=[{title:'All statuses',value:''},{title:'Paid',value:'paid'}
 const packageOptions=[{title:'All packages',value:''},{title:'Reference package',value:'reference'},{title:'Normal payment',value:'normal'}];
 const periodOptions=[{title:'Custom range',value:'custom'},{title:'Today',value:'today'},{title:'Last 7 days',value:'7days'},{title:'Last 30 days',value:'30days'}];
 let filterTimer:ReturnType<typeof setTimeout>|undefined;
-const applyFilters=()=>{ clearTimeout(filterTimer); filterTimer=setTimeout(()=>router.get('/admin',{paygo_customer:customer.value||undefined,paygo_status:status.value||undefined,paygo_package:packageType.value||undefined,paygo_date_from:dateFrom.value||undefined,paygo_date_to:dateTo.value||undefined},{preserveState:true,preserveScroll:true,replace:true}),150); };
+const applyFilters=()=>{ clearTimeout(filterTimer); filterTimer=setTimeout(()=>router.get('/admin',{paygo_customer:customer.value||undefined,paygo_status:status.value||undefined,paygo_package:packageType.value||undefined,paygo_date_from:dateFrom.value||undefined,paygo_date_to:dateTo.value||undefined},{only:['paygoStats','paygoTrend','recentPaygo','paygoFilters'],preserveState:true,preserveScroll:true,replace:true}),150); };
 watch([customer,status,packageType,dateFrom,dateTo],applyFilters);
 const localDate=(date:Date)=>{ const offset=date.getTimezoneOffset(); return new Date(date.getTime()-offset*60000).toISOString().slice(0,10); };
 const pickerDate=(value:string)=>value?new Date(`${value}T00:00:00`):undefined;

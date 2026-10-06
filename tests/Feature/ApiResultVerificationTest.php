@@ -482,7 +482,7 @@ it('uses WAEC encrypted display flow instead of the retired DisplayResult endpoi
         ->and($gateway->calls[2]['url'])->toBe('https://www.waecdirect.org/Result/Display?q=encrypted-token');
 });
 
-it('exposes the simplified WAEC form without a card serial field', function () {
+it('exposes an optional card serial field for legacy WAEC Direct cards', function () {
     $fields = collect(app(WAECInstantResult::class)->formFields());
 
     expect($fields->pluck('name')->all())->toBe([
@@ -490,10 +490,12 @@ it('exposes the simplified WAEC form without a card serial field', function () {
         'ExamYear',
         'ExamType',
         'txtPIN',
+        'txtCardSerialNo',
     ])->and($fields->firstWhere('name', 'ExamType')['options'])->toBe([
         ['value' => 'MAY/JUN', 'label' => 'MAY/JUN (School Candidates)'],
         ['value' => 'NOV/DEC', 'label' => 'NOV/DEC (Private Candidates)'],
-    ])->and($fields->firstWhere('name', 'txtPIN')['label'])->toBe('Result Checker PIN');
+    ])->and($fields->firstWhere('name', 'txtPIN')['label'])->toBe('Result Checker PIN')
+        ->and($fields->firstWhere('name', 'txtCardSerialNo')['required'])->toBeFalse();
 });
 
 it('uses the WAEC instant verification post and session result flow', function () {
@@ -651,6 +653,77 @@ it('falls back to WAEC instant verification without charging twice', function ()
         ->and((float) $user->wallet()->first()->fresh()->balance)->toBe(75.0)
         ->and(VerificationRequest::count())->toBe(1)
         ->and($request->status)->toBe('completed');
+});
+
+it('keeps the WAEC Direct error when the instant fallback also fails', function () {
+    $user = createResultApiUser(100);
+    createResultService('waec-result-fetch', 25);
+
+    $primaryGateway = new class implements ResultInterface
+    {
+        public function formFields(): array
+        {
+            return [
+                ['name' => 'txtExamNumber', 'required' => true],
+                ['name' => 'ExamYear', 'required' => true],
+                ['name' => 'ExamType', 'required' => true],
+                ['name' => 'txtPIN', 'required' => true],
+                ['name' => 'txtCardSerialNo', 'required' => false],
+            ];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '<html>primary error</html>';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'error',
+                'code' => 'INVALID_PIN',
+                'message' => 'Invalid WAEC Direct card details.',
+            ];
+        }
+    };
+
+    $instantGateway = new class implements ResultInterface
+    {
+        public function formFields(): array
+        {
+            return [];
+        }
+
+        public function fetchResult(array $params): string
+        {
+            return '{"state":-1}';
+        }
+
+        public function parseResult(string $html): array
+        {
+            return [
+                'status' => 'error',
+                'code' => 'INVALID_PIN',
+                'message' => 'PIN Not Valid/Expired',
+            ];
+        }
+    };
+
+    app()->instance(WAECResult::class, $primaryGateway);
+    app()->instance(WAECInstantResult::class, $instantGateway);
+
+    $result = app(ResultVerificationEngine::class)->verify($user, 'waec', [
+        'txtExamNumber' => '4141607071',
+        'ExamYear' => '2026',
+        'ExamType' => 'MAY/JUN',
+        'txtPIN' => '123456789012',
+        'txtCardSerialNo' => 'WRN123456789',
+    ]);
+
+    expect($result->success)->toBeFalse()
+        ->and($result->errorCode)->toBe('INVALID_PIN')
+        ->and($result->errorMessage)->toBe('Invalid WAEC Direct card details.')
+        ->and(VerificationRequest::first()->error_message)->toBe('Invalid WAEC Direct card details.');
 });
 
 it('uses WAEC instant verification directly when no card serial is supplied', function () {

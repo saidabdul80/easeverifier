@@ -266,10 +266,6 @@ class ResultVerificationEngine
                 return VerificationResult::success($data, $responseTime);
             }
 
-            if (($fallback['board'] ?? null) === 'waec-instant' && ($fallback['parsed']['status'] ?? null) === 'error') {
-                $parsed = $fallback['parsed'];
-            }
-
             $apiLog->update([
                 'response_status' => 400,
                 'response_body' => ApiLog::responseSummary($this->sanitizeParsedResponse($parsed), 400),

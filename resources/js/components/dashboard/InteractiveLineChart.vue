@@ -104,7 +104,7 @@ const options = computed(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index' as const, intersect: false },
-    animation: { duration: 450 },
+    animation: { duration: 180 },
     plugins: {
         legend: { display: false },
         tooltip: {
