@@ -356,7 +356,7 @@ class VerificationEngine
                 ]);
 
                 $result = VerificationResult::failure(
-                    'The verification provider returned incomplete NIN details. Please try again later or contact support.',
+                    'NIN details error. Please try again later or contact support.',
                     'INCOMPLETE_PROVIDER_RESPONSE',
                     $result->responseTime
                 );
