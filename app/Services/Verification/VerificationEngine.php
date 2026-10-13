@@ -10,16 +10,18 @@ use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Notifications\InsufficientBalanceNotification;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class VerificationEngine
 {
     protected ?string $apiKeyEnvironment = null;
+
     protected bool $isTestMode = false;
+
     protected ?Branch $activeBranch = null;
 
     /**
@@ -32,6 +34,7 @@ class VerificationEngine
             $this->isTestMode = $apiKey->environment === 'test';
             $this->activeBranch = $apiKey->branch;
         }
+
         return $this;
     }
 
@@ -76,9 +79,11 @@ class VerificationEngine
                 $shouldCharge = false;
                 $useMockTestResponse = true;
             }
+        } else {
+            $providers = $providers->where('environment', 'live');
         }
 
-        if ($providers->isEmpty() && !$useMockTestResponse) {
+        if ($providers->isEmpty() && ! $useMockTestResponse) {
             return VerificationResult::failure('Service temporarily unavailable', 'NO_PROVIDER');
         }
 
@@ -108,8 +113,9 @@ class VerificationEngine
                     ->first();
 
                 // Check balance only if charging (with locked wallet)
-                if ($shouldCharge && (!$wallet || !$wallet->hasSufficientFunds($price))) {
+                if ($shouldCharge && (! $wallet || ! $wallet->hasSufficientFunds($price))) {
                     $currentBalance = $wallet ? $wallet->total_balance : 0;
+
                     return [
                         'error' => 'INSUFFICIENT_FUNDS',
                         'current_balance' => $currentBalance,
@@ -183,7 +189,7 @@ class VerificationEngine
                 if ($result['error'] === 'INSUFFICIENT_FUNDS') {
                     $cacheKey = "insufficient_balance_notified:{$user->id}";
 
-                    if (!Cache::has($cacheKey)) {
+                    if (! Cache::has($cacheKey)) {
                         try {
                             $user->notify(new InsufficientBalanceNotification(
                                 $result['amount_needed'],
@@ -194,21 +200,23 @@ class VerificationEngine
                             Cache::put($cacheKey, true, now()->addMinutes(5));
                             Log::info("Insufficient balance notification sent to user {$user->id}");
                         } catch (\Exception $e) {
-                            Log::error("Failed to send insufficient balance notification: " . $e->getMessage());
+                            Log::error('Failed to send insufficient balance notification: '.$e->getMessage());
                         }
                     } else {
                         Log::info("Skipping insufficient balance notification for user {$user->id} - already sent within 5 minutes");
                     }
                 }
+
                 return VerificationResult::failure('Insufficient wallet balance', $result['error']);
             }
         } catch (\Exception $e) {
-            Log::error('VerificationEngine debit failed: ' . $e->getMessage());
-            return VerificationResult::failure('Payment processing failed: ' . $e->getMessage(), 'PAYMENT_ERROR');
+            Log::error('VerificationEngine debit failed: '.$e->getMessage());
+
+            return VerificationResult::failure('Payment processing failed: '.$e->getMessage(), 'PAYMENT_ERROR');
         }
 
         // Safety check - should never happen
-        if (!$verificationRequest) {
+        if (! $verificationRequest) {
             return VerificationResult::failure('Failed to create verification request', 'INTERNAL_ERROR');
         }
 
@@ -273,6 +281,7 @@ class VerificationEngine
         foreach ($noRefundPatterns as $pattern) {
             if (str_contains($errorMessage, $pattern)) {
                 Log::info("Not refunding - error message contains '{$pattern}': {$result->getErrorMessage()}");
+
                 return false;
             }
         }
@@ -281,6 +290,7 @@ class VerificationEngine
         foreach ($noRefundCodes as $code) {
             if ($errorCode === $code || str_contains($errorCode, $code)) {
                 Log::info("Not refunding - error code matches '{$code}': {$result->errorCode}");
+
                 return false;
             }
         }
@@ -311,12 +321,12 @@ class VerificationEngine
         VerificationRequest $verificationRequest,
         bool $tryTestFirst,
         ?Branch $branch = null
-    ): VerificationResult
-    {
+    ): VerificationResult {
         // Sort providers: test first if in test mode, otherwise live first
         $sortedProviders = $providers->sortBy(function ($provider) use ($tryTestFirst) {
             $envPriority = ($tryTestFirst && $provider->environment === 'test') ? 0 :
-                          (!$tryTestFirst && $provider->environment === 'live' ? 0 : 1);
+                          (! $tryTestFirst && $provider->environment === 'live' ? 0 : 1);
+
             return [$envPriority, $provider->priority];
         });
 
@@ -333,14 +343,16 @@ class VerificationEngine
                     'status' => 'completed',
                     'completed_at' => now(),
                 ]);
-                //Log::info('Verification successful: ' , [$result]);
+
+                // Log::info('Verification successful: ' , [$result]);
                 return VerificationResult::success($data, $result->responseTime, $provider->id, $isSandbox);
             }
         }
 
-        if($result){
+        if ($result) {
             return $result;
         }
+
         return VerificationResult::failure('All providers failed', 'PROVIDER_ERROR');
     }
 
@@ -355,8 +367,6 @@ class VerificationEngine
         ?Branch $branch = null
     ): VerificationResult {
         $startTime = microtime(true);
-
-   
 
         try {
             $headers = array_merge(
@@ -402,7 +412,7 @@ class VerificationEngine
             ]);
 
             if ($response->successful()) {
-                
+
                 $datajson = $response->json();
 
                 // Check for "not found" conditions in the response body
@@ -414,19 +424,20 @@ class VerificationEngine
                 if ($statusCode === '404' || $statusCode === 404 ||
                     stripos($messageStr, 'not found') !== false ||
                     stripos($messageStr, 'no record') !== false) {
-                    Log::info('Record not found (valid result, no refund): ' . $messageStr);
+                    Log::info('Record not found (valid result, no refund): '.$messageStr);
+
                     return VerificationResult::failure(
-                        'Record not found: ' . $messageStr,
+                        'Record not found: '.$messageStr,
                         '404_NOT_FOUND',
                         $responseTime
                     );
                 }
-                
-                Log::info('Response received successfully' );
+
+                Log::info('Response received successfully');
                 $rawResponse = $response->json();
 
-                if(isset($datajson['response_code']) && $datajson['response_code'] == '00'){
-                    $mappedData = $this->mapResponse(["data" => $datajson], $provider->response_mapping ?? []);
+                if (isset($datajson['response_code']) && $datajson['response_code'] == '00') {
+                    $mappedData = $this->mapResponse(['data' => $datajson], $provider->response_mapping ?? []);
                     $finalData = $this->resolveSuccessfulResponseData($provider, $mappedData, $rawResponse, $verificationRequest);
 
                     return VerificationResult::success($finalData, $responseTime, $provider->id, $provider->environment === 'test');
@@ -438,14 +449,33 @@ class VerificationEngine
                 return VerificationResult::success($finalData, $responseTime, $provider->id, $provider->environment === 'test');
             }
             $message = $response->json()['message'] ?? 'Unknown error';
+            $message = is_array($message) ? json_encode($message) : (string) $message;
+
+            if ($this->isProviderAccountFailure($message)) {
+                Log::warning('Provider account failure during verification.', [
+                    'provider_id' => $provider->id,
+                    'provider_name' => $provider->name,
+                    'verification_request_id' => $verificationRequest->id,
+                    'response_status' => $response->status(),
+                    'provider_message' => $message,
+                ]);
+
+                return VerificationResult::failure(
+                    'Verification service is temporarily unavailable. Please try again later or contact support.',
+                    'PROVIDER_ACCOUNT_ERROR',
+                    $responseTime
+                );
+            }
+
             return VerificationResult::failure(
-                'Provider returned error: ' . (is_array($message) ? json_encode($message) : $message),
+                'Provider returned error: '.$message,
                 'PROVIDER_ERROR',
                 $responseTime
             );
         } catch (\Exception $e) {
             Log::error($e);
             $responseTime = (int) ((microtime(true) - $startTime) * 1000);
+
             return VerificationResult::failure($e->getMessage(), 'EXCEPTION', $responseTime);
         }
     }
@@ -554,12 +584,28 @@ class VerificationEngine
         return false;
     }
 
+    protected function isProviderAccountFailure(string $message): bool
+    {
+        $normalizedMessage = strtolower($message);
+
+        foreach ([
+            'failed_precondition',
+            'insufficient fund',
+            'insufficient funds',
+            'credit facility',
+            'credit has expired',
+        ] as $pattern) {
+            if (str_contains($normalizedMessage, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Refund user and mark request as failed.
      */
-   /**
- * Refund user and mark request as failed.
- */
     protected function refundAndFail(
         VerificationRequest $request,
         $wallet,
@@ -569,55 +615,57 @@ class VerificationEngine
         // Prevent double refunds - check if already refunded
         if ($request->status === 'failed') {
             Log::warning("Attempted double refund for verification: {$request->reference}");
+
             return;
         }
 
         // Use DB transaction to ensure atomicity
         DB::transaction(function () use ($request, $wallet, $amount, $errorMessage) {
-        // Lock the verification request to prevent race conditions
-        $lockedRequest = VerificationRequest::where('id', $request->id)
-            ->lockForUpdate()
-            ->firstOrFail();
-            
-        // Check if already failed to prevent double processing
-        if ($lockedRequest->status === 'failed') {
-            return;
-        }
+            // Lock the verification request to prevent race conditions
+            $lockedRequest = VerificationRequest::where('id', $request->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        // Check if a refund transaction already exists for this request
-        $existingRefund = \App\Models\Transaction::where('category', 'refund')
-            ->where('metadata->verification_request_id', $lockedRequest->id)
-            ->lockForUpdate()
-            ->exists();
+            // Check if already failed to prevent double processing
+            if ($lockedRequest->status === 'failed') {
+                return;
+            }
 
-        if ($existingRefund) {
-            Log::warning("Refund already exists for verification: {$lockedRequest->reference}");
-            $lockedRequest->markAsFailed($errorMessage);
-            return;
-        }
+            // Check if a refund transaction already exists for this request
+            $existingRefund = \App\Models\Transaction::where('category', 'refund')
+                ->where('metadata->verification_request_id', $lockedRequest->id)
+                ->lockForUpdate()
+                ->exists();
 
-        try {
-            // Refund the user
-            $wallet->credit(
-                $amount,
-                'refund',
-                "Refund for failed verification: {$lockedRequest->reference}",
-                [
-                    'verification_request_id' => $lockedRequest->id,
-                    'original_amount' => $amount,
-                    'reason' => $errorMessage,
-                ]
-            );
+            if ($existingRefund) {
+                Log::warning("Refund already exists for verification: {$lockedRequest->reference}");
+                $lockedRequest->markAsFailed($errorMessage);
 
-            // Update the request status
-            $lockedRequest->markAsFailed($errorMessage);
-            
-            Log::info("Successfully refunded {$amount} for verification: {$lockedRequest->reference}");
-            
-        } catch (\Exception $e) {
-            Log::error("Failed to process refund for verification {$lockedRequest->reference}: " . $e->getMessage());
-            throw $e; // Re-throw to trigger rollback
-        }
-    });
-}
+                return;
+            }
+
+            try {
+                // Refund the user
+                $wallet->credit(
+                    $amount,
+                    'refund',
+                    "Refund for failed verification: {$lockedRequest->reference}",
+                    [
+                        'verification_request_id' => $lockedRequest->id,
+                        'original_amount' => $amount,
+                        'reason' => $errorMessage,
+                    ]
+                );
+
+                // Update the request status
+                $lockedRequest->markAsFailed($errorMessage);
+
+                Log::info("Successfully refunded {$amount} for verification: {$lockedRequest->reference}");
+
+            } catch (\Exception $e) {
+                Log::error("Failed to process refund for verification {$lockedRequest->reference}: ".$e->getMessage());
+                throw $e; // Re-throw to trigger rollback
+            }
+        });
+    }
 }

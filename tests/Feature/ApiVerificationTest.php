@@ -44,7 +44,7 @@ function createApiVerificationService(string $slug, string $name): VerificationS
     ]);
 }
 
-function attachApiProvider(VerificationService $service, ?array $responseMapping = null): ServiceProvider
+function attachApiProvider(VerificationService $service, ?array $responseMapping = null, string $environment = 'live'): ServiceProvider
 {
     return ServiceProvider::create([
         'verification_service_id' => $service->id,
@@ -63,7 +63,7 @@ function attachApiProvider(VerificationService $service, ?array $responseMapping
         'timeout' => 10,
         'priority' => 1,
         'is_active' => true,
-        'environment' => 'live',
+        'environment' => $environment,
     ]);
 }
 
@@ -178,6 +178,73 @@ it('does not apply the test nin restriction to live api keys', function () {
             'success' => false,
             'error_code' => 'NO_PROVIDER',
         ]);
+});
+
+it('does not use test providers for live api keys', function () {
+    $user = createApiUser();
+    $user->wallet()->create([
+        'balance' => 500,
+        'bonus_balance' => 0,
+    ]);
+
+    $service = createNinService();
+    attachApiProvider($service, environment: 'test');
+
+    Http::fake();
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
+    ])->postJson('/api/v1/verify/nin', [
+        'nin' => '12345678901',
+        'consent' => true,
+    ]);
+
+    $response
+        ->assertStatus(400)
+        ->assertJson([
+            'success' => false,
+            'error_code' => 'NO_PROVIDER',
+        ]);
+
+    Http::assertNothingSent();
+});
+
+it('hides provider account funding errors from verification customers and refunds the wallet', function () {
+    $user = createApiUser();
+    $wallet = $user->wallet()->create([
+        'balance' => 500,
+        'bonus_balance' => 0,
+    ]);
+
+    $service = createNinService();
+    attachApiProvider($service);
+
+    Http::fake([
+        '*' => Http::response([
+            'message' => '9 FAILED_PRECONDITION: Insufficient fund or credit facility has expired!',
+        ], 400),
+    ]);
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
+    ])->postJson('/api/v1/verify/nin', [
+        'nin' => '12345678901',
+        'consent' => true,
+    ]);
+
+    $response
+        ->assertStatus(400)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('error', 'Verification service is temporarily unavailable. Please try again later or contact support.')
+        ->assertJsonPath('error_code', 'PROVIDER_ACCOUNT_ERROR');
+
+    expect($response->json('error'))->not->toContain('Insufficient fund')
+        ->and((float) $wallet->fresh()->total_balance)->toBe(500.0)
+        ->and(VerificationRequest::query()->latest('id')->value('status'))->toBe('failed');
 });
 
 it('does not reuse cached verification data after provider mapping changes', function () {
