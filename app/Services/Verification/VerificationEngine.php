@@ -233,7 +233,15 @@ class VerificationEngine
         }
 
         // Try providers in order
-        $result = $this->tryProviders($providers, $searchParameter, $user, $verificationRequest, $usedTestProvider, $branch);
+        $result = $this->tryProviders(
+            $providers,
+            $searchParameter,
+            $user,
+            $verificationRequest,
+            $usedTestProvider,
+            $branch,
+            $service->slug === 'nin'
+        );
 
         if ($result->isSuccessful()) {
             return $result;
@@ -320,7 +328,8 @@ class VerificationEngine
         User $user,
         VerificationRequest $verificationRequest,
         bool $tryTestFirst,
-        ?Branch $branch = null
+        ?Branch $branch = null,
+        bool $requiresFirstName = false
     ): VerificationResult {
         // Sort providers: test first if in test mode, otherwise live first
         $sortedProviders = $providers->sortBy(function ($provider) use ($tryTestFirst) {
@@ -330,8 +339,28 @@ class VerificationEngine
             return [$envPriority, $provider->priority];
         });
 
+        $result = null;
+
         foreach ($sortedProviders as $provider) {
-            $result = $this->callProvider($provider, $searchParameter, $user, $verificationRequest, $branch);
+            for ($attempt = 1; $attempt <= ($requiresFirstName ? 2 : 1); $attempt++) {
+                $result = $this->callProvider($provider, $searchParameter, $user, $verificationRequest, $branch);
+
+                if (! $requiresFirstName || ! $result->isSuccessful() || $this->hasNinFirstName($result->getData())) {
+                    break;
+                }
+
+                Log::warning('NIN provider response is missing a first name.', [
+                    'provider_id' => $provider->id,
+                    'verification_request_id' => $verificationRequest->id,
+                    'attempt' => $attempt,
+                ]);
+
+                $result = VerificationResult::failure(
+                    'The verification provider returned incomplete NIN details. Please try again later or contact support.',
+                    'INCOMPLETE_PROVIDER_RESPONSE',
+                    $result->responseTime
+                );
+            }
 
             if ($result->isSuccessful()) {
                 $isSandbox = $provider->environment === 'test';
@@ -349,11 +378,18 @@ class VerificationEngine
             }
         }
 
-        if ($result) {
-            return $result;
+        return $result ?? VerificationResult::failure('All providers failed', 'PROVIDER_ERROR');
+    }
+
+    public function hasNinFirstName(array $data): bool
+    {
+        foreach (['first_name', 'firstname', 'firstName'] as $key) {
+            if (isset($data[$key]) && is_string($data[$key]) && trim($data[$key]) !== '') {
+                return true;
+            }
         }
 
-        return VerificationResult::failure('All providers failed', 'PROVIDER_ERROR');
+        return isset($data['data']) && is_array($data['data']) && $this->hasNinFirstName($data['data']);
     }
 
     /**
@@ -410,6 +446,17 @@ class VerificationEngine
                 'response_body' => ApiLog::responseSummary($responsePayload, $response->status()),
                 'response_time' => $responseTime,
             ]);
+
+            $message = $responsePayload['message'] ?? '';
+            $message = is_array($message) ? json_encode($message) : (string) $message;
+
+            if ($response->tooManyRequests() || str_contains(strtolower($message), 'too many requests')) {
+                return VerificationResult::failure(
+                    $message !== '' ? $message : 'Too many verification requests. Please wait before trying again.',
+                    'PROVIDER_RATE_LIMITED',
+                    $responseTime
+                );
+            }
 
             if ($response->successful()) {
 

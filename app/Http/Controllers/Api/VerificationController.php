@@ -94,7 +94,8 @@ class VerificationController extends Controller
             ->latest()
             ->first();
 
-        if ($existingVerification?->canReuseResponseData()) {
+        if ($existingVerification?->canReuseResponseData() &&
+            ($serviceSlug !== 'nin' || $this->verificationEngine->hasNinFirstName($existingVerification->response_data))) {
             Log::info('Returning cached verification result', [
                 'reference' => $existingVerification->reference,
             ]);

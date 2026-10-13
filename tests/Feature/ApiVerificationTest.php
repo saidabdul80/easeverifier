@@ -1,13 +1,17 @@
 <?php
 
 use App\Models\ApiKey;
+use App\Models\ApiLog;
 use App\Models\ServiceProvider;
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
+use App\Services\Verification\VerificationEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -245,6 +249,303 @@ it('hides provider account funding errors from verification customers and refund
     expect($response->json('error'))->not->toContain('Insufficient fund')
         ->and((float) $wallet->fresh()->total_balance)->toBe(500.0)
         ->and(VerificationRequest::query()->latest('id')->value('status'))->toBe('failed');
+});
+
+it('handles provider id rate limits as failures and refunds the wallet', function (int $status, ?string $message) {
+    $user = createApiUser();
+    $wallet = $user->wallet()->create([
+        'balance' => 500,
+        'bonus_balance' => 0,
+    ]);
+
+    $service = createNinService();
+    attachApiProvider($service);
+
+    Http::fake([
+        '*' => Http::response($message === null ? [] : ['message' => $message], $status),
+    ]);
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
+    ])->postJson('/api/v1/verify/nin', [
+        'nin' => '12345678901',
+        'consent' => true,
+    ]);
+
+    $response
+        ->assertStatus(400)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('error_code', 'PROVIDER_RATE_LIMITED')
+        ->assertJsonPath('error', $message ?? 'Too many verification requests. Please wait before trying again.');
+
+    Http::assertSentCount(1);
+
+    $verification = VerificationRequest::query()->latest('id')->firstOrFail();
+
+    expect((float) $wallet->fresh()->total_balance)->toBe(500.0)
+        ->and($verification->status)->toBe('failed')
+        ->and($wallet->transactions()->where('category', 'refund')->count())->toBe(1);
+})->with([
+    'provider rejects the id' => [400, 'Too many requests for this ID number in a short time. Please try again after 10mins.'],
+    'http rate limit' => [429, null],
+    'rate limit inside a successful http response' => [200, 'Too many requests for this ID number in a short time. Please try again after 10mins.'],
+]);
+
+it('retries incomplete nin responses once without charging twice', function (array $incompleteData) {
+    $user = createApiUser();
+    $wallet = $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $service = createNinService();
+    $provider = attachApiProvider($service);
+    $inactiveProvider = attachApiProvider($service);
+    $inactiveProvider->update(['is_active' => false, 'endpoint' => '/inactive']);
+
+    Http::fakeSequence()
+        ->push(['data' => array_merge(['nin' => '12345678901'], $incompleteData)])
+        ->push(['data' => ['nin' => '12345678901', 'first_name' => 'Ada']]);
+
+    $result = app(VerificationEngine::class)->verify($user, $service, '12345678901');
+
+    Http::assertSentCount(2);
+    Http::assertNotSent(fn ($request) => $request->url() === $inactiveProvider->full_url);
+
+    $verification = VerificationRequest::query()->sole();
+
+    expect($result->isSuccessful())->toBeTrue()
+        ->and($result->getData()['first_name'])->toBe('Ada')
+        ->and($verification->status)->toBe('completed')
+        ->and($verification->service_provider_id)->toBe($provider->id)
+        ->and((float) $wallet->fresh()->total_balance)->toBe(400.0)
+        ->and($wallet->transactions()->where('type', 'debit')->count())->toBe(1)
+        ->and(ApiLog::query()->where('verification_request_id', $verification->id)->count())->toBe(2);
+})->with([
+    'missing first name' => [[]],
+    'null first name' => [['first_name' => null]],
+    'empty first name' => [['first_name' => '']],
+    'whitespace first name' => [['first_name' => '   ']],
+]);
+
+it('falls back through active nin providers by priority and skips inactive providers', function () {
+    $user = createApiUser();
+    $wallet = $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $service = createNinService();
+    $primary = attachApiProvider($service);
+    $secondary = attachApiProvider($service);
+    $secondary->update(['priority' => 2, 'endpoint' => '/secondary']);
+    $tertiary = attachApiProvider($service);
+    $tertiary->update(['priority' => 3, 'endpoint' => '/tertiary']);
+    $inactive = attachApiProvider($service);
+    $inactive->update(['is_active' => false, 'priority' => 0, 'endpoint' => '/inactive']);
+    $testProvider = attachApiProvider($service, environment: 'test');
+    $testProvider->update(['priority' => 0, 'endpoint' => '/test']);
+    $otherService = createApiVerificationService('bvn', 'BVN Verification');
+    $unrelatedProvider = attachApiProvider($otherService);
+    $unrelatedProvider->update(['endpoint' => '/bvn']);
+
+    Http::fake([
+        $primary->full_url => Http::sequence()->push(['data' => ['first_name' => null]])->push(['data' => ['first_name' => null]]),
+        $secondary->full_url => Http::sequence()->push(['data' => ['first_name' => '']])->push(['data' => ['first_name' => '']]),
+        $tertiary->full_url => Http::sequence()->push(['data' => ['first_name' => null]])->push(['data' => ['nin' => '12345678901', 'first_name' => 'Grace']]),
+    ]);
+    Http::preventStrayRequests();
+
+    $result = app(VerificationEngine::class)->verify($user, $service, '12345678901');
+
+    Http::assertSentCount(6);
+    $urls = Http::recorded()->map(fn ($pair) => $pair[0]->url())->all();
+    $verification = VerificationRequest::query()->sole();
+
+    expect($urls)->toBe([$primary->full_url, $primary->full_url, $secondary->full_url, $secondary->full_url, $tertiary->full_url, $tertiary->full_url])
+        ->and($result->isSuccessful())->toBeTrue()
+        ->and($result->getData()['first_name'])->toBe('Grace')
+        ->and($verification->service_provider_id)->toBe($tertiary->id)
+        ->and($verification->status)->toBe('completed')
+        ->and($inactive->fresh()->is_active)->toBeFalse()
+        ->and((float) $wallet->fresh()->total_balance)->toBe(400.0)
+        ->and($wallet->transactions()->where('type', 'debit')->count())->toBe(1)
+        ->and(ApiLog::query()->where('verification_request_id', $verification->id)->count())->toBe(6);
+});
+
+it('fails and refunds once when all nin providers return incomplete responses', function () {
+    $user = createApiUser();
+    $wallet = $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $service = createNinService();
+    attachApiProvider($service);
+    $secondary = attachApiProvider($service);
+    $secondary->update(['priority' => 2, 'endpoint' => '/secondary']);
+    $inactive = attachApiProvider($service);
+    $inactive->update(['is_active' => false, 'endpoint' => '/inactive']);
+
+    Http::fake(['*' => Http::response(['data' => ['nin' => '12345678901', 'first_name' => null]])]);
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+    $this->withHeaders(['Authorization' => 'Bearer '.$apiKey->getBearerToken()])
+        ->postJson('/api/v1/verify/nin', ['nin' => '12345678901', 'consent' => true])
+        ->assertStatus(400)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('error_code', 'INCOMPLETE_PROVIDER_RESPONSE');
+
+    Http::assertSentCount(4);
+    Http::assertNotSent(fn ($request) => $request->url() === $inactive->full_url);
+    $verification = VerificationRequest::query()->sole();
+
+    expect($verification->status)->toBe('failed')
+        ->and($verification->response_data)->toBeNull()
+        ->and((float) $wallet->fresh()->total_balance)->toBe(500.0)
+        ->and($wallet->transactions()->where('type', 'debit')->count())->toBe(1)
+        ->and($wallet->transactions()->where('category', 'refund')->count())->toBe(1);
+});
+
+it('uses the next priority nin provider if the incomplete response retry is rate limited', function () {
+    $user = createApiUser();
+    $wallet = $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $service = createNinService();
+    $primary = attachApiProvider($service);
+    $secondary = attachApiProvider($service);
+    $secondary->update(['priority' => 2, 'endpoint' => '/secondary']);
+
+    Http::fake([
+        $primary->full_url => Http::sequence()
+            ->push(['data' => ['first_name' => null]])
+            ->push(['message' => 'Too many requests'], 429),
+        $secondary->full_url => Http::response(['data' => ['nin' => '12345678901', 'first_name' => 'Ada']]),
+    ]);
+    Http::preventStrayRequests();
+
+    $result = app(VerificationEngine::class)->verify($user, $service, '12345678901');
+
+    Http::assertSentCount(3);
+    expect($result->isSuccessful())->toBeTrue()
+        ->and(VerificationRequest::query()->sole()->service_provider_id)->toBe($secondary->id)
+        ->and((float) $wallet->fresh()->total_balance)->toBe(400.0);
+});
+
+it('uses nin retry and priority fallback through the customer form with one branch wallet charge', function () {
+    $this->withoutVite();
+    Role::findOrCreate('customer');
+    $user = createApiUser();
+    $user->assignRole('customer');
+    $wallet = $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $branch = $user->branches()->create(['name' => 'Verification Branch']);
+    $branch->wallet->update(['balance' => 300]);
+    $service = createNinService();
+    $primary = attachApiProvider($service);
+    $secondary = attachApiProvider($service);
+    $secondary->update(['priority' => 2, 'endpoint' => '/secondary']);
+
+    Http::fake([
+        $primary->full_url => Http::response(['data' => ['nin' => '12345678901', 'first_name' => null]]),
+        $secondary->full_url => Http::response(['data' => ['nin' => '12345678901', 'first_name' => 'Ada']]),
+    ]);
+
+    $this->actingAs($user)
+        ->post("/customer/verify/{$service->id}", ['search_parameter' => '12345678901', 'branch_id' => $branch->id])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Customer/Verification/Result')
+            ->where('result.success', true)
+            ->where('result.data.first_name', 'Ada'));
+
+    Http::assertSentCount(3);
+    $verification = VerificationRequest::query()->sole();
+
+    expect($verification->service_provider_id)->toBe($secondary->id)
+        ->and($verification->branch_id)->toBe($branch->id)
+        ->and((float) $wallet->fresh()->total_balance)->toBe(500.0)
+        ->and((float) $branch->wallet->fresh()->total_balance)->toBe(200.0)
+        ->and($branch->wallet->transactions()->where('type', 'debit')->count())->toBe(1);
+});
+
+it('does not retry provider errors or use inactive providers', function (int $status, string $message) {
+    $user = createApiUser();
+    $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $service = createNinService();
+    attachApiProvider($service);
+    $inactive = attachApiProvider($service);
+    $inactive->update(['is_active' => false, 'endpoint' => '/inactive']);
+
+    Http::fake(['*' => Http::response(['message' => $message], $status)]);
+
+    $result = app(VerificationEngine::class)->verify($user, $service, '12345678901');
+
+    Http::assertSentCount(1);
+    expect($result->isSuccessful())->toBeFalse();
+})->with([
+    'rate limited' => [429, 'Too many requests'],
+    'provider failure' => [500, 'Provider unavailable'],
+    'record not found' => [200, 'Record not found'],
+]);
+
+it('does not use live providers when a sandbox nin response is incomplete', function () {
+    $user = createApiUser();
+    $wallet = $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $service = createNinService();
+    $testProvider = attachApiProvider($service, environment: 'test');
+    $testProvider->update(['endpoint' => '/test']);
+    attachApiProvider($service);
+    $inactive = attachApiProvider($service);
+    $inactive->update(['is_active' => false, 'endpoint' => '/inactive']);
+
+    Http::fake([$testProvider->full_url => Http::response(['data' => ['first_name' => null]])]);
+    Http::preventStrayRequests();
+
+    $apiKey = ApiKey::generate($user->id, 'Sandbox', 'test');
+    $this->withHeaders(['Authorization' => 'Bearer '.$apiKey->getBearerToken()])
+        ->postJson('/api/v1/verify/nin', ['nin' => '11111111111', 'consent' => true])
+        ->assertStatus(400)
+        ->assertJsonPath('error_code', 'INCOMPLETE_PROVIDER_RESPONSE');
+
+    Http::assertSentCount(2);
+    expect((float) $wallet->fresh()->total_balance)->toBe(500.0)
+        ->and($wallet->transactions()->count())->toBe(0);
+});
+
+it('does not require a first name or retry successful responses for other services', function () {
+    $user = createApiUser();
+    $wallet = $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $service = createApiVerificationService('bvn', 'BVN Verification');
+    attachApiProvider($service, ['bvn' => 'data.bvn']);
+    $inactive = attachApiProvider($service);
+    $inactive->update(['is_active' => false, 'endpoint' => '/inactive']);
+
+    Http::fake(['*' => Http::response(['data' => ['bvn' => '12345678901']])]);
+
+    $result = app(VerificationEngine::class)->verify($user, $service, '12345678901');
+
+    Http::assertSentCount(1);
+    expect($result->isSuccessful())->toBeTrue()
+        ->and((float) $wallet->fresh()->total_balance)->toBe(400.0);
+});
+
+it('does not reuse previously completed nin responses with an empty first name', function () {
+    $user = createApiUser();
+    $user->wallet()->create(['balance' => 500, 'bonus_balance' => 0]);
+    $service = createNinService();
+    $provider = attachApiProvider($service);
+    VerificationRequest::create([
+        'user_id' => $user->id,
+        'verification_service_id' => $service->id,
+        'service_provider_id' => $provider->id,
+        'reference' => VerificationRequest::generateReference(),
+        'search_parameter' => '12345678901',
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'api',
+        'response_data' => ['nin' => '12345678901', 'first_name' => null],
+        'completed_at' => now(),
+    ]);
+
+    Http::fake(['*' => Http::response(['data' => ['nin' => '12345678901', 'first_name' => 'Ada']])]);
+
+    $apiKey = ApiKey::generate($user->id, 'Production', 'live');
+    $this->withHeaders(['Authorization' => 'Bearer '.$apiKey->getBearerToken()])
+        ->postJson('/api/v1/verify/nin', ['nin' => '12345678901', 'consent' => true])
+        ->assertOk()
+        ->assertJsonPath('data.first_name', 'Ada');
+
+    Http::assertSentCount(1);
+    expect(VerificationRequest::query()->count())->toBe(2);
 });
 
 it('does not reuse cached verification data after provider mapping changes', function () {

@@ -451,7 +451,8 @@ class PaygoVerificationService
                 ->first();
         }
 
-        if ($existingVerification?->canReuseResponseData()) {
+        if ($existingVerification?->canReuseResponseData() &&
+            $this->verificationEngine->hasNinFirstName($existingVerification->response_data)) {
             $intent = $this->recordVerificationAttempt($intent, $existingVerification, [
                 'verification_status' => 'cached',
                 'verification_reference' => $existingVerification->reference,

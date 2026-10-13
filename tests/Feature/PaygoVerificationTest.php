@@ -800,6 +800,48 @@ it('allows three successful calls for one paid nin and caches after the first', 
         ->assertJsonPath('error_code', 'PAYGO_PAYMENT_INVALID');
 });
 
+it('reverifies incomplete saved nin responses instead of reusing them for a paid paygo request', function () {
+    $user = createPaygoCustomer();
+    $service = createPaygoNinService(100);
+    attachSuccessfulPaygoProvider($service);
+    $provider = $service->providers()->firstOrFail();
+    $paygoService = createPaygoServiceFor($user, $service, price: 150);
+    $intent = app(PaygoVerificationService::class)->createIntent($paygoService, ['nin' => '12345678901']);
+    app(PaygoVerificationService::class)->completePayment($intent->reference, [
+        'amount' => 150,
+        'reference' => $intent->reference,
+        'paid_at' => now(),
+        'channel' => 'card',
+    ]);
+    $intent->update(['verification_attempts' => 1]);
+    VerificationRequest::create([
+        'user_id' => $user->id,
+        'verification_service_id' => $service->id,
+        'service_provider_id' => $provider->id,
+        'reference' => VerificationRequest::generateReference(),
+        'search_parameter' => '12345678901',
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'api',
+        'response_data' => ['nin' => '12345678901', 'first_name' => null],
+        'completed_at' => now(),
+    ]);
+
+    Http::fakeSequence()
+        ->push(['data' => ['nin' => '12345678901', 'first_name' => null]])
+        ->push(['data' => ['nin' => '12345678901', 'first_name' => 'Ada']]);
+
+    $this->postJson("/api/paygo/{$paygoService->public_slug}/verify", ['nin' => '12345678901', 'consent' => true])
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('data.first_name', 'Ada')
+        ->assertJsonPath('attempts_remaining', 1);
+
+    Http::assertSentCount(2);
+    expect($intent->fresh()->verification_attempts)->toBe(2)
+        ->and(VerificationRequest::query()->count())->toBe(2);
+});
+
 it('allows a customer to publish a paygo result verification page', function () {
     $this->withoutVite();
 

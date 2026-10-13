@@ -211,6 +211,7 @@ const resultPayload = () => {
 };
 
 const submit = () => {
+    if (loading.value || form.processing || resultForm.processing) return;
     if (!canVerify()) return;
     loading.value = true;
 
@@ -438,7 +439,7 @@ watch(
                                 size="large"
                                 block
                                 :loading="loading || form.processing || resultForm.processing"
-                                :disabled="!canVerify() || (isResultBoard ? !resultFormIsComplete : !form.search_parameter) || loadingFields"
+                                :disabled="loading || form.processing || resultForm.processing || !canVerify() || (isResultBoard ? !resultFormIsComplete : !form.search_parameter) || loadingFields"
                             >
                                 <v-icon start>mdi-shield-search</v-icon>
                                 {{
