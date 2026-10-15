@@ -210,7 +210,17 @@ class VerificationController extends Controller
         $verifications = $this->historyQuery($request)
             ->latest()
             ->paginate(15)
-            ->withQueryString();
+            ->withQueryString()
+            ->through(function (VerificationRequest $verification) {
+                $canViewResult = $verification->canViewCustomerResult();
+                $verification->setAttribute('can_view_result', $canViewResult);
+
+                if (! $canViewResult) {
+                    $verification->makeHidden('response_data');
+                }
+
+                return $verification;
+            });
 
         $services = VerificationService::active()->get();
 
@@ -254,6 +264,8 @@ class VerificationController extends Controller
             abort(403);
         }
 
+        abort_unless($verification->canViewCustomerResult(), 403, 'Verification results are only available for one month.');
+
         $verification->load('verificationService');
 
         return Inertia::render('Customer/Verification/Result', [
@@ -274,6 +286,8 @@ class VerificationController extends Controller
         if ($verification->user_id !== $request->user()->id) {
             abort(403);
         }
+
+        abort_unless($verification->canViewCustomerResult(), 403, 'Verification results are only available for one month.');
 
         $verification->loadMissing(['verificationService:id,name', 'serviceProvider:id,name']);
 

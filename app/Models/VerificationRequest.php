@@ -219,6 +219,12 @@ class VerificationRequest extends Model
         return $this->status === 'completed';
     }
 
+    public function canViewCustomerResult(): bool
+    {
+        return $this->created_at !== null
+            && now()->lte($this->created_at->copy()->addMonthNoOverflow());
+    }
+
     /**
      * Determine whether this stored response is still safe to reuse.
      */

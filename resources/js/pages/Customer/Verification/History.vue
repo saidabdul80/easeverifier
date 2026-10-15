@@ -336,6 +336,7 @@ const headers = [
                                 >View</v-btn
                             >
                             <v-btn
+                                v-if="item.can_view_result"
                                 size="small"
                                 variant="text"
                                 :href="`/customer/verification/${item.id}`"
@@ -404,6 +405,7 @@ const headers = [
                             ><v-icon>mdi-eye</v-icon></v-btn
                         >
                         <v-btn
+                            v-if="item.can_view_result"
                             icon
                             variant="text"
                             size="small"
@@ -512,6 +514,7 @@ const headers = [
                         >Close</v-btn
                     >
                     <v-btn
+                        v-if="selectedVerification.can_view_result"
                         color="primary"
                         :href="`/customer/verification/${selectedVerification.id}`"
                         >View Full Result</v-btn

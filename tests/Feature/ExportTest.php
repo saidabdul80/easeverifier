@@ -6,6 +6,7 @@ use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Models\Wallet;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Role;
 
@@ -358,6 +359,74 @@ it('filters customer verification history by reference or search parameter', fun
         ->not->toContain('VER-NO-MATCH-001')
         ->not->toContain('VER-FILTERMATCH-OTHER');
 });
+
+it('limits customer history result access to one calendar month', function (string $currentTime, string $createdAt, bool $canViewResult) {
+    $this->withoutVite();
+    $this->travelTo(Carbon::parse($currentTime));
+    $customer = createUserWithRole('customer');
+    $service = createVerificationService();
+    $verification = createVerificationRequestForExport([
+        'user_id' => $customer->id,
+        'verification_service_id' => $service->id,
+        'reference' => 'VER-HISTORY-AGE-001',
+        'search_parameter' => '33333333333',
+        'response_data' => ['first_name' => 'Ada', 'verified' => true],
+        'amount_charged' => 100,
+        'status' => 'completed',
+        'source' => 'web',
+        'created_at' => $createdAt,
+        'completed_at' => now(),
+    ]);
+
+    $this->actingAs($customer)
+        ->get(route('customer.verification.history'))
+        ->assertOk()
+        ->assertInertia(function (Assert $page) use ($canViewResult) {
+            $page->component('Customer/Verification/History')
+                ->where('verifications.total', 1)
+                ->where('verifications.data.0.reference', 'VER-HISTORY-AGE-001')
+                ->where('verifications.data.0.can_view_result', $canViewResult);
+
+            if ($canViewResult) {
+                $page->where('verifications.data.0.response_data.first_name', 'Ada');
+            } else {
+                $page->missing('verifications.data.0.response_data');
+            }
+        });
+
+    foreach (['customer.verification.result', 'customer.verification.show-result'] as $route) {
+        $response = $this->get(route($route, $verification));
+
+        if ($canViewResult) {
+            $response->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('Customer/Verification/Result')
+                    ->where('result.data.first_name', 'Ada'));
+        } else {
+            $response->assertForbidden();
+        }
+    }
+
+    $download = $this->get(route('customer.verification.download', $verification));
+
+    if ($canViewResult) {
+        $download->assertOk()->assertDownload('verification-result-VER-HISTORY-AGE-001.json');
+    } else {
+        $download->assertForbidden();
+    }
+
+    $export = $this->get(route('customer.verification.export'))->assertOk();
+
+    expect($export->streamedContent())->toContain('VER-HISTORY-AGE-001')
+        ->and($verification->fresh()->response_data['first_name'])->toBe('Ada');
+})->with([
+    'recent verification' => ['2026-10-14 12:00:00', '2026-10-01 12:00:00', true],
+    'exactly one month old' => ['2026-10-14 12:00:00', '2026-09-14 12:00:00', true],
+    'one second over a month' => ['2026-10-14 12:00:00', '2026-09-14 11:59:59', false],
+    'older verification' => ['2026-10-14 12:00:00', '2026-08-01 12:00:00', false],
+    'month end without overflow' => ['2026-02-28 12:00:00', '2026-01-31 12:00:00', true],
+    'expired month end verification' => ['2026-03-01 12:00:00', '2026-01-31 12:00:00', false],
+]);
 
 it('downloads a customer verification result as json and blocks other users', function () {
     $customer = createUserWithRole('customer');
