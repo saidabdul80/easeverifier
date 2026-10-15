@@ -6,10 +6,9 @@ use App\Models\CustomerResultPinPricing;
 use App\Models\ResultPinOrder;
 use App\Models\ResultPinProduct;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -46,6 +45,7 @@ function createPinCustomer(float $balance = 5000): User
         'account_type' => 'individual',
         'country' => 'Nigeria',
     ]);
+    approveCustomerKyc($user);
 
     $user->wallet->update([
         'balance' => $balance,
@@ -390,11 +390,11 @@ it('creates a guest public pin order, verifies payment, purchases pins and shows
 
     $this->withoutMiddleware(ValidateCsrfToken::class)
         ->post('/result-pins/purchase', [
-        'email' => 'buyer@example.com',
-        'phone' => '08000000000',
-        'product_id' => $product->id,
-        'quantity' => 2,
-    ])->assertRedirect('https://checkout.test/pay');
+            'email' => 'buyer@example.com',
+            'phone' => '08000000000',
+            'product_id' => $product->id,
+            'quantity' => 2,
+        ])->assertRedirect('https://checkout.test/pay');
 
     expect(User::where('email', 'buyer@example.com')->exists())->toBeFalse();
 

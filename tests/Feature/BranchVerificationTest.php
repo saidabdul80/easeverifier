@@ -31,6 +31,7 @@ function createBranchCustomer(array $userAttributes = [], array $customerAttribu
         'user_id' => $user->id,
         'company_name' => 'Branch Test Company',
     ], $customerAttributes));
+    approveCustomerKyc($user);
 
     return $user->fresh(['wallet']);
 }
@@ -159,7 +160,7 @@ it('charges the branch wallet and logs the branch when a branch api key is used'
 
     $response = $this
         ->withHeaders([
-            'Authorization' => 'Bearer ' . $apiKey->getBearerToken(),
+            'Authorization' => 'Bearer '.$apiKey->getBearerToken(),
         ])
         ->postJson('/api/v1/verify/nin', [
             'nin' => '55667788990',

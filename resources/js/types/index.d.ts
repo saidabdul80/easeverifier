@@ -6,6 +6,10 @@ export interface Auth {
     wallet?: { balance: number; bonus_balance: number } | null;
     isAdmin?: boolean;
     isCustomer?: boolean;
+    kyc?: {
+        status: 'not_submitted' | 'pending' | 'approved' | 'rejected';
+        approved_at: string | null;
+    } | null;
     impersonation?: {
         active: boolean;
         impersonator: Pick<User, 'id' | 'name' | 'email'> | null;

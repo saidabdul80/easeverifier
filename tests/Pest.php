@@ -44,3 +44,13 @@ function something()
 {
     // ..
 }
+
+function approveCustomerKyc(\App\Models\User $user): void
+{
+    $customer = $user->customer ?? \App\Models\Customer::withoutEvents(fn () => \App\Models\Customer::create([
+        'user_id' => $user->id,
+        'referral_code' => \App\Models\Customer::generateReferralCode(),
+    ]));
+    $customer->forceFill(['kyc_approved' => now()])->save();
+    $user->unsetRelation('customer');
+}

@@ -17,9 +17,12 @@ uses(RefreshDatabase::class);
 
 function createApiUser(): User
 {
-    return User::factory()->create([
+    $user = User::factory()->create([
         'is_active' => true,
     ]);
+    approveCustomerKyc($user);
+
+    return $user;
 }
 
 function createNinService(): VerificationService

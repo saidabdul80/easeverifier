@@ -29,6 +29,7 @@ function createResultApiUser(float $balance = 100): User
         'balance' => $balance,
         'bonus_balance' => 0,
     ]);
+    approveCustomerKyc($user);
 
     return $user;
 }

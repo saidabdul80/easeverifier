@@ -23,24 +23,32 @@ class ApiAuthentication
             $token = substr($token, 7);
         }
 
-        if (!$token) {
+        if (! $token) {
             return $this->unauthorized('API key is required');
         }
 
         // Validate the API key using the ApiKey model
         $apiKey = ApiKey::validateBearer($token);
 
-        if (!$apiKey) {
+        if (! $apiKey) {
             return $this->unauthorized('Invalid API key');
         }
 
         // Check if user is active
-        if (!$apiKey->user || !$apiKey->user->is_active) {
+        if (! $apiKey->user || ! $apiKey->user->is_active) {
             return $this->unauthorized('Account is inactive');
         }
 
+        if (! $apiKey->user->customer?->hasApprovedKyc()) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Complete KYC and obtain admin approval before using the API.',
+                'error_code' => 'KYC_APPROVAL_REQUIRED',
+            ], 403);
+        }
+
         // Check IP whitelist
-        if (!$apiKey->isIpAllowed($request->ip())) {
+        if (! $apiKey->isIpAllowed($request->ip())) {
             return $this->unauthorized('IP address not allowed');
         }
 
@@ -82,7 +90,7 @@ class ApiAuthentication
 
         return $next($request);
     }
-    
+
     protected function unauthorized(string $message): Response
     {
         return response()->json([

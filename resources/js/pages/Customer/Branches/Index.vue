@@ -34,6 +34,11 @@ const props = defineProps<{
 
 const page = usePage();
 const flash = computed(() => page.props.flash as any);
+const canCreateLiveKey = computed(() => page.props.auth.kyc?.status === 'approved');
+const environments = computed(() => [
+    { title: canCreateLiveKey.value ? 'Live' : 'Live (KYC approval required)', value: 'live', props: { disabled: !canCreateLiveKey.value } },
+    { title: 'Test', value: 'test' },
+]);
 const { smAndDown } = useDisplay();
 
 const showCreateDialog = ref(false);
@@ -68,7 +73,7 @@ const transferForm = useForm({
 const keyForm = useForm({
     branch_id: null as number | null,
     name: 'Branch Key',
-    environment: 'live' as 'live' | 'test',
+    environment: (canCreateLiveKey.value ? 'live' : 'test') as 'live' | 'test',
 });
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
@@ -98,7 +103,7 @@ const openKeyDialog = (branch: any) => {
     selectedBranchForKey.value = branch;
     keyForm.branch_id = branch.id;
     keyForm.name = `${branch.name} Key`;
-    keyForm.environment = 'live';
+    keyForm.environment = canCreateLiveKey.value ? 'live' : 'test';
     showKeyDialog.value = true;
 };
 
@@ -134,6 +139,11 @@ const transferFunds = () => {
 };
 
 const createBranchKey = () => {
+    if (keyForm.processing) return;
+    if (keyForm.environment === 'live' && !canCreateLiveKey.value) {
+        keyForm.setError('environment', 'Live API keys require approved KYC.');
+        return;
+    }
     keyForm.post('/customer/api/keys', {
         preserveScroll: true,
         onSuccess: () => {
@@ -144,7 +154,7 @@ const createBranchKey = () => {
                 showCredentialsDialog.value = true;
             }
             keyForm.reset();
-            keyForm.environment = 'live';
+            keyForm.environment = canCreateLiveKey.value ? 'live' : 'test';
         },
     });
 };
@@ -384,7 +394,7 @@ const copyToClipboard = async (text: string) => {
                     <v-text-field v-model="keyForm.name" label="Key name" variant="outlined" class="mb-3" :error-messages="keyForm.errors.name" />
                     <v-select
                         v-model="keyForm.environment"
-                        :items="[{ title: 'Live', value: 'live' }, { title: 'Test', value: 'test' }]"
+                        :items="environments"
                         label="Environment"
                         variant="outlined"
                         :error-messages="keyForm.errors.environment"
@@ -393,7 +403,7 @@ const copyToClipboard = async (text: string) => {
                 <v-card-actions>
                     <v-spacer />
                     <v-btn variant="text" @click="showKeyDialog = false">Cancel</v-btn>
-                    <v-btn color="primary" :loading="keyForm.processing" @click="createBranchKey">Create</v-btn>
+                    <v-btn color="primary" :loading="keyForm.processing" :disabled="keyForm.processing || (keyForm.environment === 'live' && !canCreateLiveKey)" @click="createBranchKey">Create</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>

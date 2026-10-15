@@ -58,6 +58,10 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
                 'isAdmin' => $user?->hasRole('admin') ?? false,
                 'isCustomer' => $user?->hasRole('customer') ?? false,
+                'kyc' => $user?->isCustomer() ? [
+                    'status' => $user->customer?->kycStatus() ?? 'not_submitted',
+                    'approved_at' => $user->customer?->kyc_approved,
+                ] : null,
                 'impersonation' => [
                     'active' => $impersonateManager->isImpersonating(),
                     'impersonator' => $impersonator ? [

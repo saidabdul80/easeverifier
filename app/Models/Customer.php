@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Str;
 
@@ -63,6 +64,7 @@ class Customer extends Model
             'rate_limit' => 'integer',
             'allowed_ips' => 'array',
             'metadata' => 'array',
+            'kyc_approved' => 'datetime',
         ];
     }
 
@@ -172,7 +174,27 @@ class Customer extends Model
      */
     public function hasApiAccess(): bool
     {
-        return $this->api_enabled && $this->api_key !== null;
+        return $this->hasApprovedKyc() && $this->api_enabled && $this->api_key !== null;
+    }
+
+    public function kycSubmissions(): HasMany
+    {
+        return $this->hasMany(CustomerKycSubmission::class);
+    }
+
+    public function latestKycSubmission(): HasOne
+    {
+        return $this->hasOne(CustomerKycSubmission::class)->latestOfMany();
+    }
+
+    public function hasApprovedKyc(): bool
+    {
+        return $this->kyc_approved !== null;
+    }
+
+    public function kycStatus(): string
+    {
+        return $this->hasApprovedKyc() ? 'approved' : ($this->latestKycSubmission?->status() ?? 'not_submitted');
     }
 
     public function hasResultFetchAccess(): bool
@@ -245,7 +267,7 @@ class Customer extends Model
      */
     public function scopeWithApiAccess($query)
     {
-        return $query->where('api_enabled', true)->whereNotNull('api_key');
+        return $query->where('api_enabled', true)->whereNotNull('api_key')->whereNotNull('kyc_approved');
     }
 
     /**

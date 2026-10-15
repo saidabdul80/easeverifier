@@ -6,7 +6,7 @@ import { useDisplay } from 'vuetify';
 
 const props = defineProps<{
     user: { name: string; email: string };
-    wallet?: { balance: number; bonus_balance: number };
+    wallet?: { balance: number; bonus_balance: number } | null;
 }>();
 
 const { mdAndUp, smAndDown } = useDisplay();
@@ -15,6 +15,7 @@ const page = usePage();
 const drawer = ref(mdAndUp.value);
 const rail = ref(false);
 const impersonation = computed(() => page.props.auth.impersonation);
+const kyc = computed(() => page.props.auth.kyc);
 
 const navItems = [
     { title: 'Dashboard', icon: 'mdi-view-dashboard', route: '/customer' },
@@ -25,6 +26,7 @@ const navItems = [
     { title: 'Branches', icon: 'mdi-source-branch', route: '/customer/branches' },
     { title: 'Transactions', icon: 'mdi-swap-horizontal', route: '/customer/transactions' },
     { title: 'API Keys', icon: 'mdi-key', route: '/customer/api' },
+    { title: 'KYC Verification', icon: 'mdi-account-check-outline', route: '/customer/kyc' },
     { title: 'PayGo Services', icon: 'mdi-cash-fast', route: '/customer/paygo-services' },
     { title: 'Split Ledger', icon: 'mdi-bank-transfer-out', route: '/customer/paygo-splits' },
 ];
@@ -43,7 +45,7 @@ const initials = computed(() => {
     return props.user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'C';
 });
 
-const formatCurrency = (amount: number) => {
+const formatCurrency = (amount = 0) => {
     return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 };
 
@@ -165,6 +167,12 @@ watch(mdAndUp, (isDesktop) => {
                 </div>
             </v-alert>
             <v-container fluid class="pa-4 pa-md-6">
+                <v-alert v-if="kyc && kyc.status !== 'approved' && !page.url.startsWith('/customer/kyc')" type="warning" variant="tonal" class="mb-4">
+                    <div class="d-flex flex-column flex-sm-row align-sm-center ga-3">
+                        <span class="flex-grow-1">{{ kyc.status === 'pending' ? 'Your KYC is awaiting admin approval. API access is locked.' : kyc.status === 'rejected' ? 'Your KYC needs changes. Review the feedback and resubmit to unlock API access.' : 'Complete KYC and obtain admin approval to unlock API access.' }}</span>
+                        <v-btn variant="text" size="small" href="/customer/kyc" prepend-icon="mdi-account-check-outline">{{ kyc.status === 'pending' ? 'View KYC' : 'Complete KYC' }}</v-btn>
+                    </div>
+                </v-alert>
                 <slot />
             </v-container>
         </v-main>

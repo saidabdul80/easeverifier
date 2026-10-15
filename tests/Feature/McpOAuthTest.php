@@ -83,6 +83,7 @@ it('completes the oauth authorization code flow with pkce', function () {
     ]);
 
     $redirectUri = 'https://chatgpt.com/connector/oauth/easeverifier-test';
+    approveCustomerKyc($user);
     $clientId = $this->postJson('/oauth/register', [
         'client_name' => 'ChatGPT',
         'redirect_uris' => [$redirectUri],
@@ -155,6 +156,7 @@ it('accepts an oauth linked customer with the mcp scope', function () {
     ]);
 
     Passport::actingAs($user, ['mcp:use']);
+    approveCustomerKyc($user);
 
     $this->postJson('/api/mcp', [
         'jsonrpc' => '2.0',
@@ -186,6 +188,7 @@ it('rejects oauth tokens without the mcp scope', function () {
     ]);
 
     Passport::actingAs($user);
+    approveCustomerKyc($user);
 
     $this->postJson('/api/mcp', [
         'jsonrpc' => '2.0',

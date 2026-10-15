@@ -24,6 +24,11 @@ const props = defineProps<{
 
 const page = usePage();
 const flash = computed(() => page.props.flash as any);
+const canCreateLiveKey = computed(() => page.props.auth.kyc?.status === 'approved');
+const environments = computed(() => [
+    { title: canCreateLiveKey.value ? 'Live' : 'Live (KYC approval required)', value: 'live', props: { disabled: !canCreateLiveKey.value } },
+    { title: 'Test', value: 'test' },
+]);
 const testNin = '11111111111';
 const { smAndDown } = useDisplay();
 
@@ -33,13 +38,18 @@ const newCredentials = ref<{ key: string; secret: string; bearer_token: string }
 
 const createForm = useForm({
     name: 'Default',
-    environment: 'live' as 'live' | 'test',
+    environment: (canCreateLiveKey.value ? 'live' : 'test') as 'live' | 'test',
     branch_id: null as number | null,
 });
 
 const webhookForm = useForm({ webhook_url: props.customer?.webhook_url || '' });
 
 const createKey = () => {
+    if (createForm.processing) return;
+    if (createForm.environment === 'live' && !canCreateLiveKey.value) {
+        createForm.setError('environment', 'Live API keys require approved KYC.');
+        return;
+    }
     createForm.post('/customer/api/keys', {
         preserveScroll: true,
         onSuccess: () => {
@@ -236,7 +246,7 @@ const copyToClipboard = async (text: string) => {
                         variant="outlined"
                         class="mb-4"
                     />
-                    <v-select v-model="createForm.environment" :items="[{ title: 'Live', value: 'live' }, { title: 'Test', value: 'test' }]" label="Environment" variant="outlined" :error-messages="createForm.errors.environment" />
+                    <v-select v-model="createForm.environment" :items="environments" label="Environment" variant="outlined" :error-messages="createForm.errors.environment" />
                     <v-alert v-if="createForm.environment === 'test'" type="warning" variant="tonal" density="compact">
                         Test keys are restricted to the NIN value <strong>{{ testNin }}</strong>.
                     </v-alert>
@@ -244,7 +254,7 @@ const copyToClipboard = async (text: string) => {
                 <v-card-actions>
                     <v-spacer />
                     <v-btn variant="text" @click="showCreateDialog = false">Cancel</v-btn>
-                    <v-btn color="primary" :loading="createForm.processing" @click="createKey">Create</v-btn>
+                    <v-btn color="primary" :loading="createForm.processing" :disabled="createForm.processing || (createForm.environment === 'live' && !canCreateLiveKey)" @click="createKey">Create</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>

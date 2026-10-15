@@ -455,6 +455,11 @@ class PublicPaygoVerificationController extends Controller
 
     public function pullResult(Request $request, string $reference): JsonResponse
     {
+        $intent = PaygoVerificationIntent::query()->with('user.customer')->where('reference', $reference)->first();
+        if ($intent && ! $intent->user?->customer?->hasApprovedKyc()) {
+            return $this->kycApprovalRequired();
+        }
+
         try {
             $result = $this->paygo->pullResultByReference(
                 $reference,
@@ -1084,6 +1089,15 @@ class PublicPaygoVerificationController extends Controller
         return $this->redirectAfterPayment($intent, true, 'Payment successful. Your verification reference is '.$intent->reference.'.');
     }
 
+    protected function kycApprovalRequired(): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'error' => 'The service owner must complete KYC and obtain admin approval before API access is available.',
+            'error_code' => 'KYC_APPROVAL_REQUIRED',
+        ], 403);
+    }
+
     public function verify(Request $request, string $publicSlug, ?string $nin = null): JsonResponse
     {
         $paygoService = CustomerPaygoService::with(['user', 'verificationService'])
@@ -1096,6 +1110,10 @@ class PublicPaygoVerificationController extends Controller
                 'error' => 'Pay-on-the-go service not available',
                 'error_code' => 'SERVICE_UNAVAILABLE',
             ], 404);
+        }
+
+        if (! $paygoService->user?->customer?->hasApprovedKyc()) {
+            return $this->kycApprovalRequired();
         }
 
         if ($nin && ! $request->filled('nin')) {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ApiKey;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class ApiKeyController extends Controller
@@ -13,7 +14,7 @@ class ApiKeyController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $apiKeys = $user->apiKeys()->with('branch')->orderBy('created_at', 'desc')->get()->map(fn($key) => [
+        $apiKeys = $user->apiKeys()->with('branch')->orderBy('created_at', 'desc')->get()->map(fn ($key) => [
             'id' => $key->id,
             'name' => $key->name,
             'key' => $key->key,
@@ -49,6 +50,12 @@ class ApiKeyController extends Controller
 
         $user = $request->user();
         $branchId = $validated['branch_id'] ?? null;
+
+        if ($validated['environment'] === 'live' && ! $user->customer?->hasApprovedKyc()) {
+            throw ValidationException::withMessages([
+                'environment' => 'Live API keys require approved KYC. Complete KYC and obtain admin approval first.',
+            ]);
+        }
 
         $existingKeys = $user->apiKeys()
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
@@ -87,7 +94,7 @@ class ApiKeyController extends Controller
         }
 
         $newSecret = $apiKey->regenerateSecret();
-        $bearerToken = base64_encode($apiKey->key . ':' . $newSecret);
+        $bearerToken = base64_encode($apiKey->key.':'.$newSecret);
 
         return back()->with([
             'success' => 'API secret regenerated. Copy your new credentials now.',
@@ -116,7 +123,7 @@ class ApiKeyController extends Controller
             abort(403);
         }
 
-        $apiKey->update(['is_active' => !$apiKey->is_active]);
+        $apiKey->update(['is_active' => ! $apiKey->is_active]);
 
         return back()->with('success', $apiKey->is_active ? 'API key activated.' : 'API key deactivated.');
     }
@@ -129,7 +136,7 @@ class ApiKeyController extends Controller
 
         $customer = $request->user()->customer;
 
-        if (!$customer) {
+        if (! $customer) {
             return back()->withErrors(['error' => 'Customer profile not found.']);
         }
 

@@ -46,6 +46,7 @@ function createPaygoCustomer(): User
         'account_type' => 'individual',
         'country' => 'Nigeria',
     ]);
+    approveCustomerKyc($user);
 
     return $user->fresh('wallet');
 }

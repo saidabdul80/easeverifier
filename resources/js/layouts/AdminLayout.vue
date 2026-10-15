@@ -15,6 +15,7 @@ const rail = ref(false);
 const navItems = [
     { title: 'Dashboard', icon: 'mdi-view-dashboard', route: '/admin' },
     { title: 'Customers', icon: 'mdi-account-group', route: '/admin/customers' },
+    { title: 'KYC Reviews', icon: 'mdi-account-check-outline', route: '/admin/kyc' },
     { title: 'Services', icon: 'mdi-cog-outline', route: '/admin/services' },
     { title: 'Result PINs', icon: 'mdi-card-account-details-star-outline', route: '/admin/result-pins' },
     { title: 'Blog', icon: 'mdi-post', route: '/admin/blog' },

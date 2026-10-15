@@ -29,6 +29,14 @@ class McpOAuthContext
             ], 403);
         }
 
+        if (! $customer->hasApprovedKyc()) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Complete KYC and obtain admin approval before using the API.',
+                'error_code' => 'KYC_APPROVAL_REQUIRED',
+            ], 403);
+        }
+
         if (! $user->tokenCan('mcp:use')) {
             return response()->json([
                 'success' => false,

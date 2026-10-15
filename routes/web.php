@@ -3,8 +3,9 @@
 use App\Http\Controllers\Admin\BlogController as AdminBlogController;
 use App\Http\Controllers\Admin\CampaignEmailController as AdminCampaignEmailController;
 use App\Http\Controllers\Admin\CustomerController as AdminCustomerController;
-// Controllers
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+// Controllers
+use App\Http\Controllers\Admin\KycController as AdminKycController;
 use App\Http\Controllers\Admin\PaygoUserController as AdminPaygoUserController;
 use App\Http\Controllers\Admin\PaystackSplitLedgerController as AdminPaystackSplitLedgerController;
 use App\Http\Controllers\Admin\ProviderController as AdminProviderController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\BlogController;
 use App\Http\Controllers\Customer\ApiKeyController;
 use App\Http\Controllers\Customer\BranchController as CustomerBranchController;
 use App\Http\Controllers\Customer\DashboardController as CustomerDashboardController;
+use App\Http\Controllers\Customer\KycController as CustomerKycController;
 use App\Http\Controllers\Customer\PaygoServiceController;
 use App\Http\Controllers\Customer\PaymentController;
 use App\Http\Controllers\Customer\PaystackSplitLedgerController as CustomerPaystackSplitLedgerController;
@@ -147,6 +149,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');
 
+    Route::get('kyc', [AdminKycController::class, 'index'])->name('kyc.index');
+    Route::get('kyc/{submission}', [AdminKycController::class, 'show'])->name('kyc.show');
+    Route::post('kyc/{submission}/review', [AdminKycController::class, 'review'])->name('kyc.review');
+    Route::get('kyc/{submission}/documents/{document}', [AdminKycController::class, 'document'])->name('kyc.document');
+
     // Customers
     Route::resource('customers', AdminCustomerController::class);
     Route::post('customers/{customer}/pricing', [AdminCustomerController::class, 'updatePricing'])->name('customers.pricing');
@@ -204,6 +211,10 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
 // Customer Routes
 Route::middleware(['auth', 'verified', 'role:customer'])->prefix('customer')->name('customer.')->group(function () {
     Route::get('/', [CustomerDashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('kyc', [CustomerKycController::class, 'index'])->name('kyc.index');
+    Route::post('kyc', [CustomerKycController::class, 'store'])->name('kyc.store');
+    Route::get('kyc/{submission}/documents/{document}', [CustomerKycController::class, 'document'])->name('kyc.document');
 
     // Verification
     Route::get('verify', [CustomerVerificationController::class, 'index'])->name('verification.index');
