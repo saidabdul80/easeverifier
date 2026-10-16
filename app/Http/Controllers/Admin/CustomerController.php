@@ -27,7 +27,15 @@ class CustomerController extends Controller
     public function index(Request $request)
     {
         $customers = User::role('customer')
-            ->with(['customer', 'wallet'])
+            ->with([
+                'customer.latestKycSubmission' => fn ($query) => $query->select([
+                    'customer_kyc_submissions.id',
+                    'customer_kyc_submissions.customer_id',
+                    'customer_kyc_submissions.reviewed_at',
+                    'customer_kyc_submissions.rejection_reason',
+                ]),
+                'wallet',
+            ])
             ->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
@@ -40,7 +48,12 @@ class CustomerController extends Controller
             })
             ->latest()
             ->paginate(15)
-            ->withQueryString();
+            ->withQueryString()
+            ->through(function (User $customer) {
+                $customer->setAttribute('kyc_status', $customer->customer?->kycStatus() ?? 'not_submitted');
+
+                return $customer;
+            });
 
         return Inertia::render('Admin/Customers/Index', [
             'customers' => $customers,

@@ -103,6 +103,48 @@ it('shows a customer the complete kyc questionnaire without approving them', fun
             ->where('approvedAt', null)->where('defaults.registered_name', 'Example Limited'));
 });
 
+it('shows customer kyc status on the admin customer list', function (string $state, string $expectedStatus) {
+    $user = kycCustomer();
+    if (in_array($state, ['pending', 'rejected', 'approved', 'auto_approved_pending'], true)) {
+        $submission = pendingKyc($user->customer);
+        if ($state === 'rejected') {
+            $submission->update(['reviewed_at' => now(), 'rejection_reason' => 'Please correct your details.']);
+        } elseif ($state === 'approved') {
+            $submission->update(['reviewed_at' => now()]);
+        }
+    }
+    if (in_array($state, ['approved', 'auto_approved', 'auto_approved_pending'], true)) {
+        $user->customer->forceFill(['kyc_approved' => now()])->save();
+    }
+
+    $this->actingAs(kycAdmin())->get('/admin/customers')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('Admin/Customers/Index')
+            ->where('customers.total', 1)
+            ->where('customers.data.0.id', $user->id)
+            ->where('customers.data.0.kyc_status', $expectedStatus)
+            ->missing('customers.data.0.customer.latest_kyc_submission.answers')
+            ->missing('customers.data.0.customer.latest_kyc_submission.documents'));
+})->with([
+    'not submitted' => ['not_submitted', 'not_submitted'],
+    'awaiting review' => ['pending', 'pending'],
+    'rejected' => ['rejected', 'rejected'],
+    'manually approved' => ['approved', 'approved'],
+    'approved without submission' => ['auto_approved', 'approved'],
+    'approval overrides an older pending submission' => ['auto_approved_pending', 'approved'],
+]);
+
+it('shows the latest resubmission status on the admin customer list', function () {
+    $user = kycCustomer();
+    $rejected = pendingKyc($user->customer);
+    $rejected->update(['reviewed_at' => now(), 'rejection_reason' => 'Please correct your details.']);
+    pendingKyc($user->customer);
+
+    $this->actingAs(kycAdmin())->get('/admin/customers')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('customers.data.0.kyc_status', 'pending'));
+});
+
 it('stores encrypted kyc answers and private documents as a pending submission', function () {
     $user = kycCustomer();
     $this->actingAs($user)->post('/customer/kyc', kycPayload())->assertSessionHasNoErrors()->assertRedirect('/customer/kyc');

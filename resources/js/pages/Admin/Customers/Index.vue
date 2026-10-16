@@ -46,11 +46,20 @@ const impersonateUrl = (customer: any) => `/impersonate/take/${customer.id}`;
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount || 0);
 
+const kycStatuses: Record<string, { label: string; color: string; icon: string }> = {
+    not_submitted: { label: 'Not submitted', color: 'grey', icon: 'mdi-minus-circle-outline' },
+    pending: { label: 'Pending', color: 'warning', icon: 'mdi-clock-outline' },
+    approved: { label: 'Approved', color: 'success', icon: 'mdi-check-circle-outline' },
+    rejected: { label: 'Rejected', color: 'error', icon: 'mdi-close-circle-outline' },
+};
+const kycStatus = (status: string) => kycStatuses[status] || kycStatuses.not_submitted;
+
 const headers = [
     { title: 'Customer', key: 'name' },
     { title: 'Company', key: 'company' },
     { title: 'Wallet Balance', key: 'balance' },
     { title: 'Status', key: 'status' },
+    { title: 'KYC Status', key: 'kyc_status' },
     { title: 'Joined', key: 'created_at' },
     { title: 'Actions', key: 'actions', sortable: false },
 ];
@@ -90,6 +99,9 @@ const headers = [
                     </template>
                     <template #item.status="{ item }">
                         <v-chip :color="item.is_active ? 'success' : 'error'" size="small">{{ item.is_active ? 'Active' : 'Inactive' }}</v-chip>
+                    </template>
+                    <template #item.kyc_status="{ item }">
+                        <v-chip :color="kycStatus(item.kyc_status).color" :prepend-icon="kycStatus(item.kyc_status).icon" variant="tonal" size="small">{{ kycStatus(item.kyc_status).label }}</v-chip>
                     </template>
                     <template #item.created_at="{ item }">
                         {{ new Date(item.created_at).toLocaleDateString() }}
