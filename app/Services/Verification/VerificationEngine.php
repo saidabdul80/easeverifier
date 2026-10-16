@@ -443,7 +443,7 @@ class VerificationEngine
             // Update API log with response
             $apiLog->update([
                 'response_status' => $response->status(),
-                'response_body' => ApiLog::responseSummary($responsePayload, $response->status()),
+                'response_body' => null,
                 'response_time' => $responseTime,
             ]);
 
