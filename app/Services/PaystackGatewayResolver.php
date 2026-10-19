@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Customer;
+use App\Models\PaygoPaymentAttempt;
 use App\Models\PaygoVerificationIntent;
 use App\Models\PaystackGatewayAccount;
 use RuntimeException;
@@ -35,6 +36,27 @@ class PaystackGatewayResolver
 
         if (! $gateway) {
             throw new RuntimeException('The Paystack account used for this payment is no longer available.');
+        }
+
+        return $gateway;
+    }
+
+    public function forAttempt(PaygoPaymentAttempt $attempt): ?PaystackGatewayAccount
+    {
+        $gateway = $attempt->paystack_gateway_owner_type === 'customer'
+            ? $attempt->paystackGatewayAccount
+            : null;
+
+        if ($attempt->paystack_gateway_owner_type === 'customer' && ! $gateway) {
+            throw new RuntimeException('The Paystack account used for this payment is no longer available.');
+        }
+
+        $environment = $gateway?->environment ?? $this->systemEnvironment();
+        $fingerprint = $gateway?->key_fingerprint ?? $this->systemFingerprint();
+
+        if ((filled($attempt->paystack_environment) && $attempt->paystack_environment !== $environment)
+            || (filled($attempt->paystack_key_fingerprint) && $attempt->paystack_key_fingerprint !== $fingerprint)) {
+            throw new RuntimeException('The Paystack credentials for this payment have changed. Please contact support.');
         }
 
         return $gateway;

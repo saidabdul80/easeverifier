@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DedicatedVirtualAccount;
 use App\Models\PaygoVerificationIntent;
 use App\Models\Transaction;
+use App\Services\Paygo\PaygoPaymentService;
 use App\Services\Paygo\PaygoVerificationService;
 use App\Services\PaystackService;
 use Illuminate\Http\Request;
@@ -53,8 +54,9 @@ class PaymentController extends Controller
             reference: $reference
         );
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             $transaction->update(['status' => 'failed']);
+
             return back()->withErrors(['amount' => $result['message']]);
         }
 
@@ -69,7 +71,7 @@ class PaymentController extends Controller
     {
         $reference = $request->query('reference');
 
-        if (!$reference) {
+        if (! $reference) {
             return redirect()->route('customer.wallet.index')
                 ->with('error', 'Invalid payment reference');
         }
@@ -77,7 +79,7 @@ class PaymentController extends Controller
         // Verify the transaction
         $result = $this->paystack->verifyTransaction($reference);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return redirect()->route('customer.wallet.index')
                 ->with('error', 'Payment verification failed');
         }
@@ -85,7 +87,7 @@ class PaymentController extends Controller
         // Find the pending transaction
         $transaction = Transaction::where('reference', $reference)->first();
 
-        if (!$transaction) {
+        if (! $transaction) {
             return redirect()->route('customer.wallet.index')
                 ->with('error', 'Transaction not found');
         }
@@ -123,7 +125,7 @@ class PaymentController extends Controller
 
         // Payment failed or abandoned
         $transaction->update(['status' => 'failed']);
-        
+
         return redirect()->route('customer.wallet.index')
             ->with('error', 'Payment was not completed');
     }
@@ -206,7 +208,7 @@ class PaymentController extends Controller
             preferredBank: $request->preferred_bank ?? 'wema-bank'
         );
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return back()->withErrors(['error' => $result['message']]);
         }
 
@@ -251,13 +253,21 @@ class PaymentController extends Controller
         // Verify webhook signature
         $signature = $request->header('x-paystack-signature');
         $payload = $request->getContent();
-        $expectedSignature = hash_hmac('sha512', $payload, config('services.paystack.secret_key'));
+        try {
+            $reference = $request->input('data.reference');
+            $paygoSecret = is_string($reference) ? app(PaygoPaymentService::class)->webhookSecret($reference) : null;
+            $secret = $paygoSecret ?? config('services.paystack.secret_key');
+            $expectedSignature = filled($secret) ? hash_hmac('sha512', $payload, $secret) : '';
+        } catch (\Throwable $exception) {
+            return response()->json(['status' => 'error', 'message' => 'Payment gateway unavailable'], 400);
+        }
 
-        if ($signature !== $expectedSignature) {
+        if (! is_string($signature) || $expectedSignature === '' || ! hash_equals($expectedSignature, $signature)) {
             Log::warning('Invalid Paystack webhook signature', [
                 'ip' => $request->ip(),
                 'received_signature' => $signature,
             ]);
+
             return response()->json(['status' => 'error', 'message' => 'Invalid signature'], 400);
         }
 
@@ -318,6 +328,22 @@ class PaymentController extends Controller
         // Check if this is a DVA transfer
         if ($channel === 'dedicated_nuban') {
             $this->handleDedicatedAccountTransfer($data);
+
+            return;
+        }
+
+        $paygo = app(PaygoVerificationService::class);
+        if ($paygo->findIntentByPaymentReference($reference)) {
+            $paygo->completePayment($reference, [
+                'amount' => $amount,
+                'reference' => $reference,
+                'currency' => $data['currency'] ?? null,
+                'environment' => $data['domain'] ?? null,
+                'transaction_id' => $data['id'] ?? null,
+                'paid_at' => $data['paid_at'] ?? now(),
+                'channel' => $data['channel'] ?? null,
+            ]);
+
             return;
         }
 
@@ -326,7 +352,7 @@ class PaymentController extends Controller
             ->where('status', 'pending')
             ->first();
 
-        if (!$transaction) {
+        if (! $transaction) {
             if (PaygoVerificationIntent::where('reference', $reference)->whereIn('status', ['pending', 'failed'])->exists()) {
                 app(PaygoVerificationService::class)->completePayment($reference, [
                     'amount' => $amount,
@@ -336,10 +362,12 @@ class PaymentController extends Controller
                 ]);
 
                 Log::info('PayGo charge success processed without normal wallet transaction', ['reference' => $reference, 'amount' => $amount]);
+
                 return;
             }
 
             Log::warning('Transaction not found for webhook', ['reference' => $reference]);
+
             return;
         }
 
@@ -352,6 +380,7 @@ class PaymentController extends Controller
             ]);
 
             Log::info('PayGo charge success processed', ['reference' => $reference, 'amount' => $amount]);
+
             return;
         }
 
@@ -383,13 +412,14 @@ class PaymentController extends Controller
      */
     protected function handleDedicatedAccountTransfer(array $data): void
     {
-        Log::info('DVA-transfer',[$data]);
+        Log::info('DVA-transfer', [$data]);
         $customerCode = $data['metadata']['receiver_account_number'];
         $amount = $data['amount'] / 100;
         $reference = $data['reference'];
 
-        if (!$customerCode) {
+        if (! $customerCode) {
             Log::error('Customer code not found in DVA webhook', ['data' => $data]);
+
             return;
         }
 
@@ -398,29 +428,31 @@ class PaymentController extends Controller
             ->where('active', true)
             ->first();
 
-        if (!$dedicatedAccount) {
+        if (! $dedicatedAccount) {
             Log::error('Dedicated account not found', ['account_number' => $customerCode]);
+
             return;
         }
 
         $user = $dedicatedAccount->user;
         $wallet = $user->wallet;
 
-        if (!$wallet) {
+        if (! $wallet) {
             Log::error('Wallet not found for user', ['user_id' => $user->id]);
+
             return;
         }
         $gateway_response = $data['gateway_response'];
         $status = $data['status'];
-        if($gateway_response== 'Approved' && $status == 'success'){
+        if ($gateway_response == 'Approved' && $status == 'success') {
             // Create and complete transaction
             DB::transaction(function () use ($user, $wallet, $reference, $amount, $data, $dedicatedAccount) {
                 $wallet->lockForUpdate();
-    
+
                 $balanceBefore = $wallet->balance;
                 $wallet->balance += $amount;
                 $wallet->save();
-    
+
                 Transaction::create([
                     'user_id' => $user->id,
                     'wallet_id' => $wallet->id,
@@ -450,7 +482,7 @@ class PaymentController extends Controller
             'amount' => $amount,
             'reference' => $reference,
             'status' => $status,
-            'gateway_response'=> $gateway_response
+            'gateway_response' => $gateway_response,
         ]);
     }
 
@@ -461,8 +493,9 @@ class PaymentController extends Controller
     {
         $customerCode = $data['customer']['customer_code'] ?? null;
 
-        if (!$customerCode) {
+        if (! $customerCode) {
             Log::error('Customer code not found in assignment webhook');
+
             return;
         }
 

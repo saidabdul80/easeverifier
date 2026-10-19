@@ -5,11 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\CustomerPaygoService;
 use App\Models\PaygoVerificationIntent;
 use App\Models\User;
+use App\Services\Paygo\PaygoPaymentService;
 use App\Services\Paygo\PaygoResultCallbackService;
 use App\Services\Paygo\PaygoVerificationService;
-use App\Services\PaystackGatewayResolver;
-use App\Services\PaystackService;
-use App\Services\PaystackSplitService;
 use App\Services\ResultVerify\ResultFactory;
 use App\Services\ResultVerify\ResultGates\NbaisResult;
 use App\Support\ResultVerificationErrorFormatter;
@@ -27,10 +25,8 @@ class PublicPaygoVerificationController extends Controller
 {
     public function __construct(
         protected PaygoVerificationService $paygo,
+        protected PaygoPaymentService $paygoPayments,
         protected PaygoResultCallbackService $resultCallbacks,
-        protected PaystackService $paystack,
-        protected PaystackGatewayResolver $paystackGateways,
-        protected PaystackSplitService $paystackSplits,
         protected ResultFactory $resultFactory,
     ) {}
 
@@ -118,13 +114,7 @@ class PublicPaygoVerificationController extends Controller
         $payment = $this->initializePaygoPayment($paygoService, $intent, $validated['email'] ?? $paygoService->user->email);
 
         if (! $payment['success']) {
-            $intent->update([
-                'status' => 'failed',
-                'metadata' => array_merge($intent->metadata ?? [], [
-                    'payment_status' => 'initialize_failed',
-                    'payment_error' => $payment['message'] ?? null,
-                ]),
-            ]);
+            $this->recordPaymentInitializationFailure($intent, $payment);
             $intent->transaction?->update(['status' => 'failed']);
 
             if ($respondWithJson) {
@@ -234,9 +224,15 @@ class PublicPaygoVerificationController extends Controller
                 return back()->withErrors(['result' => $exception->getMessage()])->withInput();
             }
 
-            $intent = $this->reconcileResultReferencePayment($intent);
+            $payment = $this->initializePaygoPayment($paygoService, $intent, $validated['email'] ?? $paygoService->user->email);
+            if (! $payment['success']) {
+                $this->recordPaymentInitializationFailure($intent, $payment);
 
-            if ($intent->status === 'paid' || $intent->status === 'verifying') {
+                return back()->withErrors(['result' => $payment['message'] ?? 'Payment status could not be confirmed.'])->withInput();
+            }
+            $intent->refresh();
+
+            if ($intent->paid_at || in_array($intent->status, ['paid', 'verifying', 'used'], true)) {
                 $context = [
                     'candidate_id' => $validated['candidate_id'] ?? null,
                     'portal_ref' => $validated['portal_ref'] ?? null,
@@ -274,20 +270,6 @@ class PublicPaygoVerificationController extends Controller
                 return $this->redirectToPaidResultWithContext($intent)
                     ->with('success', 'Payment completed. EaseVerifier is preparing this verified result.')
                     ->with('paygo_result_context', $this->paidResultFlashContext($intent));
-            }
-
-            $payment = $this->initializePaygoPayment($paygoService, $intent, $validated['email'] ?? $paygoService->user->email);
-
-            if (! $payment['success']) {
-                $intent->update([
-                    'status' => 'failed',
-                    'metadata' => array_merge($intent->metadata ?? [], [
-                        'payment_status' => 'initialize_failed',
-                        'payment_error' => $payment['message'] ?? null,
-                    ]),
-                ]);
-
-                return back()->withErrors(['result' => $payment['message'] ?? 'Payment gateway initialization failed.'])->withInput();
             }
 
             return inertia()->location($payment['authorization_url']);
@@ -334,13 +316,7 @@ class PublicPaygoVerificationController extends Controller
         $payment = $this->initializePaygoPayment($paygoService, $intent, $validated['email'] ?? $paygoService->user->email);
 
         if (! $payment['success']) {
-            $intent->update([
-                'status' => 'failed',
-                'metadata' => array_merge($intent->metadata ?? [], [
-                    'payment_status' => 'initialize_failed',
-                    'payment_error' => $payment['message'] ?? null,
-                ]),
-            ]);
+            $this->recordPaymentInitializationFailure($intent, $payment);
 
             return back()->withErrors(['result' => $payment['message'] ?? 'Payment gateway initialization failed.'])->withInput();
         }
@@ -524,135 +500,24 @@ class PublicPaygoVerificationController extends Controller
 
     protected function initializePaygoPayment(CustomerPaygoService $paygoService, PaygoVerificationIntent $intent, string $email): array
     {
-        $amountInKobo = (int) round((float) $intent->amount * 100);
-        $checkout = $intent->metadata['paystack_checkout'] ?? [];
-
-        if ($intent->status === 'pending' && filled($checkout['authorization_url'] ?? null)) {
-            return [
-                'success' => true,
-                'authorization_url' => $checkout['authorization_url'],
-                'access_code' => $checkout['access_code'] ?? null,
-                'reference' => $checkout['reference'] ?? $intent->reference,
-                'served_from' => 'cached_checkout',
-            ];
-        }
-
-        $gatewayPinned = filled($intent->paystack_environment)
-            && ! ($intent->status === 'failed' && blank($checkout['authorization_url'] ?? null));
-        $gateway = $gatewayPinned && $intent->paystack_gateway_owner_type === 'customer'
-            ? $this->paystackGateways->forIntent($intent)
-            : $this->paystackGateways->forCustomer($paygoService->user?->customer);
-
-        if (! $gatewayPinned) {
-            $intent->update([
-                'paystack_gateway_account_id' => $gateway?->id,
-                'paystack_gateway_owner_type' => $gateway ? 'customer' : 'system',
-                'paystack_environment' => $gateway?->environment ?? $this->paystackGateways->systemEnvironment(),
-                'paystack_key_fingerprint' => $gateway?->key_fingerprint ?? $this->paystackGateways->systemFingerprint(),
-                'settlement_strategy' => $gateway
-                    ? 'customer_gateway_system_subaccount'
-                    : 'system_gateway_customer_subaccount',
-            ]);
-            $intent->refresh();
-        }
-
-        $paystack = $this->paystackGateways->client($gateway);
-
-        try {
-            $split = $this->paystackSplits->buildDynamicFlatSplit(
-                $paygoService->user?->customer,
-                $amountInKobo,
-                $intent->reference,
-                $gateway,
-                (int) round((float) $intent->system_price_snapshot * 100),
-            );
-        } catch (RuntimeException $exception) {
-            return [
-                'success' => false,
-                'message' => $exception->getMessage(),
-            ];
-        }
-
-        if ($split) {
-            $intent->update([
-                'metadata' => array_merge($intent->metadata ?? [], [
-                    'paystack_split' => $split['metadata'],
-                ]),
-            ]);
-        }
-
-        Log::info('EaseVerifier PayGo Paystack split prepared', [
-            'payment_reference' => $intent->reference,
-            'flow_type' => $intent->flow_type,
-            'is_reference_package' => $intent->isResultReferenceFlow(),
-            'gateway_owner_type' => $intent->paystack_gateway_owner_type,
-            'gateway_account_id' => $intent->paystack_gateway_account_id,
-            'settlement_strategy' => $intent->settlement_strategy,
-            'transaction_amount' => (float) $intent->amount,
-            'transaction_amount_kobo' => $amountInKobo / 100,
-            'system_price_snapshot' => (float) $intent->system_price_snapshot,
-            'system_share_kobo' => data_get($split, 'metadata.total_split_amount_kobo') / 100,
-            'customer_remainder_kobo' => data_get($split, 'metadata.main_account_remainder_kobo') / 100,
-            'subaccount_code' => data_get($split, 'payment_options.subaccount'),
-            'transaction_charge_kobo' => data_get($split, 'payment_options.transaction_charge'),
-            'fee_bearer' => data_get($split, 'payment_options.bearer'),
-            'split_applied' => (bool) data_get($split, 'metadata.applied', false),
-        ]);
-
-        $payment = $paystack->initializeTransaction(
-            email: $email,
-            amountInKobo: $amountInKobo,
-            reference: $intent->reference,
-            callbackUrl: route('paygo.callback'),
-            options: $split ? $split['payment_options'] : [],
-        );
-
-        if (! ($payment['success'] ?? false) && $this->isDuplicatePaystackReferenceMessage($payment['message'] ?? null)) {
-            $verifiedPayment = $paystack->verifyTransaction($intent->reference);
-
-            if (($verifiedPayment['success'] ?? false) && ($verifiedPayment['status'] ?? null) === 'success') {
-                try {
-                    $this->paygo->completePayment($intent->reference, $verifiedPayment);
-                } catch (RuntimeException $exception) {
-                    return [
-                        'success' => false,
-                        'message' => $exception->getMessage(),
-                    ];
-                }
-
-                return [
-                    'success' => true,
-                    'authorization_url' => route('paygo.callback', ['reference' => $intent->reference]),
-                    'access_code' => null,
-                    'reference' => $intent->reference,
-                    'served_from' => 'verified_duplicate_reference',
-                ];
-            }
-        }
-
-        if ($payment['success'] ?? false) {
-            $intent->update([
-                'metadata' => array_merge($intent->metadata ?? [], [
-                    'paystack_checkout' => [
-                        'authorization_url' => $payment['authorization_url'] ?? null,
-                        'access_code' => $payment['access_code'] ?? null,
-                        'reference' => $payment['reference'] ?? $intent->reference,
-                        'amount' => (float) $intent->amount,
-                        'system_price' => (float) $intent->system_price_snapshot,
-                        'initialized_at' => now()->toISOString(),
-                    ],
-                ]),
-            ]);
-        }
-
-        return $payment;
+        return $this->paygoPayments->checkout($paygoService, $intent, $email, request()->boolean('retry_payment'));
     }
 
-    protected function isDuplicatePaystackReferenceMessage(?string $message): bool
+    protected function recordPaymentInitializationFailure(PaygoVerificationIntent $intent, array $payment): void
     {
-        $message = strtolower((string) $message);
-
-        return str_contains($message, 'duplicate') && str_contains($message, 'reference');
+        $intent->getConnection()->transaction(function () use ($intent, $payment) {
+            $locked = PaygoVerificationIntent::query()->whereKey($intent->id)->lockForUpdate()->firstOrFail();
+            if ($locked->paid_at || in_array($locked->status, ['paid', 'verifying', 'used'], true)) {
+                return;
+            }
+            $locked->update([
+                'status' => ($payment['error_code'] ?? null) === 'INITIALIZATION_FAILED' ? 'failed' : $locked->status,
+                'metadata' => array_merge($locked->metadata ?? [], [
+                    'payment_status' => ($payment['error_code'] ?? null) === 'INITIALIZATION_FAILED' ? 'initialize_failed' : 'verification_required',
+                    'payment_error' => $payment['message'] ?? null,
+                ]),
+            ]);
+        });
     }
 
     protected function publicResultServicesForUser(User $user)
@@ -690,6 +555,7 @@ class PublicPaygoVerificationController extends Controller
                 ->values(),
             'paygoService' => $selectedService ? $this->publicResultServicePayload($selectedService) : null,
             'fields' => $fields,
+            'paymentRetriesEnabled' => (bool) config('services.paystack.paygo_payment_retries_enabled'),
             'prefill' => [
                 'email' => request()->string('email')->value(),
                 'phone' => request()->string('phone')->value(),
@@ -931,6 +797,7 @@ class PublicPaygoVerificationController extends Controller
             'state' => 'nullable|string|max:500',
             'sitting' => 'nullable|integer|min:1|max:10',
             'reference' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9._=-]+$/'],
+            'retry_payment' => 'sometimes|boolean',
             'txtCardSerialNo' => 'nullable|string|max:500',
             'serial' => 'nullable|string|max:500',
         ];
@@ -1024,39 +891,49 @@ class PublicPaygoVerificationController extends Controller
         $reference = $request->query('reference');
         abort_unless($reference, 404);
 
-        $intent = \App\Models\PaygoVerificationIntent::with('paygoService')
-            ->where('reference', $reference)
-            ->firstOrFail();
+        $intent = $this->paygo->findIntentByPaymentReference((string) $reference);
+        abort_unless($intent, 404);
+        $intent->loadMissing('paygoService');
 
         try {
-            $gateway = $this->paystackGateways->forIntent($intent);
-            $payment = $this->paystackGateways->client($gateway)->verifyTransaction($reference);
+            $payment = $this->paygoPayments->verifyReference((string) $reference);
         } catch (Throwable $exception) {
-            return $this->redirectAfterFailedPayment($intent, $exception->getMessage());
+            return $this->redirectAfterFailedPayment($intent, get_class($exception) === RuntimeException::class
+                ? $exception->getMessage()
+                : 'We could not confirm your payment. Please check again shortly.');
         }
-        if (! $payment['success'] || ($payment['status'] ?? null) !== 'success') {
+        $intent->refresh();
+        if (($payment['status'] ?? null) !== 'success' && ! $intent->paid_at
+            && ! in_array($intent->status, ['paid', 'verifying', 'used'], true)) {
+            $processing = in_array($payment['status'] ?? null, ['pending', 'ongoing', 'processing', 'queued'], true);
+            $message = $processing
+                ? 'Your payment is still processing. Please check again shortly.'
+                : 'Payment was not completed.';
+            if (($payment['status'] ?? null) === 'failed') {
+                $failedCurrentAttempt = $intent->getConnection()->transaction(function () use ($intent, $reference): bool {
+                    $locked = PaygoVerificationIntent::query()->whereKey($intent->id)->lockForUpdate()->firstOrFail();
+                    $latest = $locked->paymentAttempts()->orderByDesc('attempt_number')->first();
+                    if ($latest?->reference !== $reference || $locked->paid_at
+                        || ! in_array($locked->status, ['pending', 'failed'], true)) {
+                        return false;
+                    }
+                    $locked->update(['status' => 'failed']);
+
+                    return true;
+                });
+                $intent->refresh();
+                if ($failedCurrentAttempt && ! $intent->paid_at && $intent->isResultFlow()) {
+                    $this->resultCallbacks->sendResultWebhook($intent->loadMissing('paygoService.user.customer'),
+                        false, null, 'Payment was not completed.', 'PAYMENT_NOT_COMPLETED');
+                }
+            }
+
+            $intent->refresh();
             if (! $intent->paid_at && ! in_array($intent->status, ['paid', 'verifying', 'used'], true)) {
-                $intent->update(['status' => 'failed']);
+                return $this->redirectAfterFailedPayment($intent, $message);
             }
-
-            if ($intent->isResultFlow()) {
-                $this->resultCallbacks->sendResultWebhook(
-                    $intent->fresh(['paygoService.user.customer']),
-                    false,
-                    null,
-                    'Payment was not completed.',
-                    'PAYMENT_NOT_COMPLETED',
-                );
-            }
-
-            return $this->redirectAfterFailedPayment($intent, 'Payment was not completed.');
         }
-
-        try {
-            $intent = $this->paygo->completePayment($reference, $payment);
-        } catch (RuntimeException $exception) {
-            return $this->redirectAfterFailedPayment($intent, $exception->getMessage());
-        }
+        $intent->loadMissing(['paygoService', 'transaction']);
 
         if ($intent->isResultFlow()) {
             $result = $this->fetchResultForResponse($intent, $request);
@@ -1281,32 +1158,5 @@ class PublicPaygoVerificationController extends Controller
         );
 
         return $result;
-    }
-
-    protected function reconcileResultReferencePayment(PaygoVerificationIntent $intent): PaygoVerificationIntent
-    {
-        if (
-            ! $intent->isResultReferenceFlow()
-            || ! in_array($intent->status, ['pending', 'failed'], true)
-            || blank(data_get($intent->metadata, 'paystack_checkout.authorization_url'))
-        ) {
-            return $intent;
-        }
-
-        try {
-            $gateway = $this->paystackGateways->forIntent($intent);
-            $payment = $this->paystackGateways->client($gateway)->verifyTransaction($intent->reference);
-
-            if (($payment['success'] ?? false) && ($payment['status'] ?? null) === 'success') {
-                return $this->paygo->completePayment($intent->reference, $payment);
-            }
-        } catch (Throwable $exception) {
-            Log::warning('Unable to reconcile PayGo result reference payment before checkout reuse.', [
-                'reference' => $intent->reference,
-                'message' => $exception->getMessage(),
-            ]);
-        }
-
-        return $intent->fresh(['paygoService']);
     }
 }

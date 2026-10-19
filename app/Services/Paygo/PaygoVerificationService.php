@@ -5,9 +5,11 @@ namespace App\Services\Paygo;
 use App\Models\Customer;
 use App\Models\CustomerPaygoService;
 use App\Models\CustomerPaystackSplitLedger;
+use App\Models\PaygoPaymentAttempt;
 use App\Models\PaygoResultAttempt;
 use App\Models\PaygoVerificationIntent;
 use App\Models\PaygoWallet;
+use App\Models\Transaction;
 use App\Models\VerificationRequest;
 use App\Services\ResultVerify\ResultVerificationEngine;
 use App\Services\Verification\VerificationEngine;
@@ -154,7 +156,7 @@ class PaygoVerificationService
                         'verification_service_id' => $paygoService->verification_service_id,
                     ]);
 
-                    if (blank(data_get($existing->metadata, 'paystack_checkout.authorization_url'))) {
+                    if (blank(data_get($existing->metadata, 'paystack_checkout.authorization_url')) && ! $existing->paymentAttempts()->exists()) {
                         $updates = array_merge($updates, [
                             'amount' => $publicPrice,
                             'system_price_snapshot' => $systemPrice,
@@ -165,6 +167,11 @@ class PaygoVerificationService
                 $existing->update($updates);
 
                 return $existing->fresh(['paygoService']);
+            }
+
+            if (PaygoPaymentAttempt::query()->where('reference', $reference)->exists()
+                || Transaction::query()->where('reference', $reference)->exists()) {
+                throw new RuntimeException('This portal reference is already attached to a PayGo payment attempt.');
             }
 
             return PaygoVerificationIntent::create([
@@ -251,23 +258,60 @@ class PaygoVerificationService
     public function completePayment(string $reference, array $paymentData): PaygoVerificationIntent
     {
         return DB::transaction(function () use ($reference, $paymentData) {
-            $intent = PaygoVerificationIntent::where('reference', $reference)
+            $resolvedIntent = $this->findIntentByPaymentReference($reference);
+            if (! $resolvedIntent) {
+                throw new RuntimeException('PayGo payment reference was not found.');
+            }
+            $intent = PaygoVerificationIntent::query()->whereKey($resolvedIntent->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $attempt = $intent->paymentAttempts()->where('reference', $reference)->lockForUpdate()->first();
+            $expectedAmount = $attempt?->amount ?? $intent->amount;
 
-            if ((float) ($paymentData['amount'] ?? 0) < (float) $intent->amount) {
-                $intent->update([
-                    'status' => 'failed',
-                    'metadata' => array_merge($intent->metadata ?? [], [
-                        'payment_status' => 'amount_mismatch',
-                        'paid_amount' => $paymentData['amount'] ?? null,
-                    ]),
-                ]);
+            if ((isset($paymentData['reference']) && $paymentData['reference'] !== $reference)
+                || (filled($paymentData['currency'] ?? null) && $paymentData['currency'] !== 'NGN')
+                || (filled($paymentData['environment'] ?? null) && filled($attempt?->paystack_environment ?? $intent->paystack_environment)
+                    && $paymentData['environment'] !== ($attempt?->paystack_environment ?? $intent->paystack_environment))) {
+                throw new RuntimeException('The payment details do not match this checkout.');
+            }
 
+            if ((float) ($paymentData['amount'] ?? 0) < (float) $expectedAmount) {
                 throw new RuntimeException('Paid amount is lower than the expected PayGo amount.');
             }
 
-            if (in_array($intent->status, ['pending', 'failed'], true)) {
+            if ($attempt) {
+                $duplicate = ($intent->paid_at || in_array($intent->status, ['paid', 'verifying', 'used'], true))
+                    && ($intent->metadata['payment_reference'] ?? $intent->reference) !== $reference;
+                $attempt->update([
+                    'status' => 'success',
+                    'paid_at' => $attempt->paid_at ?? ($paymentData['paid_at'] ?? now()),
+                    'last_verified_at' => now(), 'last_error' => null,
+                    'duplicate_payment_at' => $duplicate ? ($attempt->duplicate_payment_at ?? now()) : $attempt->duplicate_payment_at,
+                    'metadata' => array_merge($attempt->metadata ?? [], [
+                        'paid_amount' => $paymentData['amount'],
+                        'payment_channel' => $paymentData['channel'] ?? null,
+                        'currency' => $paymentData['currency'] ?? null,
+                        'paystack_transaction_id' => $paymentData['transaction_id'] ?? null,
+                    ]),
+                ]);
+            }
+
+            if (! $intent->paid_at && ! in_array($intent->status, ['paid', 'verifying', 'used'], true)) {
+                if ($attempt) {
+                    $intent->fill([
+                        'amount' => $attempt->amount,
+                        'system_price_snapshot' => $attempt->system_price_snapshot,
+                        'paystack_gateway_account_id' => $attempt->paystack_gateway_account_id,
+                        'paystack_gateway_owner_type' => $attempt->paystack_gateway_owner_type,
+                        'paystack_environment' => $attempt->paystack_environment,
+                        'paystack_key_fingerprint' => $attempt->paystack_key_fingerprint,
+                        'settlement_strategy' => $attempt->settlement_strategy,
+                        'metadata' => array_merge($intent->metadata ?? [], [
+                            'paystack_split' => $attempt->metadata['paystack_split'] ?? null,
+                            'successful_payment_attempt_id' => $attempt->id,
+                        ]),
+                    ]);
+                }
                 $paidAt = isset($paymentData['paid_at'])
                     ? Carbon::parse($paymentData['paid_at'])
                     : now();
@@ -320,6 +364,13 @@ class PaygoVerificationService
 
             return $intent->fresh(['paygoService', 'transaction']);
         });
+    }
+
+    public function findIntentByPaymentReference(string $reference): ?PaygoVerificationIntent
+    {
+        $attempt = PaygoPaymentAttempt::query()->where('reference', $reference)->first();
+
+        return $attempt?->intent ?? PaygoVerificationIntent::query()->where('reference', $reference)->first();
     }
 
     private function recordPaystackSplitLedger(PaygoVerificationIntent $intent, array $paymentData, string $reference): void

@@ -30,6 +30,7 @@ const props = defineProps<{
     services: PaygoResultService[];
     paygoService?: PaygoResultService | null;
     fields: ResultField[];
+    paymentRetriesEnabled?: boolean;
     prefill?: {
         email?: string | null;
         phone?: string | null;
@@ -70,6 +71,7 @@ const form = useForm<Record<string, any>>({
     state: props.prefill?.state || '',
     sitting: props.prefill?.sitting || '',
     reference: props.prefill?.reference || '',
+    retry_payment: false,
 });
 
 const formatCurrency = (amount: number) =>
@@ -273,12 +275,21 @@ const loadDependentOptions = async (field: ResultField) => {
 const openConfirmation = () => {
     if (!selectedService.value || form.processing) return;
 
+    form.retry_payment = false;
+    consentChecked.value = false;
+    confirmationOpen.value = true;
+};
+
+const openPaymentRetry = () => {
+    if (!selectedService.value || form.processing) return;
+
+    form.retry_payment = true;
     consentChecked.value = false;
     confirmationOpen.value = true;
 };
 
 const submit = () => {
-    if (!selectedService.value) return;
+    if (!selectedService.value || form.processing) return;
 
     confirmationOpen.value = false;
     consentChecked.value = false;
@@ -408,6 +419,10 @@ onMounted(() => {
                                         <v-btn type="submit" color="secondary" size="large" block
                                             :loading="form.processing">
                                             Proceed to Payment
+                                        </v-btn>
+                                        <v-btn v-if="usingPortalReference && paymentRetriesEnabled" variant="text"
+                                            color="primary" block class="mt-2" :disabled="form.processing" @click="openPaymentRetry">
+                                            Checkout not opening? Retry payment
                                         </v-btn>
                                     </v-form>
 

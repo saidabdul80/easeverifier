@@ -4,6 +4,7 @@ use App\Models\Customer;
 use App\Models\CustomerPaygoService;
 use App\Models\CustomerPaystackSplitAccount;
 use App\Models\CustomerPaystackSplitLedger;
+use App\Models\PaygoPaymentAttempt;
 use App\Models\PaygoResultAttempt;
 use App\Models\PaygoVerificationIntent;
 use App\Models\PaygoWallet;
@@ -13,6 +14,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\VerificationRequest;
 use App\Models\VerificationService;
+use App\Services\Paygo\PaygoPaymentService;
 use App\Services\Paygo\PaygoVerificationService;
 use App\Services\ResultVerify\ResultGates\NECOResult;
 use App\Services\ResultVerify\ResultGates\WAECResult;
@@ -413,12 +415,12 @@ it('initializes paygo payment with configured flat paystack split', function () 
     ]);
 
     Http::fake([
-        'https://api.paystack.co/transaction/initialize' => Http::response([
+        'https://api.paystack.co/transaction/initialize' => fn ($request) => Http::response([
             'status' => true,
             'data' => [
                 'authorization_url' => 'https://checkout.test/paygo',
                 'access_code' => 'ACCESS',
-                'reference' => 'PGO_SPLIT',
+                'reference' => $request['reference'],
             ],
         ]),
     ]);
@@ -577,9 +579,9 @@ it('uses system paystack keys when customer credentials are not trusted', functi
         'services.paystack.base_url' => 'https://api.paystack.co',
     ]);
 
-    Http::fake(['https://api.paystack.co/transaction/initialize' => Http::response([
+    Http::fake(['https://api.paystack.co/transaction/initialize' => fn ($request) => Http::response([
         'status' => true,
-        'data' => ['authorization_url' => 'https://checkout.test/system', 'access_code' => 'SYSTEM', 'reference' => 'SYSTEM_REF'],
+        'data' => ['authorization_url' => 'https://checkout.test/system', 'access_code' => 'SYSTEM', 'reference' => $request['reference']],
     ])]);
 
     $user = createPaygoCustomer()->fresh('customer');
@@ -1104,7 +1106,7 @@ it('initializes a result reference package with the school supplied reference an
         '*/transaction/verify/PORTAL-REF-1' => Http::response([
             'status' => true,
             'data' => [
-                'status' => 'pending',
+                'status' => 'abandoned',
                 'amount' => 45000,
                 'reference' => 'PORTAL-REF-1',
             ],
@@ -1187,7 +1189,6 @@ it('uses the admin reference package settlement for the EaseVerifier customer ga
             ],
         ]),
     ]);
-    Log::spy();
 
     $user = createPaygoCustomer()->fresh('customer');
     $user->customer->update(['paygo_result_reference_system_price' => 1000]);
@@ -1242,19 +1243,10 @@ it('uses the admin reference package settlement for the EaseVerifier customer ga
             && $request['bearer'] === 'account';
     });
 
-    Log::shouldHaveReceived('info')
-        ->with('EaseVerifier PayGo Paystack split prepared', \Mockery::on(fn (array $context) => $context['payment_reference'] === 'APP-REFERENCE-SPLIT'
-            && $context['is_reference_package'] === true
-            && $context['transaction_amount_kobo'] === 1400
-            && $context['system_share_kobo'] === 1000
-            && $context['customer_remainder_kobo'] === 400
-            && $context['transaction_charge_kobo'] === 40000
-            && $context['subaccount_code'] === 'ACCT_easeverifier'
-        ));
-
     $intent = PaygoVerificationIntent::where('reference', 'APP-REFERENCE-SPLIT')->firstOrFail();
 
-    expect((float) $intent->amount)->toBe(1400.0)
+    expect($intent->paymentAttempts()->firstOrFail()->system_price_snapshot)->toBe('1000.00')
+        ->and((float) $intent->amount)->toBe(1400.0)
         ->and((float) $intent->system_price_snapshot)->toBe(1000.0)
         ->and(data_get($intent->metadata, 'paystack_split.total_split_amount_kobo'))->toBe(100000)
         ->and(data_get($intent->metadata, 'paystack_split.main_account_remainder_kobo'))->toBe(40000);
@@ -1733,7 +1725,7 @@ it('allows a school to pull a paid result when a matching completed verification
         ->and($intent->fresh()->metadata['verification_status'] ?? null)->toBe('completed');
 });
 
-it('redirects back to the school portal and posts a webhook for hybrid paygo result callbacks', function () {
+it('redirects back to the school portal and posts a webhook for hybrid paygo result callbacks', function (bool $replacement) {
     config([
         'services.paystack.public_key' => 'paystack-public',
         'services.paystack.secret_key' => 'paystack-secret',
@@ -1788,12 +1780,12 @@ it('redirects back to the school portal and posts a webhook for hybrid paygo res
     });
 
     Http::fake([
-        '*/transaction/verify/*' => Http::response([
+        '*/transaction/verify/*' => fn ($request) => Http::response([
             'status' => true,
             'data' => [
                 'status' => 'success',
                 'amount' => 15000,
-                'reference' => 'PGO-HYBRID-REF',
+                'reference' => basename(parse_url($request->url(), PHP_URL_PATH)),
                 'paid_at' => now()->toISOString(),
                 'channel' => 'card',
                 'customer' => [
@@ -1821,7 +1813,15 @@ it('redirects back to the school portal and posts a webhook for hybrid paygo res
         ],
     ]);
 
-    $response = $this->get("/paygo/callback?reference={$intent->reference}");
+    $callbackReference = $intent->reference;
+    if ($replacement) {
+        $original = app(PaygoPaymentService::class)->ensureOriginalAttempt($intent);
+        $attempt = PaygoPaymentAttempt::factory()->for($intent, 'intent')->create(array_merge($original->only([
+            'amount', 'system_price_snapshot', 'paystack_gateway_owner_type', 'paystack_environment', 'paystack_key_fingerprint',
+        ]), ['attempt_number' => 1, 'reference' => $intent->reference.'-paygo-1', 'status' => 'initialized']));
+        $callbackReference = $attempt->reference;
+    }
+    $response = $this->get('/paygo/callback?reference='.$callbackReference);
 
     $response->assertRedirect(
         'https://school.test/verify/success?reference='.$intent->reference
@@ -1842,7 +1842,7 @@ it('redirects back to the school portal and posts a webhook for hybrid paygo res
     });
 
     expect($intent->fresh()->metadata['webhook_last_status'] ?? null)->toBe('delivered');
-});
+})->with([false, true]);
 
 it('does not turn a successful result into a failure when webhook delivery fails', function () {
     Http::fake([

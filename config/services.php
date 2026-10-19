@@ -36,6 +36,7 @@ return [
     ],
 
     'paystack' => [
+        'paygo_payment_retries_enabled' => env('PAYGO_PAYMENT_RETRIES_ENABLED', true),
         'public_key' => env('PAYSTACK_PUBLIC_KEY'),
         'secret_key' => env('PAYSTACK_SECRET_KEY'),
         'test_public_key' => env('PAYSTACK_TEST_PUBLIC_KEY'),

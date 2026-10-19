@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\Log;
 class PaystackService
 {
     protected ?string $secretKey;
+
     protected ?string $publicKey;
+
     protected string $baseUrl;
 
     public function __construct(?string $secretKey = null, ?string $publicKey = null, ?string $baseUrl = null)
@@ -33,8 +35,7 @@ class PaystackService
         string $reference,
         ?string $callbackUrl = null,
         array $options = [],
-    ): array
-    {
+    ): array {
         $payload = array_merge([
             'email' => $email,
             'amount' => $amountInKobo,
@@ -59,10 +60,11 @@ class PaystackService
             'response' => $response->json(),
             'payload' => $this->safeInitializePayloadForLog($payload),
         ]);
-        
+
         return [
             'success' => false,
             'message' => $response->json('message') ?? 'Payment initialization failed',
+            'http_status' => $response->status(),
         ];
     }
 
@@ -76,7 +78,7 @@ class PaystackService
 
         if ($response->successful() && $response->json('status')) {
             $data = $response->json('data');
-            
+
             return [
                 'success' => true,
                 'status' => $data['status'], // success, failed, abandoned
@@ -85,12 +87,16 @@ class PaystackService
                 'paid_at' => $data['paid_at'] ?? null,
                 'channel' => $data['channel'] ?? null,
                 'customer_email' => $data['customer']['email'] ?? null,
+                'currency' => $data['currency'] ?? null,
+                'environment' => $data['domain'] ?? null,
+                'transaction_id' => $data['id'] ?? null,
             ];
         }
 
         return [
             'success' => false,
             'message' => $response->json('message') ?? 'Verification failed',
+            'http_status' => $response->status(),
         ];
     }
 
@@ -205,8 +211,7 @@ class PaystackService
         string $accountNumber,
         ?string $description = null,
         array $metadata = [],
-    ): array
-    {
+    ): array {
         $payload = [
             'business_name' => $businessName,
             'settlement_bank' => $bankCode,
@@ -260,7 +265,7 @@ class PaystackService
      */
     public static function generateReference(): string
     {
-        return 'PAY_' . strtoupper(bin2hex(random_bytes(10)));
+        return 'PAY_'.strtoupper(bin2hex(random_bytes(10)));
     }
 
     /**
@@ -297,7 +302,7 @@ class PaystackService
 
         if ($response->successful() && $response->json('status')) {
             $data = $response->json('data');
-            
+
             return [
                 'success' => true,
                 'account_number' => $data['account_number'],
@@ -313,7 +318,7 @@ class PaystackService
         }
 
         Log::error('Paystack DVA creation failed', ['response' => $response->json()]);
-        
+
         return [
             'success' => false,
             'message' => $response->json('message') ?? 'Failed to create dedicated account',
@@ -363,5 +368,4 @@ class PaystackService
             'message' => $response->json('message') ?? 'Failed to deactivate account',
         ];
     }
-
 }

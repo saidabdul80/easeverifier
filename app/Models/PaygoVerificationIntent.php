@@ -113,6 +113,11 @@ class PaygoVerificationIntent extends Model
         return $this->hasMany(PaygoResultAttempt::class);
     }
 
+    public function paymentAttempts(): HasMany
+    {
+        return $this->hasMany(PaygoPaymentAttempt::class);
+    }
+
     public function paystackGatewayAccount(): BelongsTo
     {
         return $this->belongsTo(PaystackGatewayAccount::class);
