@@ -5,7 +5,7 @@ import { ref, watch, computed } from 'vue';
 
 const props = defineProps<{
     transactions?: { data: any[]; current_page: number; last_page: number; per_page: number; total: number };
-    stats?: { total_credits: number; total_debits: number; this_month_credits: number; this_month_debits: number };
+    stats?: { total_credits: number; total_debits: number; total_refunds: number; this_month_credits: number; this_month_debits: number; this_month_refunds: number };
     filters?: { search?: string; type?: string; category?: string; min_amount?: string; date_from?: string; date_to?: string };
     paygoIntents?: { data: any[]; current_page: number; last_page: number; per_page: number; total: number };
     paygoStats?: { gross_revenue: number; system_settlement: number; net_earnings: number; successful_payments: number; reference_packages: number; this_month_revenue: number; this_month_earnings: number };
@@ -167,8 +167,8 @@ const statusColor = (status: string) => {
 
         <!-- Stats Cards -->
         <v-row v-if="activeTab === 'wallet'" class="mb-6">
-            <v-col cols="6" md="3">
-                <v-card color="success-lighten-5">
+            <v-col cols="6" md="4">
+                <v-card class="h-100" color="success-lighten-5">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="success" size="32" class="mr-3">mdi-arrow-down-circle</v-icon>
                         <div>
@@ -178,19 +178,31 @@ const statusColor = (status: string) => {
                     </v-card-text>
                 </v-card>
             </v-col>
-            <v-col cols="6" md="3">
-                <v-card color="error-lighten-5">
+            <v-col cols="6" md="4">
+                <v-card class="h-100" color="error-lighten-5">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="error" size="32" class="mr-3">mdi-arrow-up-circle</v-icon>
                         <div>
                             <p class="text-caption mb-0">Total Debits</p>
                             <p class="text-h6 font-weight-bold text-error mb-0">{{ formatCurrency(stats?.total_debits) }}</p>
+                            <p class="text-caption text-grey mb-0">After refunds</p>
                         </div>
                     </v-card-text>
                 </v-card>
             </v-col>
-            <v-col cols="6" md="3">
-                <v-card>
+            <v-col cols="6" md="4">
+                <v-card class="h-100">
+                    <v-card-text class="d-flex align-center">
+                        <v-icon color="info" size="32" class="mr-3">mdi-cash-refund</v-icon>
+                        <div>
+                            <p class="text-caption mb-0">Total Refunds</p>
+                            <p class="text-h6 font-weight-bold text-info mb-0">{{ formatCurrency(stats?.total_refunds) }}</p>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" md="4">
+                <v-card class="h-100">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="success" size="32" class="mr-3">mdi-calendar-month</v-icon>
                         <div>
@@ -200,13 +212,25 @@ const statusColor = (status: string) => {
                     </v-card-text>
                 </v-card>
             </v-col>
-            <v-col cols="6" md="3">
-                <v-card>
+            <v-col cols="6" md="4">
+                <v-card class="h-100">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="error" size="32" class="mr-3">mdi-calendar-month</v-icon>
                         <div>
                             <p class="text-caption mb-0">This Month Debits</p>
                             <p class="text-h6 font-weight-bold mb-0">{{ formatCurrency(stats?.this_month_debits) }}</p>
+                            <p class="text-caption text-grey mb-0">After refunds</p>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" md="4">
+                <v-card class="h-100">
+                    <v-card-text class="d-flex align-center">
+                        <v-icon color="info" size="32" class="mr-3">mdi-calendar-month</v-icon>
+                        <div>
+                            <p class="text-caption mb-0">This Month Refunds</p>
+                            <p class="text-h6 font-weight-bold mb-0">{{ formatCurrency(stats?.this_month_refunds) }}</p>
                         </div>
                     </v-card-text>
                 </v-card>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\PaygoVerificationIntent;
 use App\Models\Transaction;
+use App\Services\WalletTransactionSummary;
 use App\Support\CsvExport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -12,7 +13,7 @@ use Inertia\Inertia;
 
 class TransactionController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, WalletTransactionSummary $summary)
     {
         $user = $request->user();
 
@@ -46,23 +47,15 @@ class TransactionController extends Controller
                 'created_at' => $intent->created_at,
             ]);
 
-        $stats = [
-            'total_credits' => $user->transactions()->where('type', 'credit')->where('status', '=', 'completed')->where('category', '!=', 'refund')->sum('amount'),
-            'total_debits' => $user->transactions()->where('type', 'debit')->where('status', '=', 'completed')->sum('amount'),
-            'this_month_credits' => $user->transactions()
-                ->where('category', '!=', 'refund')
-                ->where('type', 'credit')
-                ->where('status', '=', 'completed')
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->sum('amount'),
-            'this_month_debits' => $user->transactions()
-                ->where('type', 'debit')
-                ->where('status', '=', 'completed')
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->sum('amount'),
-        ];
+        $stats = $summary->summarize($user->transactions()->getQuery());
+        $monthStats = $summary->summarize(
+            $user->transactions()
+                ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()])
+                ->getQuery(),
+        );
+        $stats['this_month_credits'] = $monthStats['total_credits'];
+        $stats['this_month_debits'] = $monthStats['total_debits'];
+        $stats['this_month_refunds'] = $monthStats['total_refunds'];
 
         $paidStatuses = ['paid', 'verifying', 'used'];
         $paidPaygo = $this->filteredPaygoIntentsQuery($request)

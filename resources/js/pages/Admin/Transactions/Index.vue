@@ -6,7 +6,7 @@ import { ref, watch, computed } from 'vue';
 const props = defineProps<{
     user: { name: string; email: string };
     transactions?: { data: any[]; links: any; meta: any; current_page: number; last_page: number; per_page: number; total: number };
-    stats?: { total_credits: number; total_debits: number; today_credits: number; today_debits: number };
+    stats?: { total_credits: number; total_debits: number; total_refunds: number; today_credits: number; today_debits: number; today_refunds: number };
     filters?: { search?: string; type?: string; category?: string; page?: number };
 }>();
 
@@ -67,8 +67,8 @@ const headers = [
 
         <!-- Stats -->
         <v-row class="mb-6">
-            <v-col cols="6" md="3">
-                <v-card color="success-lighten-5">
+            <v-col cols="6" md="4">
+                <v-card class="h-100" color="success-lighten-5">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="success" size="32" class="mr-3">mdi-arrow-down-circle</v-icon>
                         <div>
@@ -78,19 +78,31 @@ const headers = [
                     </v-card-text>
                 </v-card>
             </v-col>
-            <v-col cols="6" md="3">
-                <v-card color="error-lighten-5">
+            <v-col cols="6" md="4">
+                <v-card class="h-100" color="error-lighten-5">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="error" size="32" class="mr-3">mdi-arrow-up-circle</v-icon>
                         <div>
                             <p class="text-caption mb-0">Total Debits</p>
                             <p class="text-h6 font-weight-bold text-error mb-0">{{ formatCurrency(stats?.total_debits) }}</p>
+                            <p class="text-caption text-grey mb-0">After refunds</p>
                         </div>
                     </v-card-text>
                 </v-card>
             </v-col>
-            <v-col cols="6" md="3">
-                <v-card>
+            <v-col cols="6" md="4">
+                <v-card class="h-100">
+                    <v-card-text class="d-flex align-center">
+                        <v-icon color="info" size="32" class="mr-3">mdi-cash-refund</v-icon>
+                        <div>
+                            <p class="text-caption mb-0">Total Refunds</p>
+                            <p class="text-h6 font-weight-bold mb-0">{{ formatCurrency(stats?.total_refunds) }}</p>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" md="4">
+                <v-card class="h-100">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="success" size="32" class="mr-3">mdi-calendar-today</v-icon>
                         <div>
@@ -100,13 +112,25 @@ const headers = [
                     </v-card-text>
                 </v-card>
             </v-col>
-            <v-col cols="6" md="3">
-                <v-card>
+            <v-col cols="6" md="4">
+                <v-card class="h-100">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="error" size="32" class="mr-3">mdi-calendar-today</v-icon>
                         <div>
                             <p class="text-caption mb-0">Today Debits</p>
                             <p class="text-h6 font-weight-bold mb-0">{{ formatCurrency(stats?.today_debits) }}</p>
+                            <p class="text-caption text-grey mb-0">After refunds</p>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="6" md="4">
+                <v-card class="h-100">
+                    <v-card-text class="d-flex align-center">
+                        <v-icon color="info" size="32" class="mr-3">mdi-calendar-today</v-icon>
+                        <div>
+                            <p class="text-caption mb-0">Today Refunds</p>
+                            <p class="text-h6 font-weight-bold mb-0">{{ formatCurrency(stats?.today_refunds) }}</p>
                         </div>
                     </v-card-text>
                 </v-card>

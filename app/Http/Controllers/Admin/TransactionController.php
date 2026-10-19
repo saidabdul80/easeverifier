@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Services\WalletTransactionSummary;
 use App\Support\CsvExport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -11,19 +12,20 @@ use Inertia\Inertia;
 
 class TransactionController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, WalletTransactionSummary $summary)
     {
         $transactions = $this->filteredTransactionsQuery($request)
             ->latest()
             ->paginate(20)
             ->withQueryString();
 
-        $stats = [
-            'total_credits' => Transaction::where('type', 'credit')->where('category','!=', 'refund')->sum('amount'),
-            'total_debits' => Transaction::where('type', 'debit')->sum('amount'),
-            'today_credits' => Transaction::where('type', 'credit')->where('category','!=', 'refund')->whereDate('created_at', today())->sum('amount'),
-            'today_debits' => Transaction::where('type', 'debit')->whereDate('created_at', today())->sum('amount'),
-        ];
+        $stats = $summary->summarize(Transaction::query());
+        $todayStats = $summary->summarize(
+            Transaction::query()->whereBetween('created_at', [now()->startOfDay(), now()->endOfDay()]),
+        );
+        $stats['today_credits'] = $todayStats['total_credits'];
+        $stats['today_debits'] = $todayStats['total_debits'];
+        $stats['today_refunds'] = $todayStats['total_refunds'];
 
         return Inertia::render('Admin/Transactions/Index', [
             'transactions' => $transactions,

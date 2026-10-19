@@ -9,7 +9,7 @@ const props = defineProps<{
     wallet?: any;
     branchWallets?: any[];
     transactions?: { data: any[]; links: any; meta: any; current_page: number; last_page: number; per_page: number; total: number };
-    stats?: { balance: number; bonus_balance: number; total_balance: number; total_funded: number; total_spent: number };
+    stats?: { balance: number; bonus_balance: number; total_balance: number; total_funded: number; total_spent: number; total_refunds: number };
     filters?: { type?: string; category?: string; date_from?: string; date_to?: string; page?: number };
 }>();
 
@@ -139,8 +139,8 @@ const headers = [
 
         <!-- Summary Stats -->
         <v-row class="mb-6">
-            <v-col cols="12" sm="6">
-                <v-card>
+            <v-col cols="12" sm="6" md="4">
+                <v-card class="h-100">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="success" size="32" class="mr-3">mdi-arrow-down-circle</v-icon>
                         <div>
@@ -150,13 +150,25 @@ const headers = [
                     </v-card-text>
                 </v-card>
             </v-col>
-            <v-col cols="12" sm="6">
-                <v-card>
+            <v-col cols="12" sm="6" md="4">
+                <v-card class="h-100">
                     <v-card-text class="d-flex align-center">
                         <v-icon color="error" size="32" class="mr-3">mdi-arrow-up-circle</v-icon>
                         <div>
                             <p class="text-caption text-grey mb-0">Total Spent</p>
                             <p class="text-h6 font-weight-bold text-error mb-0">{{ formatCurrency(stats?.total_spent) }}</p>
+                            <p class="text-caption text-grey mb-0">After refunds</p>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+            <v-col cols="12" sm="6" md="4">
+                <v-card class="h-100">
+                    <v-card-text class="d-flex align-center">
+                        <v-icon color="info" size="32" class="mr-3">mdi-cash-refund</v-icon>
+                        <div>
+                            <p class="text-caption mb-0">Total Refunds</p>
+                            <p class="text-h6 font-weight-bold mb-0">{{ formatCurrency(stats?.total_refunds) }}</p>
                         </div>
                     </v-card-text>
                 </v-card>

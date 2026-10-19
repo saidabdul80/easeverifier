@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Services\WalletTransactionSummary;
 use App\Support\CsvExport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -11,7 +12,7 @@ use Inertia\Inertia;
 
 class WalletController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, WalletTransactionSummary $summary)
     {
         $wallet = $request->user()->wallet;
         $branchWallets = $request->user()->branches()
@@ -35,6 +36,8 @@ class WalletController extends Controller
             ->paginate(15)
             ->withQueryString();
 
+        $transactionStats = $summary->summarize($request->user()->transactions()->getQuery());
+
         $stats = [
             'balance' => $wallet?->balance ?? 0,
             'bonus_balance' => $wallet?->bonus_balance ?? 0,
@@ -42,12 +45,10 @@ class WalletController extends Controller
             'total_funded' => $request->user()->transactions()
                 ->where('type', 'credit')
                 ->where('category', 'funding')
-                ->where('status','completed')
+                ->where('status', 'completed')
                 ->sum('amount'),
-            'total_spent' => $request->user()->transactions()
-                ->where('type', 'debit')
-                ->where('status','completed')
-                ->sum('amount'),
+            'total_spent' => $transactionStats['total_debits'],
+            'total_refunds' => $transactionStats['total_refunds'],
         ];
 
         return Inertia::render('Customer/Wallet/Index', [
