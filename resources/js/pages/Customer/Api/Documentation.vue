@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PaygoResultSimulation from '@/components/PaygoResultSimulation.vue';
+import ResultEvaluationLibraries from '@/components/ResultEvaluationLibraries.vue';
 import CustomerLayout from '@/layouts/CustomerLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { ref } from 'vue';
@@ -280,7 +281,8 @@ const paygoPullResponse = `{
             <v-tab value="identity">Identity</v-tab>
             <v-tab value="results">Results</v-tab>
             <v-tab value="paygo">PayGo</v-tab>
-            <v-tab value="implementation">Implementation</v-tab>
+            <v-tab value="libraries">Result Libraries</v-tab>
+            <v-tab value="implementation">Integration &amp; Demo</v-tab>
             <v-tab value="pins">Result PINs</v-tab>
             <v-tab value="wallet">Wallet</v-tab>
             <v-tab value="mcp">MCP</v-tab>
@@ -465,8 +467,12 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
                 </v-card>
             </v-window-item>
 
+            <v-window-item value="libraries">
+                <ResultEvaluationLibraries />
+            </v-window-item>
             <v-window-item value="implementation">
                 <PaygoResultSimulation class="mb-6" />
+
 
                 <v-alert type="warning" variant="tonal" class="mb-4">
                     The result form endpoint and fetch endpoint are billed independently in live mode. Cache form field metadata on your server and refresh it only when needed.

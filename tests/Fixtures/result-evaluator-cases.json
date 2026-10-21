@@ -1,0 +1,4480 @@
+{
+  "portal": {
+    "student": {
+      "name": "Amina Ibrahim"
+    },
+    "reference": "APP-90210",
+    "portal_ref": "APP-90210",
+    "candidate_id": "STU-12345",
+    "minimum_grade": "C6",
+    "minimum_credits": 5,
+    "max_sittings": 2,
+    "requirements": [
+      {
+        "key": "english",
+        "subjects": [
+          "English Language"
+        ]
+      },
+      {
+        "key": "maths",
+        "subjects": [
+          "Mathematics"
+        ]
+      },
+      {
+        "key": "physics",
+        "subjects": [
+          "Physics"
+        ]
+      },
+      {
+        "key": "chemistry",
+        "subjects": [
+          "Chemistry"
+        ]
+      },
+      {
+        "key": "science",
+        "subjects": [
+          "Biology",
+          "Agricultural Science"
+        ]
+      }
+    ]
+  },
+  "result": {
+    "success": true,
+    "reference": "APP-90210",
+    "portal_ref": "APP-90210",
+    "candidate_id": "STU-12345",
+    "sitting": 1,
+    "data": {
+      "board": "WAEC",
+      "candidate": {
+        "name": "Amina Ibrahim"
+      },
+      "subjects": [
+        {
+          "subject": "English Language",
+          "grade": "A1"
+        },
+        {
+          "subject": "Mathematics",
+          "grade": "B2"
+        },
+        {
+          "subject": "Physics",
+          "grade": "B3"
+        },
+        {
+          "subject": "Chemistry",
+          "grade": "C4"
+        },
+        {
+          "subject": "Biology",
+          "grade": "C5"
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "name and requirements match",
+      "set": {},
+      "expected": {
+        "code": "REQUIREMENTS_MET",
+        "can_autofill": true,
+        "can_continue": true
+      }
+    },
+    {
+      "name": "reordered uppercase name",
+      "set": {
+        "result.data.candidate.name": "IBRAHIM, AMINA"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "honorific ignored",
+      "set": {
+        "result.data.candidate.name": "Miss Amina Ibrahim"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "different name",
+      "set": {
+        "result.data.candidate.name": "David Okonkwo"
+      },
+      "expected": {
+        "code": "OWNERSHIP_MISMATCH",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "partial name",
+      "set": {
+        "result.data.candidate.name": "Amina Yusuf"
+      },
+      "expected": {
+        "code": "OWNERSHIP_REVIEW",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "missing candidate name",
+      "set": {
+        "result.data.candidate": {}
+      },
+      "expected": {
+        "code": "OWNERSHIP_REVIEW"
+      }
+    },
+    {
+      "name": "name variant needs review",
+      "set": {
+        "result.data.candidate.name": "Aminah Ibrahim"
+      },
+      "expected": {
+        "code": "OWNERSHIP_REVIEW"
+      }
+    },
+    {
+      "name": "duplicate result",
+      "set": {
+        "portal.result_used_by_another_student": true
+      },
+      "expected": {
+        "code": "DUPLICATE_RESULT"
+      }
+    },
+    {
+      "name": "ownership disabled",
+      "set": {
+        "portal.ownership_check_enabled": false,
+        "result.data.candidate.name": "David Okonkwo"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "duplicate still blocked with name check disabled",
+      "set": {
+        "portal.ownership_check_enabled": false,
+        "portal.result_used_by_another_student": true
+      },
+      "expected": {
+        "code": "DUPLICATE_RESULT"
+      }
+    },
+    {
+      "name": "missing required chemistry",
+      "set": {
+        "result.data.subjects": [
+          {
+            "subject": "English Language",
+            "grade": "A1"
+          },
+          {
+            "subject": "Mathematics",
+            "grade": "B2"
+          },
+          {
+            "subject": "Physics",
+            "grade": "B3"
+          },
+          {
+            "subject": "Biology",
+            "grade": "C5"
+          }
+        ]
+      },
+      "expected": {
+        "code": "SUBJECTS_MISSING",
+        "can_autofill": true
+      }
+    },
+    {
+      "name": "D7 mapped but below minimum",
+      "set": {
+        "result.data.subjects.1.grade": "D7"
+      },
+      "expected": {
+        "code": "GRADES_BELOW_REQUIREMENT",
+        "can_autofill": true,
+        "can_continue": false
+      }
+    },
+    {
+      "name": "unknown grade cannot autofill",
+      "set": {
+        "result.data.subjects.1.grade": "WITHHELD"
+      },
+      "expected": {
+        "code": "GRADES_BELOW_REQUIREMENT",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "stricter subject minimum",
+      "set": {
+        "portal.requirements.1.minimum_grade": "A1"
+      },
+      "expected": {
+        "code": "GRADES_BELOW_REQUIREMENT"
+      }
+    },
+    {
+      "name": "subject alternatives",
+      "set": {
+        "result.data.subjects.4.subject": "Agriculture"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "normalized core aliases",
+      "set": {
+        "result.data.subjects.0.subject": "English",
+        "result.data.subjects.1.subject": "General Mathematics"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "more credits required",
+      "set": {
+        "portal.minimum_credits": 6
+      },
+      "expected": {
+        "code": "INSUFFICIENT_CREDITS"
+      }
+    },
+    {
+      "name": "duplicate subject does not add credit",
+      "set": {
+        "result.data.subjects": [
+          {
+            "subject": "English Language",
+            "grade": "A1"
+          },
+          {
+            "subject": "Mathematics",
+            "grade": "B2"
+          },
+          {
+            "subject": "Physics",
+            "grade": "B3"
+          },
+          {
+            "subject": "Chemistry",
+            "grade": "C4"
+          },
+          {
+            "subject": "Biology",
+            "grade": "C5"
+          },
+          {
+            "subject": "General Mathematics",
+            "grade": "A1"
+          }
+        ],
+        "portal.minimum_credits": 6
+      },
+      "expected": {
+        "code": "INSUFFICIENT_CREDITS"
+      }
+    },
+    {
+      "name": "direct canonical result",
+      "set": {
+        "result": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "webhook result envelope",
+      "set": {
+        "result": {
+          "result_status": "completed",
+          "reference": "APP-90210",
+          "result": {
+            "board": "WAEC",
+            "candidate": {
+              "name": "Amina Ibrahim"
+            },
+            "subjects": [
+              {
+                "subject": "English Language",
+                "grade": "A1"
+              },
+              {
+                "subject": "Mathematics",
+                "grade": "B2"
+              },
+              {
+                "subject": "Physics",
+                "grade": "B3"
+              },
+              {
+                "subject": "Chemistry",
+                "grade": "C4"
+              },
+              {
+                "subject": "Biology",
+                "grade": "C5"
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "pending envelope",
+      "set": {
+        "result": {
+          "success": false,
+          "status": 202,
+          "error_code": "RESULT_PENDING"
+        }
+      },
+      "expected": {
+        "code": "RESULT_PENDING",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "pending overrides populated result",
+      "set": {
+        "result.result_status": "pending"
+      },
+      "expected": {
+        "code": "RESULT_PENDING"
+      }
+    },
+    {
+      "name": "failed envelope",
+      "set": {
+        "result": {
+          "success": false,
+          "status": 422,
+          "error": "Invalid PIN"
+        }
+      },
+      "expected": {
+        "code": "RESULT_FAILED"
+      }
+    },
+    {
+      "name": "failed overrides populated result",
+      "set": {
+        "result.success": false
+      },
+      "expected": {
+        "code": "RESULT_FAILED"
+      }
+    },
+    {
+      "name": "missing result",
+      "set": {
+        "result": {}
+      },
+      "expected": {
+        "code": "INVALID_RESULT"
+      }
+    },
+    {
+      "name": "malformed subject",
+      "set": {
+        "result.data.subjects.0": {
+          "grade": "A1"
+        }
+      },
+      "expected": {
+        "code": "INVALID_RESULT"
+      }
+    },
+    {
+      "name": "empty subjects",
+      "set": {
+        "result.data.subjects": []
+      },
+      "expected": {
+        "code": "INVALID_RESULT"
+      }
+    },
+    {
+      "name": "malformed success flag",
+      "set": {
+        "result.success": "false"
+      },
+      "expected": {
+        "code": "INVALID_RESULT"
+      }
+    },
+    {
+      "name": "wrong portal reference",
+      "set": {
+        "result.portal_ref": "OTHER"
+      },
+      "expected": {
+        "code": "RESULT_CONTEXT_MISMATCH"
+      }
+    },
+    {
+      "name": "wrong student ID",
+      "set": {
+        "result.candidate_id": "STU-OTHER"
+      },
+      "expected": {
+        "code": "RESULT_CONTEXT_MISMATCH"
+      }
+    },
+    {
+      "name": "wrong payment reference",
+      "set": {
+        "result.reference": "APP-OTHER"
+      },
+      "expected": {
+        "code": "RESULT_CONTEXT_MISMATCH"
+      }
+    },
+    {
+      "name": "absent rules",
+      "set": {
+        "portal.requirements": []
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "invalid cutoff",
+      "set": {
+        "portal.minimum_grade": "invalid"
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "nonboolean duplicate flag",
+      "set": {
+        "portal.result_used_by_another_student": "false"
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "missing student profile",
+      "set": {
+        "portal.student": {}
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "duplicate rule key",
+      "set": {
+        "portal.requirements.1.key": "english"
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "invalid sitting limit",
+      "set": {
+        "portal.max_sittings": 0
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "negative credits",
+      "set": {
+        "portal.minimum_credits": -1
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "nonboolean optional flag",
+      "set": {
+        "portal.requirements.0.required": "false"
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "two sittings complete requirements",
+      "set": {
+        "result.data": {
+          "sittings": [
+            {
+              "sitting_no": 1,
+              "candidate": {
+                "name": "Amina Ibrahim"
+              },
+              "subjects": [
+                {
+                  "subject": "English Language",
+                  "grade": "A1"
+                },
+                {
+                  "subject": "Mathematics",
+                  "grade": "B2"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "D7"
+                },
+                {
+                  "subject": "Biology",
+                  "grade": "C5"
+                }
+              ]
+            },
+            {
+              "sitting_no": 2,
+              "candidate": {
+                "name": "Ibrahim Amina"
+              },
+              "subjects": [
+                {
+                  "subject": "Chemistry",
+                  "grade": "C4"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "B2"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "two sittings exceed programme rule",
+      "set": {
+        "result.data": {
+          "sittings": [
+            {
+              "sitting_no": 1,
+              "candidate": {
+                "name": "Amina Ibrahim"
+              },
+              "subjects": [
+                {
+                  "subject": "English Language",
+                  "grade": "A1"
+                },
+                {
+                  "subject": "Mathematics",
+                  "grade": "B2"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "D7"
+                },
+                {
+                  "subject": "Biology",
+                  "grade": "C5"
+                }
+              ]
+            },
+            {
+              "sitting_no": 2,
+              "candidate": {
+                "name": "Ibrahim Amina"
+              },
+              "subjects": [
+                {
+                  "subject": "Chemistry",
+                  "grade": "C4"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "B2"
+                }
+              ]
+            }
+          ]
+        },
+        "portal.max_sittings": 1
+      },
+      "expected": {
+        "code": "SITTING_LIMIT_EXCEEDED"
+      }
+    },
+    {
+      "name": "second sitting belongs to another student",
+      "set": {
+        "result.data": {
+          "sittings": [
+            {
+              "sitting_no": 1,
+              "candidate": {
+                "name": "Amina Ibrahim"
+              },
+              "subjects": [
+                {
+                  "subject": "English Language",
+                  "grade": "A1"
+                },
+                {
+                  "subject": "Mathematics",
+                  "grade": "B2"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "D7"
+                },
+                {
+                  "subject": "Biology",
+                  "grade": "C5"
+                }
+              ]
+            },
+            {
+              "sitting_no": 2,
+              "candidate": {
+                "name": "David Okonkwo"
+              },
+              "subjects": [
+                {
+                  "subject": "Chemistry",
+                  "grade": "C4"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "B2"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "OWNERSHIP_MISMATCH"
+      }
+    },
+    {
+      "name": "second sitting has no name",
+      "set": {
+        "result.data": {
+          "sittings": [
+            {
+              "sitting_no": 1,
+              "candidate": {
+                "name": "Amina Ibrahim"
+              },
+              "subjects": [
+                {
+                  "subject": "English Language",
+                  "grade": "A1"
+                },
+                {
+                  "subject": "Mathematics",
+                  "grade": "B2"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "D7"
+                },
+                {
+                  "subject": "Biology",
+                  "grade": "C5"
+                }
+              ]
+            },
+            {
+              "sitting_no": 2,
+              "candidate": {},
+              "subjects": [
+                {
+                  "subject": "Chemistry",
+                  "grade": "C4"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "B2"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "OWNERSHIP_REVIEW"
+      }
+    },
+    {
+      "name": "duplicate sitting numbers rejected",
+      "set": {
+        "result.data": {
+          "sittings": [
+            {
+              "sitting_no": 1,
+              "candidate": {
+                "name": "Amina Ibrahim"
+              },
+              "subjects": [
+                {
+                  "subject": "English Language",
+                  "grade": "A1"
+                },
+                {
+                  "subject": "Mathematics",
+                  "grade": "B2"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "D7"
+                },
+                {
+                  "subject": "Biology",
+                  "grade": "C5"
+                }
+              ]
+            },
+            {
+              "sitting_no": 1,
+              "candidate": {
+                "name": "Ibrahim Amina"
+              },
+              "subjects": [
+                {
+                  "subject": "Chemistry",
+                  "grade": "C4"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "B2"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "INVALID_RESULT"
+      }
+    },
+    {
+      "name": "single second sitting retains source number",
+      "set": {
+        "result.sitting": 2
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "optional missing subject does not block",
+      "set": {
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              "English Language"
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              "Mathematics"
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              "Physics"
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              "Chemistry"
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              "Biology",
+              "Agricultural Science"
+            ]
+          },
+          {
+            "key": "optional",
+            "subjects": [
+              "Geography"
+            ],
+            "required": false
+          }
+        ]
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "overlapping alternatives avoid greedy false failure",
+      "set": {
+        "portal.requirements": [
+          {
+            "key": "either",
+            "subjects": [
+              "Biology",
+              "Agricultural Science"
+            ]
+          },
+          {
+            "key": "biology",
+            "subjects": [
+              "Biology"
+            ]
+          }
+        ],
+        "portal.minimum_credits": 2,
+        "result.data.subjects": [
+          {
+            "subject": "Biology",
+            "grade": "A1"
+          },
+          {
+            "subject": "Agriculture",
+            "grade": "B2"
+          }
+        ]
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "same subject cannot fill two required slots",
+      "set": {
+        "portal.requirements": [
+          {
+            "key": "maths1",
+            "subjects": [
+              "Mathematics"
+            ]
+          },
+          {
+            "key": "maths2",
+            "subjects": [
+              "General Mathematics"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "code": "SUBJECTS_MISSING"
+      }
+    },
+    {
+      "name": "optional rule cannot take required low grade",
+      "set": {
+        "portal.requirements": [
+          {
+            "key": "maths",
+            "subjects": [
+              "Mathematics"
+            ]
+          },
+          {
+            "key": "optional",
+            "subjects": [
+              "General Mathematics"
+            ],
+            "minimum_grade": "F9",
+            "required": false
+          }
+        ],
+        "result.data.subjects.1.grade": "D7"
+      },
+      "expected": {
+        "code": "GRADES_BELOW_REQUIREMENT"
+      }
+    },
+    {
+      "name": "P7 grade recognized below C6",
+      "set": {
+        "result.data.subjects.1.grade": "P7"
+      },
+      "expected": {
+        "code": "GRADES_BELOW_REQUIREMENT"
+      }
+    },
+    {
+      "name": "F9 fails configured requirement",
+      "set": {
+        "result.data.subjects.1.grade": "F9"
+      },
+      "expected": {
+        "code": "GRADES_BELOW_REQUIREMENT"
+      }
+    },
+    {
+      "name": "JSON result array rejected",
+      "set": {
+        "result": []
+      },
+      "expected": {
+        "code": "INVALID_RESULT"
+      }
+    },
+    {
+      "name": "malformed numeric grade rejected",
+      "set": {
+        "result.data.subjects.1.grade": 2
+      },
+      "expected": {
+        "code": "INVALID_RESULT"
+      }
+    },
+    {
+      "name": "rules without required slots rejected",
+      "set": {
+        "portal.requirements": [
+          {
+            "key": "optional",
+            "subjects": [
+              "English"
+            ],
+            "required": false
+          }
+        ]
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "HTTP error cannot accept stale populated result",
+      "set": {
+        "result.status": 503
+      },
+      "expected": {
+        "code": "RESULT_FAILED",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "equal grades prefer earlier sitting even if returned later",
+      "set": {
+        "result.data": {
+          "sittings": [
+            {
+              "candidate": {
+                "name": "Amina Ibrahim"
+              },
+              "subjects": [
+                {
+                  "subject": "English Language",
+                  "grade": "A1"
+                },
+                {
+                  "subject": "Mathematics",
+                  "grade": "B2"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "B3"
+                },
+                {
+                  "subject": "Chemistry",
+                  "grade": "C4"
+                },
+                {
+                  "subject": "Biology",
+                  "grade": "C5"
+                }
+              ],
+              "sitting_no": 2
+            },
+            {
+              "candidate": {
+                "name": "Amina Ibrahim"
+              },
+              "subjects": [
+                {
+                  "subject": "English Language",
+                  "grade": "A1"
+                },
+                {
+                  "subject": "Mathematics",
+                  "grade": "B2"
+                },
+                {
+                  "subject": "Physics",
+                  "grade": "B3"
+                },
+                {
+                  "subject": "Chemistry",
+                  "grade": "C4"
+                },
+                {
+                  "subject": "Biology",
+                  "grade": "C5"
+                }
+              ],
+              "sitting_no": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "legacy reference result still preparing",
+      "set": {
+        "result": {
+          "success": false,
+          "error": "Result is not available for this reference.",
+          "error_code": "RESULT_REFERENCE_INVALID"
+        }
+      },
+      "expected": {
+        "code": "RESULT_PENDING",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "legacy portal attempt still preparing",
+      "set": {
+        "result": {
+          "success": false,
+          "error": "Result is not available for this portal attempt yet.",
+          "error_code": "RESULT_REFERENCE_INVALID"
+        }
+      },
+      "expected": {
+        "code": "RESULT_PENDING",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "unknown reference is not pending",
+      "set": {
+        "result": {
+          "success": false,
+          "error": "Result reference was not found.",
+          "error_code": "RESULT_REFERENCE_INVALID"
+        }
+      },
+      "expected": {
+        "code": "RESULT_FAILED",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "unpaid reference is not result pending",
+      "set": {
+        "result": {
+          "success": false,
+          "error": "Result payment has not been completed.",
+          "error_code": "RESULT_REFERENCE_INVALID"
+        }
+      },
+      "expected": {
+        "code": "RESULT_FAILED",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "catalogue IDs identify required subjects",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "spacing error matches without an alias",
+      "set": {
+        "result.data.subjects.1.subject": "Mathema tics"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "punctuated abbreviation matches English",
+      "set": {
+        "result.data.subjects.0.subject": "Eng. Lang."
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "word order matches English",
+      "set": {
+        "result.data.subjects.0.subject": "Language English"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "spelling error matches chemistry",
+      "set": {
+        "result.data.subjects.3.subject": "Chemstry"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "catalogue code resolves verified subject",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "result.data.subjects.1.subject": "MTH"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "decorated code and label resolve",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "result.data.subjects.0.subject": "ENG - English Language"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "further mathematics cannot satisfy mathematics",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "result.data.subjects.1.subject": "Further Mathematics"
+      },
+      "expected": {
+        "code": "SUBJECTS_MISSING"
+      }
+    },
+    {
+      "name": "literature cannot satisfy English language",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "result.data.subjects.0.subject": "Literature in English"
+      },
+      "expected": {
+        "code": "SUBJECTS_MISSING"
+      }
+    },
+    {
+      "name": "two similar subject labels are counted once",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "result.data.subjects": [
+          {
+            "subject": "English Language",
+            "grade": "A1"
+          },
+          {
+            "subject": "Mathematics",
+            "grade": "B2"
+          },
+          {
+            "subject": "Physics",
+            "grade": "B3"
+          },
+          {
+            "subject": "Chemistry",
+            "grade": "C4"
+          },
+          {
+            "subject": "Biology",
+            "grade": "C5"
+          },
+          {
+            "subject": "Mathemetics",
+            "grade": "A1"
+          }
+        ],
+        "portal.minimum_credits": 6
+      },
+      "expected": {
+        "code": "INSUFFICIENT_CREDITS"
+      }
+    },
+    {
+      "name": "ambiguous result alias needs review",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          },
+          {
+            "id": 201,
+            "name": "Computer Science",
+            "aliases": [
+              "CS"
+            ]
+          },
+          {
+            "id": 202,
+            "name": "Civic Studies",
+            "aliases": [
+              "CS"
+            ]
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "result.data.subjects": [
+          {
+            "subject": "English Language",
+            "grade": "A1"
+          },
+          {
+            "subject": "Mathematics",
+            "grade": "B2"
+          },
+          {
+            "subject": "Physics",
+            "grade": "B3"
+          },
+          {
+            "subject": "Chemistry",
+            "grade": "C4"
+          },
+          {
+            "subject": "Biology",
+            "grade": "C5"
+          },
+          {
+            "subject": "CS",
+            "grade": "A1"
+          }
+        ]
+      },
+      "expected": {
+        "code": "SUBJECT_MATCH_REVIEW",
+        "can_autofill": false
+      }
+    },
+    {
+      "name": "unknown subject ID in requirements is configuration error",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "portal.requirements.0.subjects": [
+          999
+        ]
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "duplicate catalogue IDs are configuration error",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          },
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "invalid similarity threshold rejected",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "id": 101,
+            "name": "English Language",
+            "code": "ENG"
+          },
+          {
+            "id": 102,
+            "name": "Mathematics",
+            "code": "MTH"
+          },
+          {
+            "id": 103,
+            "name": "Physics",
+            "code": "PHY"
+          },
+          {
+            "id": 104,
+            "name": "Chemistry",
+            "code": "CHE"
+          },
+          {
+            "id": 105,
+            "name": "Biology",
+            "code": "BIO"
+          },
+          {
+            "id": 106,
+            "name": "Agricultural Science",
+            "code": "AGR"
+          },
+          {
+            "id": 107,
+            "name": "Further Mathematics",
+            "code": "FMA"
+          },
+          {
+            "id": 108,
+            "name": "Literature in English",
+            "code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "portal.subject_matching": {
+          "threshold": 0.4
+        }
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "nested database subject field names are mapped",
+      "set": {
+        "portal.subject_catalog": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ],
+        "portal.requirements": [
+          {
+            "key": "english",
+            "subjects": [
+              101
+            ]
+          },
+          {
+            "key": "maths",
+            "subjects": [
+              102
+            ]
+          },
+          {
+            "key": "physics",
+            "subjects": [
+              103
+            ]
+          },
+          {
+            "key": "chemistry",
+            "subjects": [
+              104
+            ]
+          },
+          {
+            "key": "science",
+            "subjects": [
+              105,
+              106
+            ]
+          }
+        ],
+        "portal.subject_matching": {
+          "fields": {
+            "id": "subject.identifier",
+            "name": "subject.label",
+            "code": "short_code"
+          }
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "general maths qualifier stored after the subject",
+      "set": {
+        "result.data.subjects.1.subject": "MATHEMATICS (GENERAL)"
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    }
+  ],
+  "subject_matches": [
+    {
+      "name": "ID lookup",
+      "subject": 102,
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 102,
+        "match_type": "id"
+      }
+    },
+    {
+      "name": "stored ID record lookup",
+      "subject": {
+        "id": 102
+      },
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 102
+      }
+    },
+    {
+      "name": "unknown stored ID cannot fall back to a name",
+      "subject": {
+        "id": 999,
+        "name": "Mathematics"
+      },
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "unmatched",
+        "subject_id": null
+      }
+    },
+    {
+      "name": "spaced mathematics label",
+      "subject": "Mathema tics",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 102,
+        "match_type": "normalized"
+      }
+    },
+    {
+      "name": "abbreviated English label",
+      "subject": "Eng. Lang.",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 101,
+        "match_type": "similarity"
+      }
+    },
+    {
+      "name": "typo chemistry label",
+      "subject": "Chemstry",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 104,
+        "score": 0.8889
+      }
+    },
+    {
+      "name": "short codes are exact",
+      "subject": "MTH",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 102,
+        "match_type": "code"
+      }
+    },
+    {
+      "name": "unknown short codes are not guessed",
+      "subject": "MTX",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "unmatched"
+      }
+    },
+    {
+      "name": "code and name decoration",
+      "subject": "MTH - Mathematics",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 102
+      }
+    },
+    {
+      "name": "reordered agriculture label",
+      "subject": "Science Agricultural",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 106
+      }
+    },
+    {
+      "name": "further and ordinary maths stay separate",
+      "subject": "Further Maths",
+      "catalogue": [
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "unmatched"
+      }
+    },
+    {
+      "name": "home economics is not economics",
+      "subject": "Economics",
+      "catalogue": [
+        {
+          "id": 1,
+          "name": "Home Economics"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "unmatched"
+      }
+    },
+    {
+      "name": "microbiology is not biology",
+      "subject": "Microbiology",
+      "catalogue": [
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "unmatched"
+      }
+    },
+    {
+      "name": "literature is not English language",
+      "subject": "Literature in English",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "unmatched"
+      }
+    },
+    {
+      "name": "Christian and Islamic subjects stay separate",
+      "subject": "Christian Religious Studies",
+      "catalogue": [
+        {
+          "id": 1,
+          "name": "Islamic Religious Studies"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "unmatched"
+      }
+    },
+    {
+      "name": "shared abbreviation requires review",
+      "subject": "CS",
+      "catalogue": [
+        {
+          "id": 201,
+          "name": "Computer Science",
+          "aliases": [
+            "CS"
+          ]
+        },
+        {
+          "id": 202,
+          "name": "Civic Studies",
+          "aliases": [
+            "CS"
+          ]
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "review",
+        "subject_id": null
+      }
+    },
+    {
+      "name": "unique exact name wins over similar name",
+      "subject": "Chemistry",
+      "catalogue": [
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 999,
+          "name": "Chemstry"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "matched",
+        "subject_id": 104
+      }
+    },
+    {
+      "name": "near tied typos require review",
+      "subject": "Chemstry",
+      "catalogue": [
+        {
+          "id": 1,
+          "name": "Chemistry"
+        },
+        {
+          "id": 2,
+          "name": "Chemstery"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "review"
+      }
+    },
+    {
+      "name": "configurable threshold accepts a unique short typo",
+      "subject": "Biolgy",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {
+        "threshold": 0.85
+      },
+      "expected": {
+        "status": "matched",
+        "subject_id": 105
+      }
+    },
+    {
+      "name": "default threshold reviews weaker matches",
+      "subject": "Biolgy",
+      "catalogue": [
+        {
+          "id": 101,
+          "name": "English Language",
+          "code": "ENG"
+        },
+        {
+          "id": 102,
+          "name": "Mathematics",
+          "code": "MTH"
+        },
+        {
+          "id": 103,
+          "name": "Physics",
+          "code": "PHY"
+        },
+        {
+          "id": 104,
+          "name": "Chemistry",
+          "code": "CHE"
+        },
+        {
+          "id": 105,
+          "name": "Biology",
+          "code": "BIO"
+        },
+        {
+          "id": 106,
+          "name": "Agricultural Science",
+          "code": "AGR"
+        },
+        {
+          "id": 107,
+          "name": "Further Mathematics",
+          "code": "FMA"
+        },
+        {
+          "id": 108,
+          "name": "Literature in English",
+          "code": "LIT"
+        }
+      ],
+      "options": {},
+      "expected": {
+        "status": "review",
+        "subject_id": null
+      }
+    }
+  ],
+  "adapters": [
+    {
+      "name": "nested portal with ID requirement list",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": [
+            101,
+            102,
+            103,
+            104,
+            [
+              105,
+              106
+            ]
+          ],
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "portal record supplied as JSON",
+      "source": "{\"biodata\": {\"given\": \"Amina\", \"family\": \"Ibrahim\"}, \"application\": {\"number\": \"APP-90210\", \"student_id\": \"STU-12345\"}, \"course\": {\"required\": [101, 102, 103, 104, [105, 106]], \"credits\": \"5\", \"sittings\": \"2\"}, \"subjects\": [{\"subject\": {\"identifier\": 101, \"label\": \"English Language\"}, \"short_code\": \"ENG\"}, {\"subject\": {\"identifier\": 102, \"label\": \"Mathematics\"}, \"short_code\": \"MTH\"}, {\"subject\": {\"identifier\": 103, \"label\": \"Physics\"}, \"short_code\": \"PHY\"}, {\"subject\": {\"identifier\": 104, \"label\": \"Chemistry\"}, \"short_code\": \"CHE\"}, {\"subject\": {\"identifier\": 105, \"label\": \"Biology\"}, \"short_code\": \"BIO\"}, {\"subject\": {\"identifier\": 106, \"label\": \"Agricultural Science\"}, \"short_code\": \"AGR\"}, {\"subject\": {\"identifier\": 107, \"label\": \"Further Mathematics\"}, \"short_code\": \"FMA\"}, {\"subject\": {\"identifier\": 108, \"label\": \"Literature in English\"}, \"short_code\": \"LIT\"}]}",
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "keyed requirements and ID-to-label catalogue",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": {
+            "english": 101,
+            "maths": 102,
+            "physics": 103,
+            "chemistry": 104,
+            "science": [
+              105,
+              106
+            ]
+          },
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": {
+          "101": "English Language",
+          "102": "Mathematics",
+          "103": "Physics",
+          "104": "Chemistry",
+          "105": "Biology",
+          "106": "Agricultural Science",
+          "107": "Further Mathematics",
+          "108": "Literature in English"
+        }
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "CSV and alternative ID columns",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": "101,102,103,104,105/106",
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        },
+        "requirements_separator": ",",
+        "alternatives_separator": "/"
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "database JSON columns",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": "[101, 102, 103, 104, [105, 106]]",
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": "[{\"subject\": {\"identifier\": 101, \"label\": \"English Language\"}, \"short_code\": \"ENG\"}, {\"subject\": {\"identifier\": 102, \"label\": \"Mathematics\"}, \"short_code\": \"MTH\"}, {\"subject\": {\"identifier\": 103, \"label\": \"Physics\"}, \"short_code\": \"PHY\"}, {\"subject\": {\"identifier\": 104, \"label\": \"Chemistry\"}, \"short_code\": \"CHE\"}, {\"subject\": {\"identifier\": 105, \"label\": \"Biology\"}, \"short_code\": \"BIO\"}, {\"subject\": {\"identifier\": 106, \"label\": \"Agricultural Science\"}, \"short_code\": \"AGR\"}, {\"subject\": {\"identifier\": 107, \"label\": \"Further Mathematics\"}, \"short_code\": \"FMA\"}, {\"subject\": {\"identifier\": 108, \"label\": \"Literature in English\"}, \"short_code\": \"LIT\"}]"
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "custom requirement rows and numeric grade scale",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": [
+            {
+              "rule_id": 1,
+              "accepted_ids": [
+                101
+              ],
+              "minimum_level": 4,
+              "compulsory": "Y"
+            },
+            {
+              "rule_id": 2,
+              "accepted_ids": [
+                102
+              ],
+              "minimum_level": 4,
+              "compulsory": "Y"
+            },
+            {
+              "rule_id": 3,
+              "accepted_ids": [
+                103
+              ],
+              "minimum_level": 4,
+              "compulsory": "Y"
+            },
+            {
+              "rule_id": 4,
+              "accepted_ids": [
+                104
+              ],
+              "minimum_level": 4,
+              "compulsory": "Y"
+            },
+            {
+              "rule_id": 5,
+              "accepted_ids": [
+                105,
+                106
+              ],
+              "minimum_level": 4,
+              "compulsory": "Y"
+            }
+          ],
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        },
+        "requirement_fields": {
+          "key": "rule_id",
+          "subjects": "accepted_ids",
+          "minimum_grade": "minimum_level",
+          "required": "compulsory"
+        },
+        "grade_map": {
+          "4": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "missing mapped student name",
+      "source": {
+        "biodata": {},
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": [
+            101,
+            102,
+            103,
+            104,
+            [
+              105,
+              106
+            ]
+          ],
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "wrong catalogue field name",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": [
+            101,
+            102,
+            103,
+            104,
+            [
+              105,
+              106
+            ]
+          ],
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "id",
+          "name": "name"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "missing requirement source",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": [
+            101,
+            102,
+            103,
+            104,
+            [
+              105,
+              106
+            ]
+          ],
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.wrong",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "unknown grade code is not guessed",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": [
+            {
+              "key": "maths",
+              "subjects": [
+                102
+              ],
+              "minimum_grade": 4
+            }
+          ],
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": {
+        "success": true,
+        "reference": "APP-90210",
+        "portal_ref": "APP-90210",
+        "candidate_id": "STU-12345",
+        "sitting": 1,
+        "data": {
+          "board": "WAEC",
+          "candidate": {
+            "name": "Amina Ibrahim"
+          },
+          "subjects": [
+            {
+              "subject": "English Language",
+              "grade": "A1"
+            },
+            {
+              "subject": "Mathematics",
+              "grade": "B2"
+            },
+            {
+              "subject": "Physics",
+              "grade": "B3"
+            },
+            {
+              "subject": "Chemistry",
+              "grade": "C4"
+            },
+            {
+              "subject": "Biology",
+              "grade": "C5"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "code": "CONFIGURATION_ERROR"
+      }
+    },
+    {
+      "name": "verified result supplied as JSON",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": [
+            101,
+            102,
+            103,
+            104,
+            [
+              105,
+              106
+            ]
+          ],
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": "{\"success\": true, \"reference\": \"APP-90210\", \"portal_ref\": \"APP-90210\", \"candidate_id\": \"STU-12345\", \"sitting\": 1, \"data\": {\"board\": \"WAEC\", \"candidate\": {\"name\": \"Amina Ibrahim\"}, \"subjects\": [{\"subject\": \"English Language\", \"grade\": \"A1\"}, {\"subject\": \"Mathematics\", \"grade\": \"B2\"}, {\"subject\": \"Physics\", \"grade\": \"B3\"}, {\"subject\": \"Chemistry\", \"grade\": \"C4\"}, {\"subject\": \"Biology\", \"grade\": \"C5\"}]}}",
+      "expected": {
+        "code": "REQUIREMENTS_MET"
+      }
+    },
+    {
+      "name": "invalid result JSON is reported",
+      "source": {
+        "biodata": {
+          "given": "Amina",
+          "family": "Ibrahim"
+        },
+        "application": {
+          "number": "APP-90210",
+          "student_id": "STU-12345"
+        },
+        "course": {
+          "required": [
+            101,
+            102,
+            103,
+            104,
+            [
+              105,
+              106
+            ]
+          ],
+          "credits": "5",
+          "sittings": "2"
+        },
+        "subjects": [
+          {
+            "subject": {
+              "identifier": 101,
+              "label": "English Language"
+            },
+            "short_code": "ENG"
+          },
+          {
+            "subject": {
+              "identifier": 102,
+              "label": "Mathematics"
+            },
+            "short_code": "MTH"
+          },
+          {
+            "subject": {
+              "identifier": 103,
+              "label": "Physics"
+            },
+            "short_code": "PHY"
+          },
+          {
+            "subject": {
+              "identifier": 104,
+              "label": "Chemistry"
+            },
+            "short_code": "CHE"
+          },
+          {
+            "subject": {
+              "identifier": 105,
+              "label": "Biology"
+            },
+            "short_code": "BIO"
+          },
+          {
+            "subject": {
+              "identifier": 106,
+              "label": "Agricultural Science"
+            },
+            "short_code": "AGR"
+          },
+          {
+            "subject": {
+              "identifier": 107,
+              "label": "Further Mathematics"
+            },
+            "short_code": "FMA"
+          },
+          {
+            "subject": {
+              "identifier": 108,
+              "label": "Literature in English"
+            },
+            "short_code": "LIT"
+          }
+        ]
+      },
+      "adapter": {
+        "fields": {
+          "student.name": [
+            "biodata.given",
+            "biodata.family"
+          ],
+          "reference": "application.number",
+          "portal_ref": "application.number",
+          "candidate_id": "application.student_id",
+          "requirements": "course.required",
+          "minimum_credits": "course.credits",
+          "max_sittings": "course.sittings",
+          "subject_catalog": "subjects"
+        },
+        "subject_fields": {
+          "id": "subject.identifier",
+          "name": "subject.label",
+          "code": "short_code"
+        },
+        "defaults": {
+          "minimum_grade": "C6"
+        }
+      },
+      "result": "{broken json",
+      "expected": {
+        "code": "INVALID_RESULT"
+      }
+    }
+  ]
+}

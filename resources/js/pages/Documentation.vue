@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import PaygoResultSimulation from '@/components/PaygoResultSimulation.vue';
+import ResultEvaluationLibraries from '@/components/ResultEvaluationLibraries.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import { home, login, register, services, pricing, documentation } from '@/routes';
+import { home, login, register, services, pricing } from '@/routes';
 import { ref } from 'vue';
 
-const activeSection = ref('overview');
+const activeSection = ref('libraries');
+const docsDark = ref(false);
 const copied = ref(false);
 const appBaseUrl = 'https://verify.ashlabtech.ng';
 const baseUrl = 'https://verify.ashlabtech.ng/api/v1';
@@ -60,7 +62,8 @@ const sections = [
     { id: 'identity', title: 'Identity Verify', icon: 'mdi-card-account-details' },
     { id: 'result-verification', title: 'Result Verify', icon: 'mdi-certificate' },
     { id: 'paygo', title: 'PayGo', icon: 'mdi-credit-card-outline' },
-    { id: 'implementation', title: 'Result Verify Demo (Paygo)', icon: 'mdi-code-braces' },
+    { id: 'libraries', title: 'Result Libraries', icon: 'mdi-code-braces' },
+    { id: 'implementation', title: 'Integration & Demo', icon: 'mdi-play-circle-outline' },
     { id: 'result-pins', title: 'Result PINs', icon: 'mdi-card-account-details-star-outline' },
     { id: 'wallet-history', title: 'Wallet & History', icon: 'mdi-wallet' },
     { id: 'mcp', title: 'MCP Server', icon: 'mdi-robot-outline' },
@@ -294,9 +297,9 @@ const paygoPullResponse = `{
         <link rel="canonical" href="https://verify.ashlabtech.ng/documentation" />
     </Head>
 
-    <v-app>
-        <v-app-bar flat color="white" elevation="1">
-            <v-container class="d-flex align-center">
+    <v-app :theme="docsDark ? 'dark' : 'light'" :class="['docs-shell', { 'docs-dark': docsDark }]">
+        <v-app-bar flat class="docs-appbar">
+            <v-container fluid class="d-flex align-center px-6">
                 <Link :href="home()" class="text-decoration-none d-flex align-center">
                     <v-avatar color="primary" size="36" class="mr-2">
                         <img src="/ashlabtech.png" alt="EaseVerifier" style="width: 100%; height: 100%; object-fit: contain;" />
@@ -305,23 +308,24 @@ const paygoPullResponse = `{
                 </Link>
                 <v-spacer />
                 <div class="d-none d-md-flex align-center ga-2">
-                    <v-btn variant="text" :href="services()">Services</v-btn>
-                    <v-btn variant="text" :href="pricing()">Pricing</v-btn>
-                    <v-btn variant="text" :href="documentation()" color="primary">Documentation</v-btn>
+                    <v-btn variant="text" :href="services.url()">Services</v-btn>
+                    <v-btn variant="text" :href="pricing.url()">Pricing</v-btn>
+                    <v-btn variant="text" :color="activeSection === 'libraries' ? 'primary' : undefined" @click="activeSection = 'libraries'">Library Guide</v-btn>
+                    <v-btn variant="text" :color="activeSection !== 'libraries' ? 'primary' : undefined" @click="activeSection = 'overview'">API Reference</v-btn>
                 </div>
                 <v-spacer />
                 <div class="d-flex ga-2">
-                    <v-btn variant="outlined" color="primary" :href="login()">Login</v-btn>
-                    <v-btn variant="flat" color="primary" :href="register()" class="d-none d-sm-flex">Get Started</v-btn>
+                    <v-btn variant="outlined" color="primary" :href="login.url()">Login</v-btn>
+                    <v-btn variant="flat" color="primary" :href="register.url()" class="d-none d-sm-flex">Get Started</v-btn>
                 </div>
             </v-container>
         </v-app-bar>
 
-        <v-main class="bg-grey-lighten-5">
+        <v-main class="docs-main">
             <v-container fluid class="pa-0">
                 <v-row no-gutters>
-                    <v-col cols="12" md="3" lg="2" class="d-none d-md-block">
-                        <v-card flat class="h-100 rounded-0 border-e" style="position: sticky; top: 64px;">
+                    <v-col v-if="activeSection !== 'libraries'" cols="12" md="3" lg="2" class="d-none d-md-block">
+                        <v-card flat class="docs-sidebar rounded-0">
                             <v-list nav density="compact" class="pa-4">
                                 <v-list-item v-for="section in sections" :key="section.id" :active="activeSection === section.id" @click="activeSection = section.id" color="primary" rounded="lg">
                                     <template #prepend><v-icon size="small">{{ section.icon }}</v-icon></template>
@@ -331,8 +335,8 @@ const paygoPullResponse = `{
                         </v-card>
                     </v-col>
 
-                    <v-col cols="12" md="9" lg="10">
-                        <div class="pa-6 pa-md-12" style="max-width: 980px;">
+                    <v-col cols="12" :md="activeSection === 'libraries' ? 12 : 9" :lg="activeSection === 'libraries' ? 12 : 10">
+                        <div :class="['docs-content', { 'docs-content-library': activeSection === 'libraries' }]">
                             <div class="d-md-none mb-6">
                                 <v-select v-model="activeSection" :items="sections" item-title="title" item-value="id" label="Documentation section" />
                             </div>
@@ -523,6 +527,10 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
                                 </v-card>
                             </section>
 
+                            <section v-show="activeSection === 'libraries'" aria-label="Result evaluation library documentation">
+                                <ResultEvaluationLibraries @theme-change="docsDark = $event" />
+                            </section>
+
                             <section v-show="activeSection === 'implementation'" class="mb-12">
                                 <h1 class="text-h4 font-weight-bold mb-4">Practical Implementation</h1>
                                 <p class="text-body-1 text-grey-darken-1 mb-6">
@@ -530,6 +538,7 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
                                 </p>
 
                                 <PaygoResultSimulation class="mb-6" />
+
 
                                 <v-alert type="warning" variant="tonal" class="mb-6">
                                     The result form endpoint and fetch endpoint are billed independently in live mode. Cache form field metadata on your server and refresh it only when needed.
@@ -690,3 +699,17 @@ curl -X POST "{{ appBaseUrl }}/api/paygo/YOUR_PUBLIC_SLUG/verify" \
         </v-main>
     </v-app>
 </template>
+
+<style scoped>
+.docs-shell { --docs-bg: #fff; --docs-panel: #f6f6f7; --docs-line: #e2e2e3; --docs-text: #3c3c43; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.docs-dark { --docs-bg: #1b1b1f; --docs-panel: #252529; --docs-line: #36363a; --docs-text: #dfdfd6; }
+.docs-appbar { background: var(--docs-bg) !important; color: var(--docs-text) !important; border-bottom: 1px solid var(--docs-line); }
+.docs-main { background: var(--docs-bg); color: var(--docs-text); }
+.docs-sidebar { position: sticky; top: 64px; min-height: calc(100vh - 64px); border-right: 1px solid var(--docs-line); background: var(--docs-panel); }
+.docs-sidebar :deep(.v-list) { background: transparent; }
+.docs-sidebar :deep(.v-list-item-title) { font-size: 12px !important; }
+.docs-sidebar :deep(.v-list-item--active) { color: #23835b; }
+.docs-content { max-width: 1100px; padding: 42px 48px; }
+.docs-content-library { max-width: 1500px; padding: 28px 40px; margin: 0 auto; }
+@media (max-width: 960px) { .docs-content, .docs-content-library { padding: 22px 16px; } }
+</style>

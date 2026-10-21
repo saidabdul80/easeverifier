@@ -26,6 +26,7 @@ use App\Http\Controllers\Customer\ResultPinController as CustomerResultPinContro
 use App\Http\Controllers\Customer\TransactionController as CustomerTransactionController;
 use App\Http\Controllers\Customer\VerificationController as CustomerVerificationController;
 use App\Http\Controllers\Customer\WalletController as CustomerWalletController;
+use App\Http\Controllers\DocumentationLibraryController;
 use App\Http\Controllers\PaystackDemoController;
 use App\Http\Controllers\PublicPaygoVerificationController;
 use App\Http\Controllers\PublicResultPinController;
@@ -106,6 +107,14 @@ Route::match(['get', 'post'], '/paygo/results/{publicSlug}', [PublicPaygoVerific
 Route::get('/documentation', function () {
     return Inertia::render('Documentation');
 })->name('documentation');
+
+Route::get('/documentation/libraries/{language}', [DocumentationLibraryController::class, 'download'])
+    ->whereIn('language', ['php', 'javascript'])
+    ->name('documentation.libraries.download');
+
+Route::post('/documentation/libraries/run', [DocumentationLibraryController::class, 'run'])
+    ->middleware('throttle:30,1')
+    ->name('documentation.libraries.run');
 
 Route::get('/about', function () {
     return Inertia::render('About');
