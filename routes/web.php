@@ -157,6 +157,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // Admin Routes
 Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');
+    Route::get('customer-options', [AdminDashboardController::class, 'customerOptions'])->name('customer-options');
 
     Route::get('kyc', [AdminKycController::class, 'index'])->name('kyc.index');
     Route::get('kyc/{submission}', [AdminKycController::class, 'show'])->name('kyc.show');

@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Deferred, Head, router } from '@inertiajs/vue3';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import InteractiveLineChart from '@/components/dashboard/InteractiveLineChart.vue';
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
+
+const InteractiveLineChart = defineAsyncComponent(() => import('@/components/dashboard/InteractiveLineChart.vue'));
 
 type PaygoStats = { total_payments:number; successful_payments:number; pending_payments:number; failed_payments:number; gross_revenue:number; system_settlement:number; customer_earnings:number; reference_packages:number; conversion_rate:number };
 type PlatformTrend = { date:string; label:string; customers:number; verifications:number; verification_revenue:number; wallet_activity:number };
 type PaygoTrend = { date:string; label:string; gross:number; settlement:number; earnings:number; payments:number };
 type MonthlyRevenue = { month:number; year:number; total:number };
-const props = defineProps<{ stats?:Record<string,number>; paygoStats?:PaygoStats; recentVerifications?:any[]; recentPaygo?:any[]; monthlyRevenue?:MonthlyRevenue[]; platformTrend?:PlatformTrend[]; paygoTrend?:PaygoTrend[]; paygoFilters?:{paygo_customer?:number|string;paygo_status?:string;paygo_package?:string;paygo_date_from?:string;paygo_date_to?:string}; customerOptions?:Array<{title:string;value:number}> }>();
+const props = defineProps<{ stats?:Record<string,number>; paygoStats?:PaygoStats; recentVerifications?:any[]; recentPaygo?:any[]; monthlyRevenue?:MonthlyRevenue[]; platformTrend?:PlatformTrend[]; paygoTrend?:PaygoTrend[]; paygoFilters?:{paygo_customer?:number|string;paygo_status?:string;paygo_package?:string;paygo_date_from?:string;paygo_date_to?:string} }>();
 
 const customer=ref(props.paygoFilters?.paygo_customer||'');
 const status=ref(props.paygoFilters?.paygo_status||'');
@@ -18,12 +19,41 @@ const dateTo=ref(props.paygoFilters?.paygo_date_to||'');
 const fromDateMenu=ref(false);
 const toDateMenu=ref(false);
 const period=ref('custom');
+const customerOptions=ref<Array<{title:string;value:number}>>([]);
+const customerOptionsLoading=ref(false);
 const statusOptions=[{title:'All statuses',value:''},{title:'Paid',value:'paid'},{title:'Verifying',value:'verifying'},{title:'Used',value:'used'},{title:'Pending',value:'pending'},{title:'Failed',value:'failed'},{title:'Expired',value:'expired'}];
 const packageOptions=[{title:'All packages',value:''},{title:'Reference package',value:'reference'},{title:'Normal payment',value:'normal'}];
 const periodOptions=[{title:'Custom range',value:'custom'},{title:'Today',value:'today'},{title:'Last 7 days',value:'7days'},{title:'Last 30 days',value:'30days'}];
 let filterTimer:ReturnType<typeof setTimeout>|undefined;
+let customerSearchTimer:ReturnType<typeof setTimeout>|undefined;
+let customerOptionsRequest=0;
+const loadCustomerOptions=async(search:string,customerId?:number|string)=>{
+ const requestId=++customerOptionsRequest;
+ const params=new URLSearchParams();
+ if(customerId)params.set('id',String(customerId));else params.set('search',search.trim());
+ customerOptionsLoading.value=true;
+ try{
+  const response=await fetch(`/admin/customer-options?${params.toString()}`,{headers:{Accept:'application/json'},credentials:'same-origin'});
+  if(!response.ok)throw new Error('Customer search failed');
+  const options=await response.json() as Array<{title:string;value:number}>;
+  if(requestId===customerOptionsRequest)customerOptions.value=options;
+ }catch{
+  if(requestId===customerOptionsRequest)customerOptions.value=[];
+ }finally{
+  if(requestId===customerOptionsRequest)customerOptionsLoading.value=false;
+ }
+};
+const searchCustomers=(search:string|null)=>{
+ clearTimeout(customerSearchTimer);
+ const normalized=search?.trim()||'';
+ if(normalized.length<2){customerOptionsRequest++;customerOptionsLoading.value=false;customerOptions.value=customer.value?customerOptions.value.filter(option=>option.value===Number(customer.value)):[];return;}
+ customerSearchTimer=setTimeout(()=>void loadCustomerOptions(normalized),250);
+};
 const applyFilters=()=>{ clearTimeout(filterTimer); filterTimer=setTimeout(()=>router.get('/admin',{paygo_customer:customer.value||undefined,paygo_status:status.value||undefined,paygo_package:packageType.value||undefined,paygo_date_from:dateFrom.value||undefined,paygo_date_to:dateTo.value||undefined},{only:['paygoStats','paygoTrend','recentPaygo','paygoFilters'],preserveState:true,preserveScroll:true,replace:true}),150); };
 watch([customer,status,packageType,dateFrom,dateTo],applyFilters);
+watch(customer,(value)=>{
+ if(value&&!customerOptions.value.some(option=>option.value===Number(value)))void loadCustomerOptions('',value);
+},{immediate:true});
 const localDate=(date:Date)=>{ const offset=date.getTimezoneOffset(); return new Date(date.getTime()-offset*60000).toISOString().slice(0,10); };
 const pickerDate=(value:string)=>value?new Date(`${value}T00:00:00`):undefined;
 const displayDate=(value:string)=>value?new Date(`${value}T00:00:00`).toLocaleDateString('en-GB'):'Select date';
@@ -70,55 +100,66 @@ const paygoCards=computed(()=>[
    <v-btn class="refresh-button" icon="mdi-refresh" variant="outlined" aria-label="Refresh dashboard" @click="refresh" />
   </div></header>
 
-  <section class="platform-grid"><article v-for="card in platformCards" :key="card.label" class="platform-card" :class="`tone-${card.tone}`">
-   <div class="card-topline"><div class="card-label"><span class="metric-icon"><v-icon>{{card.icon}}</v-icon></span><span>{{card.label}}</span></div><v-icon class="metric-arrow">mdi-chevron-right</v-icon></div>
-   <div class="platform-value">{{card.value}}</div><div class="metric-detail"><v-icon size="15">mdi-arrow-up</v-icon><strong>Live</strong><span>{{card.detail}}</span></div>
-   <div class="sparkline"><InteractiveLineChart :labels="platformLabels" :values="(platformTrend||[]).map(point=>Number(point[card.series]))" :color="card.color" :fill-color="card.fill" :currency="card.currency" :label="card.label" /></div>
-  </article></section>
+  <Deferred :data="['stats','platformTrend']">
+   <template #fallback><section class="platform-grid"><article v-for="index in 4" :key="index" class="platform-card dashboard-skeleton"><span/><strong/><small/></article></section></template>
+   <section class="platform-grid"><article v-for="card in platformCards" :key="card.label" class="platform-card" :class="`tone-${card.tone}`">
+    <div class="card-topline"><div class="card-label"><span class="metric-icon"><v-icon>{{card.icon}}</v-icon></span><span>{{card.label}}</span></div><v-icon class="metric-arrow">mdi-chevron-right</v-icon></div>
+    <div class="platform-value">{{card.value}}</div><div class="metric-detail"><v-icon size="15">mdi-arrow-up</v-icon><strong>Live</strong><span>{{card.detail}}</span></div>
+    <div class="sparkline"><InteractiveLineChart :labels="platformLabels" :values="(platformTrend||[]).map(point=>Number(point[card.series]))" :color="card.color" :fill-color="card.fill" :currency="card.currency" :label="card.label" /></div>
+   </article></section>
+  </Deferred>
 
-  <section class="dashboard-panel verification-analytics">
-   <div class="panel-header verification-heading"><div class="panel-title"><span class="title-icon verification-title-icon"><v-icon>mdi-shield-check-outline</v-icon></span><div><h2>Verification analytics</h2><p>Core API verification performance, revenue, and request health.</p></div></div><v-btn variant="text" color="primary" append-icon="mdi-arrow-right" href="/admin/verifications">View verifications</v-btn></div>
-   <div class="verification-body">
-    <div class="verification-chart"><div class="chart-heading"><div><strong>Verification revenue</strong><span>Completed verification debits by month</span></div><strong>{{formatCurrency(stats?.total_revenue)}}</strong></div><div class="monthly-chart"><InteractiveLineChart :labels="monthlyRevenueLabels" :values="(monthlyRevenue||[]).map(point=>Number(point.total))" color="#3478ed" fill-color="rgba(52,120,237,.14)" currency show-axes label="Revenue" /></div></div>
-    <div class="verification-summary">
-     <article class="status-metric total"><span><v-icon>mdi-file-document-multiple-outline</v-icon></span><div><small>Total requests</small><strong>{{stats?.total_verifications||0}}</strong></div></article>
-     <article class="status-metric success"><span><v-icon>mdi-check-circle-outline</v-icon></span><div><small>Completed</small><strong>{{stats?.successful_verifications||0}}</strong></div></article>
-     <article class="status-metric warning"><span><v-icon>mdi-clock-outline</v-icon></span><div><small>Pending</small><strong>{{stats?.pending_verifications||0}}</strong></div></article>
-     <article class="status-metric error"><span><v-icon>mdi-alert-circle-outline</v-icon></span><div><small>Failed</small><strong>{{stats?.failed_verifications||0}}</strong></div></article>
-     <article class="status-metric success-rate"><span><v-icon>mdi-percent-outline</v-icon></span><div><small>Success rate</small><strong>{{verificationSuccessRate}}%</strong></div></article>
-     <article class="status-metric today"><span><v-icon>mdi-calendar-today-outline</v-icon></span><div><small>Today</small><strong>{{stats?.today_verifications||0}}</strong><em>{{formatCurrency(stats?.today_revenue)}} revenue</em></div></article>
+  <Deferred :data="['stats','monthlyRevenue']">
+   <template #fallback><section class="dashboard-panel verification-analytics dashboard-skeleton-panel"><div class="skeleton-line skeleton-heading"/><div class="skeleton-body"><span/><span/></div></section></template>
+   <section class="dashboard-panel verification-analytics">
+    <div class="panel-header verification-heading"><div class="panel-title"><span class="title-icon verification-title-icon"><v-icon>mdi-shield-check-outline</v-icon></span><div><h2>Verification analytics</h2><p>Core API verification performance, revenue, and request health.</p></div></div><v-btn variant="text" color="primary" append-icon="mdi-arrow-right" href="/admin/verifications">View verifications</v-btn></div>
+    <div class="verification-body">
+     <div class="verification-chart"><div class="chart-heading"><div><strong>Verification revenue</strong><span>Completed verification debits by month</span></div><strong>{{formatCurrency(stats?.total_revenue)}}</strong></div><div class="monthly-chart"><InteractiveLineChart :labels="monthlyRevenueLabels" :values="(monthlyRevenue||[]).map(point=>Number(point.total))" color="#3478ed" fill-color="rgba(52,120,237,.14)" currency show-axes label="Revenue" /></div></div>
+     <div class="verification-summary">
+      <article class="status-metric total"><span><v-icon>mdi-file-document-multiple-outline</v-icon></span><div><small>Total requests</small><strong>{{stats?.total_verifications||0}}</strong></div></article>
+      <article class="status-metric success"><span><v-icon>mdi-check-circle-outline</v-icon></span><div><small>Completed</small><strong>{{stats?.successful_verifications||0}}</strong></div></article>
+      <article class="status-metric warning"><span><v-icon>mdi-clock-outline</v-icon></span><div><small>Pending</small><strong>{{stats?.pending_verifications||0}}</strong></div></article>
+      <article class="status-metric error"><span><v-icon>mdi-alert-circle-outline</v-icon></span><div><small>Failed</small><strong>{{stats?.failed_verifications||0}}</strong></div></article>
+      <article class="status-metric success-rate"><span><v-icon>mdi-percent-outline</v-icon></span><div><small>Success rate</small><strong>{{verificationSuccessRate}}%</strong></div></article>
+      <article class="status-metric today"><span><v-icon>mdi-calendar-today-outline</v-icon></span><div><small>Today</small><strong>{{stats?.today_verifications||0}}</strong><em>{{formatCurrency(stats?.today_revenue)}} revenue</em></div></article>
+     </div>
     </div>
-   </div>
-  </section>
+   </section>
+  </Deferred>
 
   <div class="dashboard-layout"><div class="main-column">
    <section class="dashboard-panel analytics-panel">
     <div class="panel-header"><div class="panel-title"><span class="title-icon"><v-icon>mdi-chart-bar</v-icon></span><div><h2>PayGo analytics</h2><p>Revenue and settlements reflect successful payments in the selected scope.</p></div></div><div class="panel-actions"><span class="live-indicator"><i/>Live data</span><v-btn variant="outlined" prepend-icon="mdi-bank-transfer" href="/admin/paystack-splits">Split ledger</v-btn></div></div>
     <div class="filter-grid">
-     <v-select v-model="customer" :items="customerOptions||[]" label="Customer" prepend-inner-icon="mdi-account-outline" variant="outlined" density="compact" hide-details clearable/>
+     <v-autocomplete v-model="customer" :items="customerOptions" :loading="customerOptionsLoading" label="Customer" placeholder="Type a name or email" no-data-text="Enter 2 or more characters to search" prepend-inner-icon="mdi-account-outline" variant="outlined" density="compact" hide-details clearable no-filter hide-no-data @update:search="searchCustomers"/>
      <v-select v-model="status" :items="statusOptions" label="Status" prepend-inner-icon="mdi-timer-outline" variant="outlined" density="compact" hide-details/>
      <v-select v-model="packageType" :items="packageOptions" label="Package" prepend-inner-icon="mdi-cube-outline" variant="outlined" density="compact" hide-details/>
      <v-menu v-model="fromDateMenu" :close-on-content-click="false" location="bottom start"><template #activator="{props:menuProps}"><v-text-field v-bind="menuProps" :model-value="displayDate(dateFrom)" label="From" append-inner-icon="mdi-calendar-month-outline" variant="outlined" density="compact" hide-details readonly clearable @click:clear.stop="clearDate('from')"/></template><v-date-picker :model-value="pickerDate(dateFrom)" :max="pickerDate(dateTo)" color="primary" show-adjacent-months @update:model-value="selectDate('from',$event)"/></v-menu>
      <v-menu v-model="toDateMenu" :close-on-content-click="false" location="bottom start"><template #activator="{props:menuProps}"><v-text-field v-bind="menuProps" :model-value="displayDate(dateTo)" label="To" append-inner-icon="mdi-calendar-month-outline" variant="outlined" density="compact" hide-details readonly clearable @click:clear.stop="clearDate('to')"/></template><v-date-picker :model-value="pickerDate(dateTo)" :min="pickerDate(dateFrom)" color="primary" show-adjacent-months @update:model-value="selectDate('to',$event)"/></v-menu>
      <v-btn class="reset-button" color="primary" prepend-icon="mdi-refresh" @click="resetFilters">Reset</v-btn>
     </div>
-    <div class="paygo-grid"><article v-for="card in paygoCards" :key="card.label" class="paygo-card" :class="`tone-${card.tone}`"><span class="metric-icon"><v-icon>{{card.icon}}</v-icon></span><strong>{{card.value}}</strong><span>{{card.label}}</span><div class="mini-spark"><InteractiveLineChart :labels="paygoLabels" :values="(paygoTrend||[]).map(point=>Number(point[card.series]))" :color="card.color" :fill-color="card.fill" currency :label="card.label" /></div></article>
-     <article class="paygo-card tone-blue conversion-card"><span class="metric-icon"><v-icon>mdi-chart-donut</v-icon></span><strong>{{paygoStats?.conversion_rate||0}}%</strong><span>Payment conversion</span><small>{{paygoStats?.successful_payments||0}} of {{paygoStats?.total_payments||0}} successful</small><div class="mini-spark"><InteractiveLineChart :labels="paygoLabels" :values="(paygoTrend||[]).map(point=>point.payments)" color="#4083ef" fill-color="rgba(64,131,239,.11)" label="Successful payments" /></div></article>
-    </div>
+    <Deferred :data="['paygoStats','paygoTrend']">
+     <template #fallback><div class="paygo-grid"><article v-for="index in 4" :key="index" class="paygo-card dashboard-skeleton"><span/><strong/><small/></article></div></template>
+     <div class="paygo-grid"><article v-for="card in paygoCards" :key="card.label" class="paygo-card" :class="`tone-${card.tone}`"><span class="metric-icon"><v-icon>{{card.icon}}</v-icon></span><strong>{{card.value}}</strong><span>{{card.label}}</span><div class="mini-spark"><InteractiveLineChart :labels="paygoLabels" :values="(paygoTrend||[]).map(point=>Number(point[card.series]))" :color="card.color" :fill-color="card.fill" currency :label="card.label" /></div></article>
+      <article class="paygo-card tone-blue conversion-card"><span class="metric-icon"><v-icon>mdi-chart-donut</v-icon></span><strong>{{paygoStats?.conversion_rate||0}}%</strong><span>Payment conversion</span><small>{{paygoStats?.successful_payments||0}} of {{paygoStats?.total_payments||0}} successful</small><div class="mini-spark"><InteractiveLineChart :labels="paygoLabels" :values="(paygoTrend||[]).map(point=>point.payments)" color="#4083ef" fill-color="rgba(64,131,239,.11)" label="Successful payments" /></div></article>
+     </div>
+    </Deferred>
    </section>
 
    <section class="dashboard-panel payments-panel"><div class="table-heading"><div><v-icon>mdi-credit-card-multiple-outline</v-icon><h2>Recent PayGo payments</h2></div><v-btn variant="text" color="success" append-icon="mdi-arrow-right" href="/admin/transactions">All transactions</v-btn></div><div class="table-scroll"><table>
     <thead><tr><th>Reference</th><th>Customer</th><th>Package</th><th>Amount</th><th>Settlement</th><th>Earning</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>
-     <tr v-for="payment in recentPaygo||[]" :key="payment.id"><td class="reference-cell">{{payment.reference}} <v-icon size="14">mdi-content-copy</v-icon></td><td><div class="customer-cell"><span class="customer-avatar">{{(payment.customer_name||'EV').split(' ').map((part:string)=>part[0]).join('').slice(0,2)}}</span><span><strong>{{payment.customer_name||'-'}}</strong><small>{{payment.customer_email}}</small></span></div></td><td><v-chip size="small" variant="tonal" :color="payment.package_type==='reference'?'info':'secondary'">{{payment.package_type==='reference'?'Reference':'Normal'}}</v-chip></td><td>{{formatCurrency(payment.amount)}}</td><td>{{formatCurrency(payment.system_price)}}</td><td class="earning">{{formatCurrency(payment.customer_earning)}}</td><td><v-chip size="small" variant="tonal" :color="statusColor(payment.status)">{{payment.status}}</v-chip></td><td class="date-cell">{{formatDate(payment.created_at)}}</td><td><v-icon size="19">mdi-dots-horizontal</v-icon></td></tr>
-     <tr v-if="!recentPaygo?.length"><td colspan="9" class="empty-state">No PayGo payments match this scope.</td></tr>
+     <Deferred data="recentPaygo"><template #fallback><tr><td colspan="9" class="empty-state">Loading recent payments…</td></tr></template>
+      <tr v-for="payment in recentPaygo||[]" :key="payment.id"><td class="reference-cell">{{payment.reference}} <v-icon size="14">mdi-content-copy</v-icon></td><td><div class="customer-cell"><span class="customer-avatar">{{(payment.customer_name||'EV').split(' ').map((part:string)=>part[0]).join('').slice(0,2)}}</span><span><strong>{{payment.customer_name||'-'}}</strong><small>{{payment.customer_email}}</small></span></div></td><td><v-chip size="small" variant="tonal" :color="payment.package_type==='reference'?'info':'secondary'">{{payment.package_type==='reference'?'Reference':'Normal'}}</v-chip></td><td>{{formatCurrency(payment.amount)}}</td><td>{{formatCurrency(payment.system_price)}}</td><td class="earning">{{formatCurrency(payment.customer_earning)}}</td><td><v-chip size="small" variant="tonal" :color="statusColor(payment.status)">{{payment.status}}</v-chip></td><td class="date-cell">{{formatDate(payment.created_at)}}</td><td><v-icon size="19">mdi-dots-horizontal</v-icon></td></tr>
+      <tr v-if="!recentPaygo?.length"><td colspan="9" class="empty-state">No PayGo payments match this scope.</td></tr>
+     </Deferred>
     </tbody></table></div></section>
   </div>
 
   <aside class="side-column">
-   <section class="dashboard-panel health-panel"><div class="side-title"><v-icon>mdi-chart-donut</v-icon><h2>Payment health</h2></div><div class="health-content"><div class="donut" :style="donutStyle"><div><strong>{{paygoStats?.conversion_rate||0}}%</strong><span>Successful</span></div></div><div class="health-legend"><div><span><i class="success"/>Successful</span><strong>{{paygoStats?.successful_payments||0}}</strong></div><div><span><i class="warning"/>Pending</span><strong>{{paygoStats?.pending_payments||0}}</strong></div><div><span><i class="error"/>Failed / expired</span><strong>{{paygoStats?.failed_payments||0}}</strong></div><div><span><i class="info"/>Reference packages</span><strong>{{paygoStats?.reference_packages||0}}</strong></div></div></div></section>
-   <section class="dashboard-panel trend-panel"><div class="side-title"><v-icon>mdi-chart-line</v-icon><h2>Settlement trend</h2><span>Last 7 days</span></div><div class="trend-chart"><InteractiveLineChart :labels="paygoLabels" :values="(paygoTrend||[]).map(point=>point.settlement)" color="#16aa70" fill-color="rgba(22,170,112,.16)" currency show-axes label="Settlement" /></div></section>
+   <section class="dashboard-panel health-panel"><div class="side-title"><v-icon>mdi-chart-donut</v-icon><h2>Payment health</h2></div><Deferred data="paygoStats"><template #fallback><div class="dashboard-skeleton health-skeleton"><span/><span/></div></template><div class="health-content"><div class="donut" :style="donutStyle"><div><strong>{{paygoStats?.conversion_rate||0}}%</strong><span>Successful</span></div></div><div class="health-legend"><div><span><i class="success"/>Successful</span><strong>{{paygoStats?.successful_payments||0}}</strong></div><div><span><i class="warning"/>Pending</span><strong>{{paygoStats?.pending_payments||0}}</strong></div><div><span><i class="error"/>Failed / expired</span><strong>{{paygoStats?.failed_payments||0}}</strong></div><div><span><i class="info"/>Reference packages</span><strong>{{paygoStats?.reference_packages||0}}</strong></div></div></div></Deferred></section>
+   <section class="dashboard-panel trend-panel"><div class="side-title"><v-icon>mdi-chart-line</v-icon><h2>Settlement trend</h2><span>Last 7 days</span></div><Deferred data="paygoTrend"><template #fallback><div class="dashboard-skeleton trend-skeleton"/></template><div class="trend-chart"><InteractiveLineChart :labels="paygoLabels" :values="(paygoTrend||[]).map(point=>point.settlement)" color="#16aa70" fill-color="rgba(22,170,112,.16)" currency show-axes label="Settlement" /></div></Deferred></section>
    <section class="business-banner"><div><h2>Grow your business</h2><p>More transactions. More earnings.</p><v-btn variant="outlined" color="white" append-icon="mdi-arrow-right" href="/admin/transactions">View reports</v-btn></div><v-icon class="banner-icon">mdi-wallet-plus-outline</v-icon></section>
-   <section class="dashboard-panel verification-panel"><div class="side-title"><v-icon>mdi-shield-check-outline</v-icon><h2>Recent verifications</h2></div><div v-for="verification in (recentVerifications||[]).slice(0,4)" :key="verification.id" class="verification-item"><div><strong>{{verification.verification_service?.name||'Verification'}}</strong><span>{{verification.user?.name||'N/A'}}</span></div><v-chip :color="statusColor(verification.status)" variant="tonal" size="x-small">{{verification.status}}</v-chip></div></section>
+   <section class="dashboard-panel verification-panel"><div class="side-title"><v-icon>mdi-shield-check-outline</v-icon><h2>Recent verifications</h2></div><Deferred data="recentVerifications"><template #fallback><div class="dashboard-skeleton verification-skeleton"><span/><span/><span/></div></template><div v-for="verification in (recentVerifications||[]).slice(0,4)" :key="verification.id" class="verification-item"><div><strong>{{verification.verification_service?.name||'Verification'}}</strong><span>{{verification.user?.name||'N/A'}}</span></div><v-chip :color="statusColor(verification.status)" variant="tonal" size="x-small">{{verification.status}}</v-chip></div></Deferred></section>
   </aside></div>
  </main></AdminLayout>
 </template>
@@ -130,4 +171,106 @@ const paygoCards=computed(()=>[
 @media(max-width:1400px){.dashboard-layout{grid-template-columns:minmax(0,2.2fr) minmax(0,1fr)}.paygo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.health-content{grid-template-columns:1fr;justify-items:center}.health-legend{max-width:230px}}
 @media(max-width:1100px){.platform-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.verification-body,.dashboard-layout{grid-template-columns:1fr}.side-column{grid-template-columns:repeat(2,minmax(0,1fr))}.business-banner,.verification-panel{grid-column:span 2}}
 @media(max-width:760px){.dashboard-header{align-items:flex-start;flex-direction:column}.header-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}.action-button,.period-select{width:100%;min-width:0}.refresh-button{justify-self:end}.platform-grid,.paygo-grid,.side-column,.verification-summary{grid-template-columns:1fr}.business-banner,.verification-panel{grid-column:auto}.filter-grid{grid-template-columns:1fr}.panel-header{padding:14px 0;align-items:flex-start;flex-direction:column}.verification-heading .v-btn{align-self:stretch}.panel-actions{width:100%;justify-content:space-between}.health-content{flex-direction:column}.health-legend{width:100%}.operations-dashboard{padding-bottom:20px}}
+</style>
+
+<style scoped>
+.dashboard-skeleton > span,
+.dashboard-skeleton > strong,
+.dashboard-skeleton > small,
+.skeleton-line,
+.skeleton-body > span,
+.health-skeleton > span,
+.verification-skeleton > span,
+.trend-skeleton {
+    display: block;
+    background: linear-gradient(90deg, #edf1f7 25%, #f6f8fb 45%, #edf1f7 65%);
+    background-size: 250% 100%;
+    animation: dashboard-shimmer 1.4s ease-in-out infinite;
+    border-radius: 7px;
+}
+
+.dashboard-skeleton > span {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+.dashboard-skeleton > strong {
+    width: 52%;
+    height: 25px;
+    margin: 20px 0 12px;
+}
+
+.dashboard-skeleton > small {
+    width: 72%;
+    height: 11px;
+}
+
+.dashboard-skeleton-panel {
+    padding: 20px;
+}
+
+.skeleton-heading {
+    width: 42%;
+    height: 32px;
+    margin-bottom: 22px;
+}
+
+.skeleton-body {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap: 18px;
+}
+
+.skeleton-body > span {
+    min-height: 210px;
+}
+
+.health-skeleton {
+    display: flex;
+    min-height: 142px;
+    align-items: center;
+    justify-content: space-around;
+    gap: 16px;
+}
+
+.health-skeleton > span:first-child {
+    width: 112px;
+    height: 112px;
+    flex: none;
+    border-radius: 50%;
+}
+
+.health-skeleton > span:last-child {
+    width: 45%;
+    height: 110px;
+}
+
+.trend-skeleton {
+    height: 165px;
+}
+
+.verification-skeleton > span {
+    height: 38px;
+    margin-top: 10px;
+}
+
+@keyframes dashboard-shimmer {
+    to {
+        background-position: -250% 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dashboard-skeleton > span,
+    .dashboard-skeleton > strong,
+    .dashboard-skeleton > small,
+    .skeleton-line,
+    .skeleton-body > span,
+    .health-skeleton > span,
+    .verification-skeleton > span,
+    .trend-skeleton {
+        animation: none;
+    }
+}
 </style>

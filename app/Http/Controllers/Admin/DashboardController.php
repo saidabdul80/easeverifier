@@ -10,6 +10,7 @@ use App\Models\VerificationRequest;
 use App\Models\VerificationService;
 use App\Models\Wallet;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -25,22 +26,43 @@ class DashboardController extends Controller
         };
 
         return Inertia::render('Admin/Dashboard', [
-            'stats' => fn () => $this->platformStats(),
-            'recentVerifications' => fn () => $this->recentVerifications(),
-            'monthlyRevenue' => fn () => $this->monthlyRevenue(),
-            'platformTrend' => fn () => $this->platformTrend(),
-            'paygoStats' => fn () => $loadPaygoData()['stats'],
-            'paygoTrend' => fn () => $loadPaygoData()['trend'],
-            'recentPaygo' => fn () => $loadPaygoData()['recent'],
+            'stats' => Inertia::defer(fn () => $this->platformStats(), 'platform'),
+            'recentVerifications' => Inertia::defer(fn () => $this->recentVerifications(), 'platform'),
+            'monthlyRevenue' => Inertia::defer(fn () => $this->monthlyRevenue(), 'platform'),
+            'platformTrend' => Inertia::defer(fn () => $this->platformTrend(), 'platform'),
+            'paygoStats' => Inertia::defer(fn () => $loadPaygoData()['stats'], 'paygo'),
+            'paygoTrend' => Inertia::defer(fn () => $loadPaygoData()['trend'], 'paygo'),
+            'recentPaygo' => Inertia::defer(fn () => $loadPaygoData()['recent'], 'paygo'),
             'paygoFilters' => $request->only(['paygo_customer', 'paygo_status', 'paygo_package', 'paygo_date_from', 'paygo_date_to']),
-            'customerOptions' => fn () => User::role('customer')
-                ->orderBy('name')
-                ->get(['users.id', 'users.name', 'users.email'])
-                ->map(fn (User $customer) => [
-                    'title' => $customer->name.' ('.$customer->email.')',
-                    'value' => $customer->id,
-                ]),
         ]);
+    }
+
+    public function customerOptions(Request $request): JsonResponse
+    {
+        $customerId = $request->integer('id');
+        $search = trim($request->string('search')->value());
+
+        if ($customerId < 1 && mb_strlen($search) < 2) {
+            return response()->json([]);
+        }
+
+        $customers = User::role('customer')
+            ->when($customerId > 0, fn (Builder $query) => $query->whereKey($customerId))
+            ->when($customerId < 1, function (Builder $query) use ($search): void {
+                $query->where(function (Builder $query) use ($search): void {
+                    $query->where('name', 'like', "{$search}%")
+                        ->orWhere('email', 'like', "{$search}%");
+                });
+            })
+            ->orderBy('name')
+            ->limit(25)
+            ->get(['users.id', 'users.name', 'users.email'])
+            ->map(fn (User $customer) => [
+                'title' => $customer->name.' ('.$customer->email.')',
+                'value' => $customer->id,
+            ]);
+
+        return response()->json($customers);
     }
 
     private function platformStats(): array
