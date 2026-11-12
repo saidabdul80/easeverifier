@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -410,6 +411,50 @@ it('creates a guest public pin order, verifies payment, purchases pins and shows
         ->and($order->pins[0]['pin'])->toBe('123456789012')
         ->and($order->user_id)->toBeNull()
         ->and($order->transaction_id)->toBeNull();
+});
+
+it('provides purchased PIN details to admins for every order channel', function (string $channel) {
+    Http::fake();
+    Role::firstOrCreate(['name' => 'admin']);
+    $admin = User::factory()->create(['email_verified_at' => now()]);
+    $admin->assignRole('admin');
+    $product = createResultPinProduct();
+    $order = ResultPinOrder::create([
+        'result_pin_product_id' => $product->id,
+        'reference' => ResultPinOrder::generateReference(),
+        'channel' => $channel,
+        'quantity' => 2,
+        'unit_price' => 1000,
+        'total_amount' => 2000,
+        'status' => 'completed',
+        'buyer_email' => 'pin-buyer@example.com',
+        'provider_reference' => 'PROVIDER-ADMIN-DETAILS',
+        'pins' => [
+            ['pin' => '001122334455', 'serial_no' => 'SERIAL-001'],
+            ['pin' => '006677889900', 'serial_no' => 'SERIAL-002'],
+        ],
+    ]);
+
+    $this->actingAs($admin)->get(route('admin.result-pins.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/ResultPins/Index')
+            ->where('orders.data.0.reference', $order->reference)
+            ->where('orders.data.0.buyer_email', 'pin-buyer@example.com')
+            ->where('orders.data.0.provider_reference', 'PROVIDER-ADMIN-DETAILS')
+            ->has('orders.data.0.pins', 2)
+            ->where('orders.data.0.pins.0.pin', '001122334455')
+            ->where('orders.data.0.pins.0.serial_no', 'SERIAL-001')
+            ->where('orders.data.0.pins.1.pin', '006677889900')
+            ->where('orders.data.0.pins.1.serial_no', 'SERIAL-002')
+        );
+})->with(['admin', 'public', 'customer', 'api']);
+
+it('blocks non admins from accessing the admin PIN details data', function () {
+    $this->get(route('admin.result-pins.index'))->assertRedirect(route('login'));
+
+    $customer = createPinCustomer();
+    $this->actingAs($customer)->get(route('admin.result-pins.index'))->assertForbidden();
 });
 
 it('requires admin result pin purchases to complete payment before provider fulfillment', function () {

@@ -1,11 +1,33 @@
 <script setup lang="ts">
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/layouts/AdminLayout.vue';
+import AppButton from '@/components/AppButton.vue';
+import AppCard from '@/components/AppCard.vue';
+import AppEmptyState from '@/components/AppEmptyState.vue';
+import AppTable from '@/components/AppTable.vue';
 import { computed, ref } from 'vue';
+
+interface PinOrder {
+    id: number;
+    reference: string;
+    channel: string;
+    quantity: number;
+    total_amount: number;
+    status: string;
+    product?: { name: string } | null;
+    user?: { name: string; email: string } | null;
+    buyer_name?: string | null;
+    buyer_email?: string | null;
+    buyer_phone?: string | null;
+    provider_reference?: string | null;
+    provider_response?: { payment_status?: string; payment_channel?: string; payment_gateway?: string } | null;
+    error_message?: string | null;
+    pins?: { pin: string; serial_no?: string }[] | null;
+}
 
 const props = defineProps<{
     products: any[];
-    orders: { data: any[] };
+    orders: { data: PinOrder[] };
     providerAccount?: any;
 }>();
 
@@ -17,6 +39,8 @@ const purchaseForm = useForm({
 });
 const syncForm = useForm({});
 const priceDialog = ref(false);
+const pinDetailsDialog = ref(false);
+const selectedOrder = ref<PinOrder | null>(null);
 const selectedProductForPrice = ref<any>(null);
 const priceForm = useForm({
     price: 0,
@@ -32,6 +56,10 @@ const statusColor = (status: string) => status === 'completed' || status === 'su
 
 const syncProducts = () => syncForm.post('/admin/result-pins/sync');
 const purchase = () => purchaseForm.post('/admin/result-pins/purchase');
+const openPinDetails = (order: PinOrder) => {
+    selectedOrder.value = order;
+    pinDetailsDialog.value = true;
+};
 const openPriceDialog = (product: any) => {
     selectedProductForPrice.value = product;
     priceForm.price = Number(product.price || 0);
@@ -125,7 +153,7 @@ const updatePrice = () => {
                 <v-card>
                     <v-card-title>Recent PIN Orders</v-card-title>
                     <v-table>
-                        <thead><tr><th>Reference</th><th>Channel</th><th>Product</th><th>Qty</th><th>Payment</th><th>Status</th><th class="text-right">Amount</th></tr></thead>
+                        <thead><tr><th>Reference</th><th>Channel</th><th>Product</th><th>Qty</th><th>Payment</th><th>Status</th><th class="text-right">Amount</th><th>Details</th></tr></thead>
                         <tbody>
                             <tr v-for="order in orders?.data || []" :key="order.id">
                                 <td>{{ order.reference }}</td>
@@ -139,12 +167,52 @@ const updatePrice = () => {
                                 </td>
                                 <td><v-chip size="small" :color="statusColor(order.status)">{{ order.status }}</v-chip></td>
                                 <td class="text-right">{{ formatCurrency(order.total_amount) }}</td>
+                                <td>
+                                    <AppButton size="small" variant="text" :aria-label="`View PIN details for ${order.reference}`" @click="openPinDetails(order)">
+                                        View PIN details
+                                    </AppButton>
+                                </td>
                             </tr>
                         </tbody>
                     </v-table>
                 </v-card>
             </v-col>
         </v-row>
+
+        <v-dialog v-model="pinDetailsDialog" max-width="760" scrollable aria-labelledby="pin-details-title" @after-leave="selectedOrder = null">
+            <AppCard v-if="selectedOrder">
+                <template #title><span id="pin-details-title">PIN details</span></template>
+                <p class="text-subtitle-1 font-weight-bold mb-1">{{ selectedOrder.product?.name || 'Result PIN order' }}</p>
+                <p class="text-body-2 text-break mb-4">Reference: {{ selectedOrder.reference }}</p>
+                <v-list density="compact" class="mb-4">
+                    <v-list-item title="Status" :subtitle="selectedOrder.status" />
+                    <v-list-item title="Quantity" :subtitle="String(selectedOrder.quantity)" />
+                    <v-list-item title="Amount" :subtitle="formatCurrency(selectedOrder.total_amount)" />
+                    <v-list-item title="Buyer" :subtitle="selectedOrder.buyer_name || selectedOrder.user?.name || 'N/A'" />
+                    <v-list-item title="Email" :subtitle="selectedOrder.buyer_email || selectedOrder.user?.email || 'N/A'" />
+                    <v-list-item title="Phone" :subtitle="selectedOrder.buyer_phone || 'N/A'" />
+                    <v-list-item title="Provider reference" :subtitle="selectedOrder.provider_reference || 'N/A'" />
+                </v-list>
+                <v-alert v-if="selectedOrder.status === 'failed'" type="error" variant="tonal" class="mb-4">
+                    {{ selectedOrder.error_message || 'This PIN order failed. Contact support with the order reference.' }}
+                </v-alert>
+                <AppTable v-if="selectedOrder.pins?.length" :caption="`PINs for ${selectedOrder.reference}`">
+                    <thead><tr><th scope="col">#</th><th scope="col">PIN</th><th scope="col">Serial number</th></tr></thead>
+                    <tbody>
+                        <tr v-for="(pin, index) in selectedOrder.pins" :key="index">
+                            <td>{{ index + 1 }}</td>
+                            <td class="font-weight-bold text-break">{{ pin.pin || 'N/A' }}</td>
+                            <td class="text-break">{{ pin.serial_no || 'N/A' }}</td>
+                        </tr>
+                    </tbody>
+                </AppTable>
+                <AppEmptyState v-else title="No PINs available" description="No PINs have been issued for this order yet." />
+                <template #actions>
+                    <v-spacer />
+                    <AppButton variant="text" @click="pinDetailsDialog = false">Close</AppButton>
+                </template>
+            </AppCard>
+        </v-dialog>
 
         <v-dialog v-model="priceDialog" max-width="420">
             <v-card>
